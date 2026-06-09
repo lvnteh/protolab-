@@ -1,77 +1,309 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>{{name}} — Admin</title>
-  <link rel="stylesheet" href="https://client-version.cf.emarsys.net/ui/latest/css/app.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{name}} — Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#1a1a2e;background:#f4f5f7;min-height:100vh}
+a{color:#0052cc;text-decoration:none}
+.topbar{background:#0052cc;height:52px;display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:100}
+.topbar__back{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.8);font-size:13px;cursor:pointer;background:none;border:none;padding:4px 8px;border-radius:4px;text-decoration:none}
+.topbar__back:hover{background:rgba(255,255,255,.15);color:#fff;text-decoration:none}
+.topbar__sep{color:rgba(255,255,255,.3);font-size:16px}
+.topbar__title{font-weight:700;font-size:15px;color:#fff;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px}
+.page{max-width:1100px;margin:0 auto;padding:28px 24px}
+.stats{display:flex;gap:14px;margin-bottom:24px}
+.stat{flex:1;background:#fff;border:1px solid #e0e4ea;border-radius:8px;padding:16px 20px}
+.stat__num{font-size:26px;font-weight:700;color:#0052cc}
+.stat__label{font-size:12px;color:#888;margin-top:2px}
+.tabs{display:flex;border-bottom:2px solid #e0e4ea;margin-bottom:0;background:#fff;border-radius:8px 8px 0 0;border:1px solid #e0e4ea;border-bottom:none;overflow:hidden}
+.tab{padding:13px 22px;font-size:13px;font-weight:500;color:#666;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;border-top:none;border-left:none;border-right:none;white-space:nowrap}
+.tab:hover{color:#0052cc;background:#f8f9fc}
+.tab.active{color:#0052cc;border-bottom-color:#0052cc;font-weight:600;background:#fff}
+.tab-body{background:#fff;border:1px solid #e0e4ea;border-top:none;border-radius:0 0 8px 8px;min-height:300px}
+.tab-panel{display:none}.tab-panel.active{display:block}
+.card{background:#fff;border-radius:8px;border:1px solid #e0e4ea;overflow:hidden}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.6px;padding:11px 16px;border-bottom:2px solid #e0e4ea;white-space:nowrap}
+.tbl td{padding:13px 16px;border-bottom:1px solid #f0f2f5;vertical-align:top;font-size:13px;line-height:1.5}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:#fafbfd}
+.tbl-wrap{overflow-x:auto}
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid #e0e4ea;font-size:13px;color:#888}
+.pager{display:flex;gap:4px}
+.pager-btn{padding:4px 10px;border:1px solid #d0d5dd;border-radius:4px;background:#fff;font-size:12px;cursor:pointer;color:#333;font-weight:500}
+.pager-btn:hover:not(:disabled){background:#f4f5f7}
+.pager-btn:disabled{opacity:.4;cursor:default}
+.pager-btn.on{background:#0052cc;border-color:#0052cc;color:#fff}
+.empty-state{text-align:center;padding:60px 24px;color:#aaa}
+.empty-state svg{width:40px;height:40px;margin:0 auto 12px;display:block;color:#d0d5dd}
+.empty-state p{font-size:13px;margin-top:6px}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-element{background:#e6f0ff;color:#0052cc}
+.badge-general{background:#e6f9f0;color:#1a7f4b}
+.breadcrumb{color:#888;font-size:12px;max-width:280px}
+.selector{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:11px;color:#666;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.comment-text{max-width:320px}
+.ts{color:#aaa;font-size:11px;white-space:nowrap}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:13px;font-weight:600;color:#444;margin-bottom:6px}
+.input{width:100%;padding:8px 12px;border:1px solid #d0d5dd;border-radius:6px;font-size:14px;font-family:inherit;outline:none;background:#fff;color:#1a1a2e}
+.input:focus{border-color:#0052cc;box-shadow:0 0 0 3px rgba(0,82,204,.12)}
+textarea.input{resize:vertical;line-height:1.5}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+.btn-primary{background:#0052cc;color:#fff}.btn-primary:hover{background:#0040a8}
+.btn-secondary{background:#fff;color:#333;border:1px solid #d0d5dd}.btn-secondary:hover{background:#f4f5f7}
+.btn-danger{background:#fff;color:#c0392b;border:1px solid #e0c0bd}.btn-danger:hover{background:#fdf2f2}
+.form-pad{padding:24px}
+.danger-zone{margin-top:28px;padding:16px;border:1px solid #fccfcf;border-radius:8px;background:#fffafa}
+.danger-zone__title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#c0392b;margin-bottom:10px}
+.alert{padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:16px;background:#e6f9f0;color:#1a7f4b;border:1px solid #b3e8cf;display:none}
+.filter-bar{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f2f5;background:#fafbfd}
+.filter-bar select{padding:5px 10px;border:1px solid #d0d5dd;border-radius:5px;font-size:13px;background:#fff;outline:none;cursor:pointer}
+.filter-bar select:focus{border-color:#0052cc}
+.ua-cell{font-size:11px;color:#aaa;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
 </head>
 <body>
-<div class="e-layout e-layout-without_navigation">
-  <header class="e-layout__header e-layout__header-form">
-    <a href="/admin/prototypes" class="e-layout__back">
-      <e-layout-back-button>All Prototypes</e-layout-back-button>
-    </a>
-    <h1 class="e-layout__title">{{name}}</h1>
-  </header>
-  <main class="e-layout__content">
-    <section class="e-layout__section">
-      <e-tab-bar>
-        <e-tab label="Comments" selected>
-          <e-tab-content>
-            <e-datagrid id="comments-grid"
-              server="/admin/prototypes/{{id}}/comments"
-              id-key="id" page-size="25">
-              <e-datagrid-column head="Email" content-key="email" sortable></e-datagrid-column>
-              <e-datagrid-column head="Type" content-key="type" sortable></e-datagrid-column>
-              <e-datagrid-column head="Element" content-key="element_label"></e-datagrid-column>
-              <e-datagrid-column head="Journey" content-key="breadcrumb_display"></e-datagrid-column>
-              <e-datagrid-column head="Comment" content-key="comment"></e-datagrid-column>
-              <e-datagrid-column head="Submitted" content-key="created_at" sortable></e-datagrid-column>
-              <e-datagrid-filter-select label="Type" content-key="type"></e-datagrid-filter-select>
-            </e-datagrid>
-          </e-tab-content>
-        </e-tab>
-        <e-tab label="Access Log">
-          <e-tab-content>
-            <e-datagrid id="log-grid"
-              server="/admin/prototypes/{{id}}/access-log"
-              id-key="id" page-size="25">
-              <e-datagrid-column head="Email" content-key="email" sortable></e-datagrid-column>
-              <e-datagrid-column head="Opened At" content-key="opened_at" sortable></e-datagrid-column>
-              <e-datagrid-column head="User Agent" content-key="user_agent"></e-datagrid-column>
-            </e-datagrid>
-          </e-tab-content>
-        </e-tab>
-        <e-tab label="Settings">
-          <e-tab-content>
-            <div class="e-padding-m">
-              <form method="POST" action="/admin/prototypes/{{id}}/settings">
-                <div class="e-field">
-                  <label class="e-field__label" for="proto-name">Name</label>
-                  <input class="e-input" id="proto-name" name="name" type="text" value="{{name}}">
-                </div>
-                <div class="e-field" style="margin-top:12px;">
-                  <label class="e-field__label" for="allowlist">Email Allowlist (one per line)</label>
-                  <textarea class="e-input e-input-textarea" id="allowlist" name="allowlist" rows="6">{{allowlist}}</textarea>
-                </div>
-                <button type="submit" class="e-btn e-btn-highlight" style="margin-top:16px;">Save Changes</button>
-              </form>
-              <hr style="margin:24px 0;border-color:#eee;">
-              <button type="button" class="e-btn e-btn-error" onclick="deleteProto()">Delete Prototype</button>
-            </div>
-          </e-tab-content>
-        </e-tab>
-      </e-tab-bar>
-    </section>
-  </main>
+<div class="topbar">
+  <a href="/admin/prototypes" class="topbar__back">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"/></svg>
+    All Prototypes
+  </a>
+  <span class="topbar__sep">/</span>
+  <span class="topbar__title">{{name}}</span>
 </div>
-<script src="https://client-version.cf.emarsys.net/ui/latest/js/app.js"></script>
+
+<div class="page">
+  <div class="stats" id="stats">
+    <div class="stat"><div class="stat__num" id="stat-views">—</div><div class="stat__label">Views</div></div>
+    <div class="stat"><div class="stat__num" id="stat-comments">—</div><div class="stat__label">Comments</div></div>
+    <div class="stat"><div class="stat__num" id="stat-allowlist">—</div><div class="stat__label">Allowlist</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="comments">Comments</button>
+    <button class="tab" data-tab="log">Access Log</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </div>
+  <div class="tab-body">
+
+    <!-- Comments tab -->
+    <div class="tab-panel active" id="tab-comments">
+      <div class="filter-bar">
+        <label style="font-size:13px;font-weight:600;color:#555">Type:</label>
+        <select id="type-filter">
+          <option value="">All</option>
+          <option value="general">General</option>
+          <option value="element">Element</option>
+        </select>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Type</th>
+              <th>Element</th>
+              <th>Journey</th>
+              <th>Comment</th>
+              <th>Submitted</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="comments-body">
+            <tr><td colspan="7" style="text-align:center;padding:40px;color:#aaa">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="comments-pagination" style="display:none">
+        <span id="comments-info"></span>
+        <div class="pager" id="comments-pager"></div>
+      </div>
+    </div>
+
+    <!-- Access Log tab -->
+    <div class="tab-panel" id="tab-log">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Opened At</th>
+              <th>User Agent</th>
+            </tr>
+          </thead>
+          <tbody id="log-body">
+            <tr><td colspan="3" style="text-align:center;padding:40px;color:#aaa">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="log-pagination" style="display:none">
+        <span id="log-info"></span>
+        <div class="pager" id="log-pager"></div>
+      </div>
+    </div>
+
+    <!-- Settings tab -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="form-pad">
+        <div id="save-alert" class="alert">Changes saved.</div>
+        <form method="POST" action="/admin/prototypes/{{id}}/settings">
+          <div class="field">
+            <label for="proto-name">Prototype name</label>
+            <input class="input" id="proto-name" name="name" type="text" value="{{name}}" required>
+          </div>
+          <div class="field">
+            <label for="allowlist">Email allowlist <span style="font-weight:400;color:#999">(one per line)</span></label>
+            <textarea class="input" id="allowlist" name="allowlist" rows="8">{{allowlist}}</textarea>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:6px">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+          </div>
+        </form>
+        <div class="danger-zone">
+          <div class="danger-zone__title">Danger Zone</div>
+          <button type="button" class="btn btn-danger" onclick="deleteProto()">Delete this prototype</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- tab-body -->
+</div>
+
 <script>
-  async function deleteProto() {
-    if (!confirm('Delete this prototype? This cannot be undone.')) return;
-    await fetch('/admin/prototypes/{{id}}', { method: 'DELETE' });
-    location.href = '/admin/prototypes';
+const PROTO_ID = '{{id}}';
+const PAGE_SIZE = 25;
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// Check for ?saved=1
+if (location.search.includes('saved=1')) {
+  document.getElementById('save-alert').style.display = 'flex';
+  setTimeout(() => document.getElementById('save-alert').style.display = 'none', 3000);
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+function renderPager(containerId, infoId, total, page, onPage) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  const info = document.getElementById(infoId);
+  const pager = document.getElementById(containerId);
+  const pagination = pager.closest('.pagination');
+  if (total === 0) { pagination.style.display = 'none'; return; }
+  pagination.style.display = '';
+  const start = (page - 1) * PAGE_SIZE + 1;
+  const end = Math.min(page * PAGE_SIZE, total);
+  info.textContent = start + '–' + end + ' of ' + total;
+  let html = `<button class="pager-btn" ${page<=1?'disabled':''} onclick="(${onPage})(${page-1})">‹</button>`;
+  for (let p = Math.max(1,page-2); p <= Math.min(pages,page+2); p++) {
+    html += `<button class="pager-btn ${p===page?'on':''}" onclick="(${onPage})(${p})">${p}</button>`;
   }
+  html += `<button class="pager-btn" ${page>=pages?'disabled':''} onclick="(${onPage})(${page+1})">›</button>`;
+  pager.innerHTML = html;
+}
+
+// Comments
+let commentsPage = 1;
+let commentType = '';
+
+async function loadComments(page) {
+  commentsPage = page;
+  const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/comments', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE, sortingKey: 'created_at', sortingOrder: 'desc', filterValues: commentType ? {type: commentType} : {} })
+  });
+  const {data, totalCount} = await resp.json();
+  document.getElementById('stat-comments').textContent = totalCount;
+
+  const tbody = document.getElementById('comments-body');
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg><p>No comments yet</p></div></td></tr>`;
+    document.getElementById('comments-pagination').style.display = 'none';
+    return;
+  }
+  tbody.innerHTML = data.map(r => `
+    <tr>
+      <td style="white-space:nowrap">${esc(r.email)}</td>
+      <td><span class="badge badge-${r.type}">${r.type}</span></td>
+      <td>${r.element_label ? `<span style="font-weight:500">${esc(r.element_label)}</span><br><span class="selector" title="${esc(r.element_selector||'')}">${esc(r.element_selector||'')}</span>` : '<span style="color:#ccc">—</span>'}</td>
+      <td class="breadcrumb">${r.breadcrumb_display ? esc(r.breadcrumb_display) : '<span style="color:#ccc">—</span>'}</td>
+      <td class="comment-text">${esc(r.comment)}</td>
+      <td class="ts">${fmtDate(r.created_at)}</td>
+      <td>${r.type === 'element' ? `<a href="/admin/prototypes/${PROTO_ID}/preview?comment=${r.id}" target="_blank" class="btn btn-secondary" style="font-size:11px;padding:4px 8px;white-space:nowrap">View in prototype</a>` : ''}</td>
+    </tr>
+  `).join('');
+  renderPager('comments-pager', 'comments-info', totalCount, page, 'loadComments');
+}
+
+document.getElementById('type-filter').addEventListener('change', e => {
+  commentType = e.target.value;
+  loadComments(1);
+});
+
+// Access Log
+let logPage = 1;
+
+async function loadLog(page) {
+  logPage = page;
+  const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/access-log', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE })
+  });
+  const {data, totalCount} = await resp.json();
+  document.getElementById('stat-views').textContent = totalCount;
+
+  const tbody = document.getElementById('log-body');
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="3"><div class="empty-state"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg><p>No views yet</p></div></td></tr>`;
+    document.getElementById('log-pagination').style.display = 'none';
+    return;
+  }
+  tbody.innerHTML = data.map(r => `
+    <tr>
+      <td style="white-space:nowrap">${esc(r.email)}</td>
+      <td class="ts" style="white-space:nowrap">${fmtDate(r.opened_at)}</td>
+      <td class="ua-cell" title="${esc(r.user_agent||'')}">${esc(r.user_agent||'—')}</td>
+    </tr>
+  `).join('');
+  renderPager('log-pager', 'log-info', totalCount, page, 'loadLog');
+}
+
+// Allowlist count
+async function loadAllowlistCount() {
+  const resp = await fetch('/admin/prototypes/{{id}}/allowlist-count');
+  if (resp.ok) {
+    const { count } = await resp.json();
+    document.getElementById('stat-allowlist').textContent = count;
+  }
+}
+
+async function deleteProto() {
+  if (!confirm('Delete this prototype and all its data? This cannot be undone.')) return;
+  await fetch('/admin/prototypes/{{id}}', { method: 'DELETE' });
+  location.href = '/admin/prototypes';
+}
+
+// Init
+loadComments(1);
+loadLog(1);
+loadAllowlistCount();
 </script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 
   const STYLE = `
     #__fb-pins {
-      position: absolute; top: 0; left: 0; pointer-events: none;
+      position: fixed; top: 0; left: 0; width: 0; height: 0; pointer-events: none;
       z-index: 2147483639;
     }
     .__fb-pin {
@@ -59,8 +59,8 @@
       try {
         const rect = p.el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) return;
-        p.pin.style.left = (rect.right + window.scrollX - 11 - p.offset * 26) + 'px';
-        p.pin.style.top  = (rect.top  + window.scrollY - 11) + 'px';
+        p.pin.style.left = (rect.right - 11 - p.offset * 26) + 'px';
+        p.pin.style.top  = (rect.top  - 11) + 'px';
       } catch (e) {}
     });
     rafId = requestAnimationFrame(repositionPins);
@@ -78,10 +78,10 @@
     `;
     pinContainer.appendChild(tooltipEl);
     const rect = pin.getBoundingClientRect();
-    const rawLeft = rect.left + window.scrollX - 99;
-    const rawTop  = rect.top  + window.scrollY - 90;
-    tooltipEl.style.left = Math.max(4, Math.min(rawLeft, window.scrollX + window.innerWidth - 224)) + 'px';
-    tooltipEl.style.top  = (rawTop < window.scrollY + 4 ? rect.bottom + window.scrollY + 4 : rawTop) + 'px';
+    const rawLeft = rect.left - 99;
+    const rawTop  = rect.top  - 90;
+    tooltipEl.style.left = Math.max(4, Math.min(rawLeft, window.innerWidth - 224)) + 'px';
+    tooltipEl.style.top  = (rawTop < 4 ? rect.bottom + 4 : rawTop) + 'px';
   }
 
   document.addEventListener('click', (e) => {

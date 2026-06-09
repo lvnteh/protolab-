@@ -74,7 +74,7 @@
     .__fb-btn-primary { background: #0052cc; color: #fff; border-color: #0052cc; font-weight: 600; }
     .__fb-btn-primary:hover { background: #003fa3; }
     #__fb-pins {
-      position: absolute; top: 0; left: 0; pointer-events: none;
+      position: fixed; top: 0; left: 0; width: 0; height: 0; pointer-events: none;
       z-index: 2147483639;
     }
     .__fb-pin {
@@ -119,8 +119,8 @@
       try {
         const rect = p.el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) return;
-        p.pin.style.left = (rect.right + window.scrollX - 11 - p.offset * 26) + 'px';
-        p.pin.style.top  = (rect.top  + window.scrollY - 11) + 'px';
+        p.pin.style.left = (rect.right - 11 - p.offset * 26) + 'px';
+        p.pin.style.top  = (rect.top  - 11) + 'px';
       } catch (e) { /* element removed */ }
     });
     rafId = requestAnimationFrame(repositionPins);

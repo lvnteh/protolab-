@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Admin Login</title>
+  <link rel="stylesheet" href="https://client-version.cf.emarsys.net/ui/latest/css/app.css">
+</head>
+<body>
+<div class="e-layout e-layout-without_navigation">
+  <header class="e-layout__header e-layout__header-form">
+    <h1 class="e-layout__title">Proto Share — Admin</h1>
+  </header>
+  <main class="e-layout__content e-layout__content-form">
+    <section class="e-layout__section e-padding-l">
+      <h2>Sign In</h2>
+      {{error}}
+      <form method="POST" action="/admin/login">
+        <div class="e-field">
+          <label class="e-field__label" for="username">Username</label>
+          <input class="e-input" id="username" name="username" type="text" required>
+        </div>
+        <div class="e-field" style="margin-top:12px;">
+          <label class="e-field__label" for="password">Password</label>
+          <input class="e-input" id="password" name="password" type="password" required>
+        </div>
+        <button type="submit" class="e-btn e-btn-highlight" style="margin-top:16px;">Sign In</button>
+      </form>
+    </section>
+  </main>
+</div>
+<script src="https://client-version.cf.emarsys.net/ui/latest/js/app.js"></script>
+</body>
+</html>

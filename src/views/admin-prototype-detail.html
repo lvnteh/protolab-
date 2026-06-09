@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{name}} — Admin</title>
+  <link rel="stylesheet" href="https://client-version.cf.emarsys.net/ui/latest/css/app.css">
+</head>
+<body>
+<div class="e-layout e-layout-without_navigation">
+  <header class="e-layout__header e-layout__header-form">
+    <a href="/admin/prototypes" class="e-layout__back">
+      <e-layout-back-button>All Prototypes</e-layout-back-button>
+    </a>
+    <h1 class="e-layout__title">{{name}}</h1>
+  </header>
+  <main class="e-layout__content">
+    <section class="e-layout__section">
+      <e-tab-bar>
+        <e-tab label="Comments" selected>
+          <e-tab-content>
+            <e-datagrid id="comments-grid"
+              server="/admin/prototypes/{{id}}/comments"
+              id-key="id" page-size="25">
+              <e-datagrid-column head="Email" content-key="email" sortable></e-datagrid-column>
+              <e-datagrid-column head="Type" content-key="type" sortable></e-datagrid-column>
+              <e-datagrid-column head="Element" content-key="element_label"></e-datagrid-column>
+              <e-datagrid-column head="Journey" content-key="breadcrumb_display"></e-datagrid-column>
+              <e-datagrid-column head="Comment" content-key="comment"></e-datagrid-column>
+              <e-datagrid-column head="Submitted" content-key="created_at" sortable></e-datagrid-column>
+              <e-datagrid-filter-select label="Type" content-key="type"></e-datagrid-filter-select>
+            </e-datagrid>
+          </e-tab-content>
+        </e-tab>
+        <e-tab label="Access Log">
+          <e-tab-content>
+            <e-datagrid id="log-grid"
+              server="/admin/prototypes/{{id}}/access-log"
+              id-key="id" page-size="25">
+              <e-datagrid-column head="Email" content-key="email" sortable></e-datagrid-column>
+              <e-datagrid-column head="Opened At" content-key="opened_at" sortable></e-datagrid-column>
+              <e-datagrid-column head="User Agent" content-key="user_agent"></e-datagrid-column>
+            </e-datagrid>
+          </e-tab-content>
+        </e-tab>
+        <e-tab label="Settings">
+          <e-tab-content>
+            <div class="e-padding-m">
+              <form method="POST" action="/admin/prototypes/{{id}}/settings">
+                <div class="e-field">
+                  <label class="e-field__label" for="proto-name">Name</label>
+                  <input class="e-input" id="proto-name" name="name" type="text" value="{{name}}">
+                </div>
+                <div class="e-field" style="margin-top:12px;">
+                  <label class="e-field__label" for="allowlist">Email Allowlist (one per line)</label>
+                  <textarea class="e-input e-input-textarea" id="allowlist" name="allowlist" rows="6">{{allowlist}}</textarea>
+                </div>
+                <button type="submit" class="e-btn e-btn-highlight" style="margin-top:16px;">Save Changes</button>
+              </form>
+              <hr style="margin:24px 0;border-color:#eee;">
+              <button type="button" class="e-btn e-btn-error" onclick="deleteProto()">Delete Prototype</button>
+            </div>
+          </e-tab-content>
+        </e-tab>
+      </e-tab-bar>
+    </section>
+  </main>
+</div>
+<script src="https://client-version.cf.emarsys.net/ui/latest/js/app.js"></script>
+<script>
+  async function deleteProto() {
+    if (!confirm('Delete this prototype? This cannot be undone.')) return;
+    await fetch('/admin/prototypes/{{id}}', { method: 'DELETE' });
+    location.href = '/admin/prototypes';
+  }
+</script>
+</body>
+</html>

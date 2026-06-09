@@ -12,6 +12,9 @@ const app = express();
 
 initDb();
 
+const fs = require('fs');
+fs.mkdirSync(config.uploadsPath, { recursive: true });
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({

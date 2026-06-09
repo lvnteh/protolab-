@@ -60,7 +60,7 @@ router.get('/prototypes', adminAuth, (_req, res) => {
       (SELECT COUNT(*) FROM comments   WHERE prototype_id = p.id) AS comment_count
     FROM prototypes p ORDER BY p.created_at DESC
   `).all();
-  res.send(renderView('admin-prototypes.html', { prototypesJson: JSON.stringify(rows) }));
+  res.send(renderView('admin-prototypes.html', { prototypesJson: JSON.stringify(rows).replace(/</g, '\\u003c') }));
 });
 
 router.get('/upload', adminAuth, (_req, res) => {

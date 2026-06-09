@@ -1,10 +1,13 @@
 // src/db.js
+const fs = require('fs');
+const path = require('path');
 const Database = require('better-sqlite3');
 const config = require('./config');
 
 let _db = null;
 
 function initDb() {
+  fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
   _db = new Database(config.dbPath);
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');

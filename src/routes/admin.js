@@ -162,6 +162,7 @@ router.get('/prototypes/:id/preview', adminAuth, (req, res) => {
   const proto = db.prepare('SELECT * FROM prototypes WHERE id = ?').get(req.params.id);
   if (!proto) return res.status(404).send('Prototype not found.');
 
+  if (path.basename(proto.filename) !== proto.filename) return res.status(400).send('Invalid prototype filename.');
   const filePath = path.join(config.uploadsPath, proto.filename);
   if (!fs.existsSync(filePath)) return res.status(404).send('Prototype file not found.');
 

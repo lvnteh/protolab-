@@ -1,10 +1,14 @@
+function escAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/"/g, '&quot;');
+}
+
 function sdkScript(protoId, email) {
-  return `<script src="/sdk/feedback.js" data-proto-id="${protoId}" data-email="${encodeURIComponent(email)}"></script>`;
+  return `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"></script>`;
 }
 
 function previewScript(protoId, highlightId, commentsJson) {
   const safeComments = commentsJson.replace(/</g, '\\u003c').replace(/"/g, '&quot;');
-  return `<script src="/sdk/preview.js" data-proto-id="${protoId}" data-highlight-comment="${highlightId}" data-comments="${safeComments}"></script>`;
+  return `<script src="/sdk/preview.js" data-proto-id="${escAttr(protoId)}" data-highlight-comment="${escAttr(highlightId)}" data-comments="${safeComments}"></script>`;
 }
 
 function injectBefore(html, scriptTag) {

@@ -1,3 +1,6 @@
+const SUGAR_CSS = `<link rel="stylesheet" href="https://client-version.cf.emarsys.net/ui/latest/css/app.css">`;
+const SUGAR_JS  = `<script src="https://client-version.cf.emarsys.net/ui/latest/js/app.js"></script>`;
+
 function escAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -20,7 +23,11 @@ function injectBefore(html, scriptTag) {
 }
 
 function injectSdk(html, protoId, email) {
-  return injectBefore(html, sdkScript(protoId, email));
+  const headInjection = `\n${SUGAR_CSS}\n${SUGAR_JS}\n`;
+  let result = html.includes('</head>')
+    ? html.replace('</head>', `${headInjection}</head>`)
+    : html;
+  return injectBefore(result, sdkScript(protoId, email));
 }
 
 function injectPreview(html, protoId, highlightId, commentsJson) {

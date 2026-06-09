@@ -28,6 +28,14 @@ function renderView(name, vars) {
   return html;
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 router.get('/', (_req, res) => res.redirect('/admin/login'));
 
 router.get('/login', (_req, res) => {
@@ -85,7 +93,7 @@ router.get('/prototypes/:id', adminAuth, (req, res) => {
   if (!proto) return res.status(404).send('Not found.');
   const allowlist = getDb().prepare('SELECT email FROM allowlist WHERE prototype_id = ?')
     .all(proto.id).map(r => r.email).join('\n');
-  res.send(renderView('admin-prototype-detail.html', { id: proto.id, name: proto.name, allowlist }));
+  res.send(renderView('admin-prototype-detail.html', { id: proto.id, name: escapeHtml(proto.name), allowlist: escapeHtml(allowlist) }));
 });
 
 router.post('/prototypes/:id/settings', adminAuth, (req, res) => {
@@ -121,7 +129,7 @@ router.get('/prototypes/:id/comments', adminAuth, (req, res) => {
     `SELECT * FROM comments WHERE prototype_id = ? ORDER BY ${orderBy} ${order} LIMIT ? OFFSET ?`
   ).all(req.params.id, parseInt(pageSize, 10), offset).map(r => ({
     ...r,
-    breadcrumb_display: r.breadcrumb ? JSON.parse(r.breadcrumb).join(' → ') : '',
+    breadcrumb_display: (() => { try { return r.breadcrumb ? JSON.parse(r.breadcrumb).join(' → ') : ''; } catch { return ''; } })(),
   }));
   res.json({ data: rows, totalCount: total });
 });

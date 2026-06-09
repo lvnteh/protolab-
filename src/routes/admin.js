@@ -8,6 +8,7 @@ const { nanoid } = require('nanoid');
 const { getDb } = require('../db');
 const adminAuth = require('../middleware/adminAuth');
 const config = require('../config');
+const { injectPreview } = require('../services/inject');
 
 const router = express.Router();
 
@@ -44,7 +45,7 @@ router.get('/login', (_req, res) => {
 
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
-  const errorHtml = '<e-notification type="error"><e-notification-content>Invalid credentials.</e-notification-content></e-notification>';
+  const errorHtml = '<div class="alert">Invalid credentials.</div>';
   if (username !== config.adminUser) return res.status(401).send(renderView('admin-login.html', { error: errorHtml }));
   const valid = await bcrypt.compare(password, config.adminPasswordHash);
   if (!valid) return res.status(401).send(renderView('admin-login.html', { error: errorHtml }));
@@ -84,7 +85,7 @@ router.post('/prototypes', adminAuth, upload.single('file'), (req, res) => {
   for (const email of emails) ins.run(id, email);
 
   const shareLink = `${config.baseUrl}/p/${shareToken}`;
-  const successBanner = `<e-notification type="success"><e-notification-content>Prototype uploaded. Share link: <a href="${shareLink}">${shareLink}</a></e-notification-content></e-notification>`;
+  const successBanner = `<div class="alert alert-success">Prototype uploaded. Share link: <a href="${shareLink}">${shareLink}</a></div>`;
   res.send(renderView('admin-upload.html', { success: successBanner }));
 });
 
@@ -105,7 +106,12 @@ router.post('/prototypes/:id/settings', adminAuth, (req, res) => {
   const emails = (req.body.allowlist || '').split(/\r?\n/).map(e => e.trim().toLowerCase()).filter(Boolean);
   const ins = db.prepare('INSERT OR IGNORE INTO allowlist (prototype_id, email) VALUES (?,?)');
   for (const email of emails) ins.run(proto.id, email);
-  res.redirect(`/admin/prototypes/${proto.id}`);
+  res.redirect(`/admin/prototypes/${proto.id}?saved=1`);
+});
+
+router.get('/prototypes/:id/allowlist-count', adminAuth, (req, res) => {
+  const count = getDb().prepare('SELECT COUNT(*) AS n FROM allowlist WHERE prototype_id = ?').get(req.params.id)?.n ?? 0;
+  res.json({ count });
 });
 
 router.delete('/prototypes/:id', adminAuth, (req, res) => {
@@ -118,30 +124,57 @@ router.delete('/prototypes/:id', adminAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/prototypes/:id/comments', adminAuth, (req, res) => {
-  const { page = 1, pageSize = 25, sortKey, sortOrder = 'asc' } = req.query;
-  const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
+router.post('/prototypes/:id/comments', adminAuth, (req, res) => {
+  const { pageSize = 25, offset = 0, sortingKey, sortingOrder = 'asc', filterValues = {} } = req.body || {};
   const allowedSort = ['email', 'type', 'created_at'];
-  const orderBy = allowedSort.includes(sortKey) ? sortKey : 'created_at';
-  const order = sortOrder === 'desc' ? 'DESC' : 'ASC';
-  const total = getDb().prepare('SELECT COUNT(*) AS n FROM comments WHERE prototype_id = ?').get(req.params.id).n;
+  const orderBy = allowedSort.includes(sortingKey) ? sortingKey : 'created_at';
+  const order = sortingOrder === 'desc' ? 'DESC' : 'ASC';
+
+  const typeFilter = filterValues.type;
+  const hasFilter = typeFilter && typeFilter.length > 0;
+  const filterClause = hasFilter ? ' AND type = ?' : '';
+  const filterArgs = hasFilter ? [typeFilter] : [];
+
+  const total = getDb().prepare(
+    `SELECT COUNT(*) AS n FROM comments WHERE prototype_id = ?${filterClause}`
+  ).get(req.params.id, ...filterArgs).n;
+
   const rows = getDb().prepare(
-    `SELECT * FROM comments WHERE prototype_id = ? ORDER BY ${orderBy} ${order} LIMIT ? OFFSET ?`
-  ).all(req.params.id, parseInt(pageSize, 10), offset).map(r => ({
+    `SELECT * FROM comments WHERE prototype_id = ?${filterClause} ORDER BY ${orderBy} ${order} LIMIT ? OFFSET ?`
+  ).all(req.params.id, ...filterArgs, parseInt(pageSize, 10), parseInt(offset, 10)).map(r => ({
     ...r,
     breadcrumb_display: (() => { try { return r.breadcrumb ? JSON.parse(r.breadcrumb).join(' → ') : ''; } catch { return ''; } })(),
   }));
   res.json({ data: rows, totalCount: total });
 });
 
-router.get('/prototypes/:id/access-log', adminAuth, (req, res) => {
-  const { page = 1, pageSize = 25 } = req.query;
-  const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
+router.post('/prototypes/:id/access-log', adminAuth, (req, res) => {
+  const { pageSize = 25, offset = 0 } = req.body || {};
   const total = getDb().prepare('SELECT COUNT(*) AS n FROM access_log WHERE prototype_id = ?').get(req.params.id).n;
   const rows = getDb().prepare(
     'SELECT * FROM access_log WHERE prototype_id = ? ORDER BY opened_at DESC LIMIT ? OFFSET ?'
-  ).all(req.params.id, parseInt(pageSize, 10), offset);
+  ).all(req.params.id, parseInt(pageSize, 10), parseInt(offset, 10));
   res.json({ data: rows, totalCount: total });
+});
+
+router.get('/prototypes/:id/preview', adminAuth, (req, res) => {
+  const db = getDb();
+  const proto = db.prepare('SELECT * FROM prototypes WHERE id = ?').get(req.params.id);
+  if (!proto) return res.status(404).send('Prototype not found.');
+
+  const filePath = path.join(config.uploadsPath, proto.filename);
+  if (!fs.existsSync(filePath)) return res.status(404).send('Prototype file not found.');
+
+  const highlightId = req.query.comment || '';
+  const comments = db.prepare(
+    `SELECT id, email, element_selector, element_label, comment, created_at
+     FROM comments WHERE prototype_id = ? AND type = 'element'
+     ORDER BY created_at ASC`
+  ).all(proto.id).map((r, i) => ({ ...r, order: i + 1 }));
+
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const html = injectPreview(raw, proto.id, highlightId, JSON.stringify(comments));
+  res.send(html);
 });
 
 module.exports = router;

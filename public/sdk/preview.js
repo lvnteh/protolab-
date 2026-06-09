@@ -78,8 +78,10 @@
     `;
     pinContainer.appendChild(tooltipEl);
     const rect = pin.getBoundingClientRect();
-    tooltipEl.style.left = (rect.left + window.scrollX - 99) + 'px';
-    tooltipEl.style.top  = (rect.top  + window.scrollY - 90) + 'px';
+    const rawLeft = rect.left + window.scrollX - 99;
+    const rawTop  = rect.top  + window.scrollY - 90;
+    tooltipEl.style.left = Math.max(4, Math.min(rawLeft, window.scrollX + window.innerWidth - 224)) + 'px';
+    tooltipEl.style.top  = (rawTop < window.scrollY + 4 ? rect.bottom + window.scrollY + 4 : rawTop) + 'px';
   }
 
   document.addEventListener('click', (e) => {

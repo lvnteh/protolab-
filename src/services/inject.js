@@ -1,5 +1,5 @@
 function escAttr(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/"/g, '&quot;');
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function sdkScript(protoId, email) {
@@ -7,8 +7,7 @@ function sdkScript(protoId, email) {
 }
 
 function previewScript(protoId, highlightId, commentsJson) {
-  const safeComments = commentsJson.replace(/</g, '\\u003c').replace(/"/g, '&quot;');
-  return `<script src="/sdk/preview.js" data-proto-id="${escAttr(protoId)}" data-highlight-comment="${escAttr(highlightId)}" data-comments="${safeComments}"></script>`;
+  return `<script src="/sdk/preview.js" data-proto-id="${escAttr(protoId)}" data-highlight-comment="${escAttr(highlightId)}" data-comments="${escAttr(commentsJson)}"></script>`;
 }
 
 function injectBefore(html, scriptTag) {

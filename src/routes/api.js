@@ -33,4 +33,17 @@ router.post('/comments', customerAuth, (req, res) => {
   res.status(201).json({ ok: true });
 });
 
+router.get('/comments/:prototypeId', customerAuth, (req, res) => {
+  if (req.session.prototypeId !== req.params.prototypeId) {
+    return res.status(403).json({ error: 'Forbidden.' });
+  }
+  const rows = getDb().prepare(
+    `SELECT id, email, element_selector, element_label, comment, created_at
+     FROM comments
+     WHERE prototype_id = ? AND type = 'element'
+     ORDER BY created_at ASC`
+  ).all(req.params.prototypeId);
+  res.json(rows.map((r, i) => ({ ...r, order: i + 1 })));
+});
+
 module.exports = router;

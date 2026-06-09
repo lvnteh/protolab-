@@ -1,6 +1,7 @@
 // public/sdk/feedback.js
 (function () {
   const script = document.currentScript;
+  if (!script) return;
   const PROTO_ID = script.getAttribute('data-proto-id');
   const EMAIL = decodeURIComponent(script.getAttribute('data-email') || '');
 
@@ -88,7 +89,7 @@
     }
     .__fb-pin:hover { transform: scale(1.15); }
     #__fb-tooltip {
-      position: absolute; z-index: 2147483646;
+      position: fixed; z-index: 2147483646;
       background: #fff; border: 1px solid #e0e4ea; border-radius: 8px;
       padding: 10px 12px; width: 220px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -126,6 +127,7 @@
   }
 
   function renderPins(comments) {
+    hideTooltip();
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     pinContainer.innerHTML = '';
     pinData = [];
@@ -172,8 +174,10 @@
     `;
     pinContainer.appendChild(tooltipEl);
     const rect = pin.getBoundingClientRect();
-    tooltipEl.style.left = (rect.left + window.scrollX - 99) + 'px';
-    tooltipEl.style.top  = (rect.top  + window.scrollY - 90) + 'px';
+    const rawLeft = rect.left - 99;
+    const rawTop = rect.top - 90;
+    tooltipEl.style.left = Math.max(4, Math.min(rawLeft, window.innerWidth - 224)) + 'px';
+    tooltipEl.style.top  = (rawTop < 4 ? rect.bottom + 4 : rawTop) + 'px';
   }
 
   function hideTooltip() {
@@ -212,9 +216,13 @@
   document.getElementById('__fb-submit').addEventListener('click', async () => {
     const text = document.getElementById('__fb-text').value.trim();
     if (!text) return;
-    await postComment({ type: 'general', comment: text, pageUrl: location.href });
-    document.getElementById('__fb-text').value = '';
-    showToast();
+    try {
+      await postComment({ type: 'general', comment: text, pageUrl: location.href });
+      document.getElementById('__fb-text').value = '';
+      showToast('Feedback submitted.');
+    } catch (e) {
+      showToast('Failed to submit. Please try again.', true);
+    }
   });
 
   // --- Pin mode toggle ---
@@ -260,15 +268,20 @@
       if (!text) return;
       const label = (el.innerText || el.value || el.getAttribute('aria-label') || el.tagName)
         .trim().replace(/\s+/g, ' ').slice(0, 60);
-      await postComment({
-        type: 'element',
-        element: { selector, label, tagName: el.tagName },
-        comment: text,
-        pageUrl: location.href,
-      });
-      closePopup();
-      showToast();
-      await loadPins();
+      try {
+        await postComment({
+          type: 'element',
+          element: { selector, label, tagName: el.tagName },
+          comment: text,
+          pageUrl: location.href,
+        });
+        closePopup();
+        showToast('Feedback submitted.');
+        await loadPins();
+      } catch (e) {
+        closePopup();
+        showToast('Failed to submit. Please try again.', true);
+      }
     };
   }, true);
 
@@ -276,19 +289,22 @@
     if (popup) { popup.remove(); popup = null; }
   }
 
-  function showToast() {
+  function showToast(msg, isError) {
     const t = document.getElementById('__fb-toast');
+    t.textContent = msg;
+    t.style.background = isError ? '#c0392b' : '#1a7f4b';
     t.classList.add('visible');
     setTimeout(() => t.classList.remove('visible'), 2500);
   }
 
   async function postComment(payload) {
-    await fetch('/api/comments', {
+    const resp = await fetch('/api/comments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prototypeId: PROTO_ID, email: EMAIL, ...payload }),
       credentials: 'include',
     });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
   }
 
   function getCssSelector(el) {
@@ -298,7 +314,11 @@
     while (node && node !== document.body) {
       let part = node.tagName.toLowerCase();
       const first = (node.className || '').toString().trim().split(/\s+/)[0];
-      if (first) part += '.' + first;
+      if (first) part += '.' + CSS.escape(first);
+      const siblings = node.parentElement
+        ? Array.from(node.parentElement.children).filter(c => c.tagName === node.tagName)
+        : [];
+      if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
       parts.unshift(part);
       node = node.parentElement;
     }
@@ -310,4 +330,9 @@
   }
 
   loadPins();
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
+    else if (pinData.length > 0 && !rafId) rafId = requestAnimationFrame(repositionPins);
+  });
 })();

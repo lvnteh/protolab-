@@ -107,10 +107,15 @@
 
     pin.addEventListener('click', (e) => { e.stopPropagation(); showTooltip(c, pin); });
 
-    if (c.id === highlightId) highlightPin = { pin, el };
+    if (String(c.id) === highlightId) highlightPin = { pin, el };
   });
 
   if (pinData.length > 0) rafId = requestAnimationFrame(repositionPins);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
+    else if (pinData.length > 0 && !rafId) rafId = requestAnimationFrame(repositionPins);
+  });
 
   if (highlightPin) {
     // Wait two frames for repositionPins to place the pin before scrolling

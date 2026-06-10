@@ -90,17 +90,24 @@ router.post('/explanations', (req, res) => {
   }
   const id = nanoid(12);
   const now = new Date().toISOString();
-  getDb().prepare(`
-    INSERT INTO explanations (id, prototype_id, element_selector, x_pct, y_pct, page_url, body, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, prototypeId, elementSelector,
-    typeof xPct === 'number' ? xPct : null,
-    typeof yPct === 'number' ? yPct : null,
-    pageUrl || null,
-    body.trim(),
-    now, now
-  );
+  try {
+    getDb().prepare(`
+      INSERT INTO explanations (id, prototype_id, element_selector, x_pct, y_pct, page_url, body, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, prototypeId, elementSelector,
+      typeof xPct === 'number' ? xPct : null,
+      typeof yPct === 'number' ? yPct : null,
+      pageUrl || null,
+      body.trim(),
+      now, now
+    );
+  } catch (e) {
+    if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: 'Explanation already exists for this element.' });
+    }
+    throw e;
+  }
   res.status(201).json({ ok: true, id });
 });
 

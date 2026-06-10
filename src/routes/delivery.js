@@ -64,7 +64,7 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
     [proto.id, req.session.customerEmail, new Date().toISOString(), req.headers['user-agent'] || '']
   );
 
-  res.setHeader('Content-Security-Policy', 'sandbox allow-scripts allow-forms allow-same-origin');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(injected);
 });
 

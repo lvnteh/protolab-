@@ -29,6 +29,10 @@ app.use('/admin', adminRouter);
 
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'views/landing.html')));
 
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+});
+
 if (require.main === module) {
   if (!config.databaseUrl) {
     console.error('DATABASE_URL environment variable is required');

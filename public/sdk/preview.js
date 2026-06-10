@@ -5,40 +5,55 @@
   let comments = [];
   try { comments = JSON.parse(script.getAttribute('data-comments') || '[]'); } catch (e) {}
 
+  const TAG_COLOR = {
+    bug:      'hsl(0,84%,60%)',
+    copy:     'hsl(38,92%,50%)',
+    question: 'hsl(217,91%,60%)',
+    idea:     'hsl(142,71%,45%)',
+    other:    'hsl(252,83%,57%)',
+  };
+  const TAG_LABEL = { bug: 'Bug', copy: 'Copy', question: 'Question', idea: 'Idea', other: 'Other' };
+
+  function pinColor(tag) { return TAG_COLOR[tag] || TAG_COLOR.other; }
+
   const STYLE = `
     #__fb-pins {
       position: fixed; top: 0; left: 0; width: 0; height: 0; pointer-events: none;
       z-index: 2147483639;
     }
     .__fb-pin {
-      position: absolute; width: 22px; height: 22px;
-      background: #0052cc; border-radius: 50%;
+      position: absolute; width: 24px; height: 24px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       color: #fff; font-size: 11px; font-weight: 700;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      box-shadow: 0 2px 6px rgba(0,82,204,0.4);
+      box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 2px #fff;
       cursor: pointer; pointer-events: auto;
-      transition: transform 0.15s;
+      transform: translate(-50%,-50%);
     }
-    .__fb-pin:hover { transform: scale(1.15); }
+    .__fb-pin:hover { transform: translate(-50%,-50%); }
     .__fb-pin--highlight {
       animation: __fb-pulse 0.6s ease-in-out 3;
     }
     @keyframes __fb-pulse {
-      0%   { transform: scale(1); }
-      50%  { transform: scale(1.4); }
-      100% { transform: scale(1); }
+      0%   { transform: translate(-50%,-50%) scale(1); }
+      50%  { transform: translate(-50%,-50%) scale(1.4); }
+      100% { transform: translate(-50%,-50%) scale(1); }
     }
     #__fb-tooltip {
-      position: absolute; z-index: 2147483646;
-      background: #fff; border: 1px solid #e0e4ea; border-radius: 8px;
-      padding: 10px 12px; width: 220px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+      position: fixed; z-index: 2147483646;
+      background: #fff; border: 1px solid hsl(220,13%,91%); border-radius: 12px;
+      padding: 12px 14px; width: 240px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 12px; line-height: 1.5; pointer-events: none;
     }
-    .__fb-tooltip-email { font-weight: 700; color: #0052cc; margin-bottom: 3px; }
-    .__fb-tooltip-comment { color: #333; margin-bottom: 3px; }
-    .__fb-tooltip-date { color: #aaa; font-size: 11px; }
+    .__fb-tooltip-tag {
+      display: inline-block; padding: 2px 8px; border-radius: 20px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      color: #fff; margin-bottom: 6px;
+    }
+    .__fb-tooltip-email { font-weight: 700; color: hsl(252,83%,50%); margin-bottom: 3px; }
+    .__fb-tooltip-comment { color: hsl(222,47%,11%); margin-bottom: 3px; white-space: pre-wrap; }
+    .__fb-tooltip-date { color: hsl(220,9%,46%); font-size: 11px; }
   `;
 
   const styleEl = document.createElement('style');
@@ -55,12 +70,19 @@
 
   function repositionPins() {
     pinData.forEach(p => {
-      if (!p.el || !p.pin) return;
+      // Retry selector resolution each frame until the element appears
+      if (!p.el) {
+        try { p.el = document.querySelector(p.element_selector); } catch (e) {}
+      }
+      if (!p.el) return;
       try {
         const rect = p.el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return;
-        p.pin.style.left = (rect.right - 11 - p.offset * 26) + 'px';
-        p.pin.style.top  = (rect.top  - 11) + 'px';
+        if (rect.width === 0 && rect.height === 0) { p.pin.style.display = 'none'; return; }
+        p.pin.style.display = '';
+        const ox = typeof p.x_pct === 'number' ? p.x_pct : (1 - p.offset * 0.15);
+        const oy = typeof p.y_pct === 'number' ? p.y_pct : 0;
+        p.pin.style.left = (rect.left + rect.width  * ox) + 'px';
+        p.pin.style.top  = (rect.top  + rect.height * oy) + 'px';
       } catch (e) {}
     });
     rafId = requestAnimationFrame(repositionPins);
@@ -71,7 +93,11 @@
     tooltipEl = document.createElement('div');
     tooltipEl.id = '__fb-tooltip';
     const date = new Date(c.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const tagHtml = c.tag
+      ? `<div class="__fb-tooltip-tag" style="background:${pinColor(c.tag)}">${TAG_LABEL[c.tag] || c.tag}</div>`
+      : '';
     tooltipEl.innerHTML = `
+      ${tagHtml}
       <div class="__fb-tooltip-email">${escHtml(c.email)}</div>
       <div class="__fb-tooltip-comment">${escHtml(c.comment)}</div>
       <div class="__fb-tooltip-date">${date}</div>
@@ -80,7 +106,7 @@
     const rect = pin.getBoundingClientRect();
     const rawLeft = rect.left - 99;
     const rawTop  = rect.top  - 90;
-    tooltipEl.style.left = Math.max(4, Math.min(rawLeft, window.innerWidth - 224)) + 'px';
+    tooltipEl.style.left = Math.max(4, Math.min(rawLeft, window.innerWidth - 254)) + 'px';
     tooltipEl.style.top  = (rawTop < 4 ? rect.bottom + 4 : rawTop) + 'px';
   }
 
@@ -94,7 +120,7 @@
   comments.forEach(c => {
     let el = null;
     try { el = document.querySelector(c.element_selector); } catch (e) {}
-    if (!el) return;
+    // el may be null if React hasn't rendered yet — RAF loop retries each frame
 
     const offset = selectorOffset[c.element_selector] || 0;
     selectorOffset[c.element_selector] = offset + 1;
@@ -102,6 +128,8 @@
     const pin = document.createElement('div');
     pin.className = '__fb-pin';
     pin.textContent = c.order;
+    pin.style.background = pinColor(c.tag);
+    pin.style.display = 'none';
     pin.dataset.commentId = c.id;
     pinContainer.appendChild(pin);
 
@@ -109,24 +137,28 @@
 
     pin.addEventListener('click', (e) => { e.stopPropagation(); showTooltip(c, pin); });
 
-    if (String(c.id) === highlightId) highlightPin = { pin, el };
+    if (String(c.id) === highlightId) highlightPin = { pin, data: c };
   });
 
-  if (pinData.length > 0) rafId = requestAnimationFrame(repositionPins);
+  rafId = requestAnimationFrame(repositionPins);
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
-    else if (pinData.length > 0 && !rafId) rafId = requestAnimationFrame(repositionPins);
+    else if (!rafId) rafId = requestAnimationFrame(repositionPins);
   });
 
   if (highlightPin) {
-    // Wait two frames for repositionPins to place the pin before scrolling
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        highlightPin.pin.classList.add('__fb-pin--highlight');
-        highlightPin.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-    });
+    const hp = highlightPin;
+    function tryHighlight() {
+      const entry = pinData.find(p => String(p.id) === highlightId);
+      if (entry && entry.el) {
+        hp.pin.classList.add('__fb-pin--highlight');
+        entry.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        requestAnimationFrame(tryHighlight);
+      }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(tryHighlight));
   }
 
   function escHtml(s) {

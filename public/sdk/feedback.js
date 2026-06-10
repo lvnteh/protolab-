@@ -186,10 +186,10 @@
       pointer-events: none; z-index: 2147483638;
     }
     .fb-explain-marker {
-      position: absolute; width: 18px; height: 18px; border-radius: 50%;
+      position: absolute; width: 26px; height: 26px; border-radius: 50%;
       background: hsl(38,92%,50%); color: #fff;
       display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 700; font-family: serif;
+      font-size: 14px; font-weight: 700; font-family: serif;
       box-shadow: 0 1px 4px rgba(0,0,0,.25), 0 0 0 2px #fff;
       cursor: pointer; pointer-events: auto;
       transform: translate(-50%, -50%);

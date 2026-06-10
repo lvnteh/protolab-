@@ -1,43 +1,100 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Upload Prototype — Admin</title>
-  <link rel="stylesheet" href="https://client-version.cf.emarsys.net/ui/latest/css/app.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Upload Prototype — Engagement Cloud ProtoLab (Beta!)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh}
+a{color:hsl(252,83%,57%);text-decoration:none}
+.topbar{background:hsl(252,83%,57%);height:52px;display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.topbar__back{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.8);font-size:13px;cursor:pointer;background:none;border:none;padding:4px 8px;border-radius:8px;text-decoration:none}
+.topbar__back:hover{background:rgba(255,255,255,.15);color:#fff;text-decoration:none}
+.topbar__sep{color:rgba(255,255,255,.3);font-size:16px}
+.topbar__title{font-weight:700;font-size:15px;color:#fff;letter-spacing:-.3px}
+.page{max-width:620px;margin:0 auto;padding:40px 24px}
+.card{background:#fff;border-radius:16px;border:1px solid hsl(220,13%,91%);padding:28px 32px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.card__title{font-size:18px;font-weight:700;margin-bottom:24px;letter-spacing:-.3px}
+.field{margin-bottom:20px}
+.field label{display:block;font-size:13px;font-weight:600;color:hsl(222,47%,20%);margin-bottom:7px}
+.field label .hint{font-weight:400;color:hsl(220,9%,46%)}
+.input{width:100%;padding:9px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff;color:hsl(222,47%,11%)}
+.input:focus{border-color:hsl(252,83%,57%);box-shadow:0 0 0 3px hsl(252,83%,90%)}
+textarea.input{resize:vertical;line-height:1.5}
+.file-zone{border:2px dashed hsl(220,13%,85%);border-radius:12px;padding:28px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+.file-zone:hover,.file-zone.drag{border-color:hsl(252,83%,57%);background:hsl(252,83%,97%)}
+.file-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.file-zone svg{width:32px;height:32px;color:hsl(220,9%,60%);margin:0 auto 10px;display:block}
+.file-zone__label{font-size:13px;color:hsl(220,9%,46%);line-height:1.6}
+.file-zone__label strong{color:hsl(252,83%,57%)}
+.file-zone__name{margin-top:10px;font-size:13px;font-weight:600;color:hsl(252,83%,57%);display:none}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;background:hsl(252,83%,57%);color:#fff}
+.btn:hover{background:hsl(252,83%,48%)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:20px;border:1px solid}
+.alert-success{background:#e6f9f0;color:#1a7f4b;border-color:#b3e8cf}
+.alert-success a{color:#1a7f4b;font-weight:600;text-decoration:underline}
+</style>
 </head>
 <body>
-<div class="e-layout e-layout-without_navigation">
-  <header class="e-layout__header e-layout__header-form">
-    <a href="/admin/prototypes" class="e-layout__back">
-      <e-layout-back-button>All Prototypes</e-layout-back-button>
-    </a>
-    <h1 class="e-layout__title">Upload Prototype</h1>
-  </header>
-  <main class="e-layout__content e-layout__content-form">
-    <section class="e-layout__section e-padding-l">
-      {{success}}
-      <form method="POST" action="/admin/prototypes" enctype="multipart/form-data">
-        <div class="e-field">
-          <label class="e-field__label" for="proto-name">Name</label>
-          <input class="e-input" id="proto-name" name="name" type="text"
-            placeholder="Onboarding v2" required>
-        </div>
-        <div class="e-field" style="margin-top:12px;">
-          <label class="e-field__label" for="proto-file">HTML File</label>
-          <input id="proto-file" name="file" type="file" accept=".html" required>
-        </div>
-        <div class="e-field" style="margin-top:12px;">
-          <label class="e-field__label" for="proto-allowlist">Email Allowlist (one per line)</label>
-          <textarea class="e-input e-input-textarea" id="proto-allowlist" name="allowlist"
-            rows="4" placeholder="customer@company.com"></textarea>
-        </div>
-        <button type="submit" class="e-btn e-btn-highlight" style="margin-top:16px;">
-          Upload &amp; Generate Link
-        </button>
-      </form>
-    </section>
-  </main>
+<div class="topbar">
+  <a href="/admin/prototypes" class="topbar__back">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"/></svg>
+    All Prototypes
+  </a>
+  <span class="topbar__sep">/</span>
+  <span class="topbar__title">Upload Prototype</span>
 </div>
-<script src="https://client-version.cf.emarsys.net/ui/latest/js/app.js"></script>
+
+<div class="page">
+  <div class="card">
+    <h2 class="card__title">New Prototype</h2>
+    {{success}}
+    <form method="POST" action="/admin/prototypes" enctype="multipart/form-data" id="upload-form">
+      <div class="field">
+        <label for="proto-name">Name</label>
+        <input class="input" id="proto-name" name="name" type="text" placeholder="e.g. Onboarding v2" required>
+      </div>
+      <div class="field">
+        <label>HTML File</label>
+        <div class="file-zone" id="file-zone">
+          <input type="file" name="file" id="proto-file" accept=".html" required>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+          <div class="file-zone__label"><strong>Click to browse</strong> or drag &amp; drop<br><span style="color:hsl(220,9%,60%);font-size:12px">.html files only</span></div>
+          <div class="file-zone__name" id="file-name"></div>
+        </div>
+      </div>
+      <div class="field">
+        <label for="proto-allowlist">Email Allowlist <span class="hint">(one per line)</span></label>
+        <textarea class="input" id="proto-allowlist" name="allowlist" rows="5" placeholder="customer@company.com&#10;another@example.com"></textarea>
+      </div>
+      <button type="submit" class="btn" id="submit-btn">Upload &amp; Generate Link</button>
+    </form>
+  </div>
+</div>
+
+<script>
+const fileInput = document.getElementById('proto-file');
+const fileZone = document.getElementById('file-zone');
+const fileName = document.getElementById('file-name');
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) {
+    fileName.textContent = fileInput.files[0].name;
+    fileName.style.display = 'block';
+    fileZone.querySelector('.file-zone__label').style.display = 'none';
+  }
+});
+
+fileZone.addEventListener('dragover', e => { e.preventDefault(); fileZone.classList.add('drag'); });
+fileZone.addEventListener('dragleave', () => fileZone.classList.remove('drag'));
+fileZone.addEventListener('drop', e => { e.preventDefault(); fileZone.classList.remove('drag'); });
+
+document.getElementById('upload-form').addEventListener('submit', () => {
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('submit-btn').textContent = 'Uploading…';
+});
+</script>
 </body>
 </html>

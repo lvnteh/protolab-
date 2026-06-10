@@ -1,0 +1,102 @@
+/* Shared admin styles — inlined into each view */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh}
+a{color:hsl(252,83%,57%);text-decoration:none}a:hover{text-decoration:underline}
+
+/* Layout */
+.topbar{background:hsl(252,83%,57%);color:#fff;height:52px;display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.topbar__title{font-weight:700;font-size:16px;letter-spacing:-.3px;color:#fff}
+.topbar__spacer{flex:1}
+.topbar__back{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.8);font-size:13px;cursor:pointer;background:none;border:none;padding:4px 8px;border-radius:8px}
+.topbar__back:hover{background:rgba(255,255,255,.15);color:#fff}
+.topbar__back svg{width:16px;height:16px}
+.page{max-width:1100px;margin:0 auto;padding:32px 24px}
+.page--narrow{max-width:680px}
+
+/* Cards */
+.card{background:#fff;border-radius:12px;border:1px solid hsl(220,13%,91%);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.card__head{padding:16px 20px;border-bottom:1px solid hsl(220,13%,91%);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card__title{font-weight:600;font-size:15px}
+.card__body{padding:20px}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:2px solid hsl(220,13%,91%);margin-bottom:24px}
+.tab{padding:10px 20px;font-size:13px;font-weight:500;color:hsl(220,9%,46%);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;background:none;border-top:none;border-left:none;border-right:none}
+.tab:hover{color:hsl(252,83%,57%)}
+.tab.active{color:hsl(252,83%,57%);border-bottom-color:hsl(252,83%,57%);font-weight:600}
+.tab-panel{display:none}.tab-panel.active{display:block}
+
+/* Table */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:12px;font-weight:600;color:hsl(220,9%,46%);text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;border-bottom:2px solid hsl(220,13%,91%);white-space:nowrap}
+.tbl td{padding:12px 12px;border-bottom:1px solid hsl(220,14%,96%);vertical-align:top;font-size:13px}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:hsl(252,83%,98%)}
+.tbl--clickable tr:hover td{cursor:pointer}
+.tbl-wrap{overflow-x:auto}
+.tbl-empty{text-align:center;padding:48px;color:hsl(220,9%,46%)}
+.tbl-empty svg{width:40px;height:40px;color:hsl(220,13%,80%);margin-bottom:12px;display:block;margin-left:auto;margin-right:auto}
+
+/* Pagination */
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid hsl(220,13%,91%);font-size:13px;color:hsl(220,9%,46%)}
+.pagination__info{}
+.pagination__controls{display:flex;gap:4px;align-items:center}
+.pagination__btn{padding:4px 10px;border:1px solid hsl(220,13%,87%);border-radius:8px;background:#fff;font-size:13px;cursor:pointer;color:hsl(222,47%,11%)}
+.pagination__btn:hover:not(:disabled){background:hsl(252,83%,96%);border-color:hsl(252,83%,57%);color:hsl(252,83%,57%)}
+.pagination__btn:disabled{opacity:.4;cursor:default}
+.pagination__btn.active{background:hsl(252,83%,57%);border-color:hsl(252,83%,57%);color:#fff}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:background .15s,box-shadow .15s}
+.btn svg{width:15px;height:15px;flex-shrink:0}
+.btn-primary{background:hsl(252,83%,57%);color:#fff}.btn-primary:hover{background:hsl(252,83%,48%)}
+.btn-secondary{background:#fff;color:hsl(222,47%,11%);border:1px solid hsl(220,13%,87%)}.btn-secondary:hover{background:hsl(252,83%,96%)}
+.btn-danger{background:#fff;color:#c0392b;border:1px solid #e0c0bd}.btn-danger:hover{background:#fdf2f2}
+.btn-sm{padding:5px 12px;font-size:12px}
+
+/* Form */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:13px;font-weight:600;color:hsl(222,47%,20%);margin-bottom:6px}
+.input{width:100%;padding:8px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff;color:hsl(222,47%,11%)}
+.input:focus{border-color:hsl(252,83%,57%);box-shadow:0 0 0 3px hsl(252,83%,90%)}
+textarea.input{resize:vertical;line-height:1.5}
+.form-actions{display:flex;gap:10px;margin-top:24px;align-items:center}
+.danger-zone{margin-top:32px;padding:16px;border:1px solid #fccfcf;border-radius:12px;background:#fffafa}
+.danger-zone__title{font-size:13px;font-weight:600;color:#c0392b;margin-bottom:10px}
+
+/* Badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-blue{background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
+.badge-green{background:#e6f9f0;color:#1a7f4b}
+.badge-gray{background:hsl(220,14%,93%);color:hsl(220,9%,40%)}
+.badge-element{background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
+.badge-general{background:#e6f9f0;color:#1a7f4b}
+
+/* Comment tag badges */
+.badge-bug{background:hsl(0,84%,93%);color:hsl(0,84%,40%)}
+.badge-copy{background:hsl(38,92%,92%);color:hsl(38,92%,30%)}
+.badge-question{background:hsl(217,91%,92%);color:hsl(217,91%,35%)}
+.badge-idea{background:hsl(142,71%,90%);color:hsl(142,71%,28%)}
+.badge-other{background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
+
+/* Stats row */
+.stats{display:flex;gap:16px;margin-bottom:24px}
+.stat{flex:1;background:#fff;border:1px solid hsl(220,13%,91%);border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.stat__num{font-size:28px;font-weight:700;color:hsl(252,83%,57%)}
+.stat__label{font-size:12px;color:hsl(220,9%,46%);margin-top:2px}
+
+/* Alert / toast */
+.alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.alert-success{background:#e6f9f0;color:#1a7f4b;border:1px solid #b3e8cf}
+.alert-error{background:#fdf2f2;color:#c0392b;border:1px solid #f5c0c0}
+.alert svg{flex-shrink:0;width:16px;height:16px}
+
+/* Misc */
+.text-muted{color:hsl(220,9%,46%)}
+.text-mono{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:12px}
+.copy-btn{background:none;border:none;cursor:pointer;color:hsl(252,83%,57%);font-size:12px;padding:2px 6px;border-radius:4px}.copy-btn:hover{background:hsl(252,83%,95%)}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px}
+
+/* Page header */
+.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.page-title{font-size:22px;font-weight:700;letter-spacing:-.3px;color:hsl(222,47%,11%)}

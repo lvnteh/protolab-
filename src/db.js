@@ -8,7 +8,8 @@ async function initDb() {
   if (_pool) return _pool;
   _pool = new Pool({
     connectionString: config.databaseUrl,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 10000,
   });
 
   await _pool.query(`

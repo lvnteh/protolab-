@@ -10,8 +10,6 @@ const adminRouter = require('./routes/admin');
 
 const app = express();
 
-initDb();
-
 const fs = require('fs');
 fs.mkdirSync(config.uploadsPath, { recursive: true });
 
@@ -32,8 +30,13 @@ app.use('/admin', adminRouter);
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'views/landing.html')));
 
 if (require.main === module) {
-  app.listen(config.port, () => {
-    console.log(`Proto Share running on http://localhost:${config.port}`);
+  initDb().then(() => {
+    app.listen(config.port, () => {
+      console.log(`Proto Share running on http://localhost:${config.port}`);
+    });
+  }).catch((err) => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
   });
 }
 

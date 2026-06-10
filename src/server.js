@@ -39,8 +39,8 @@ if (require.main === module) {
     process.exit(1);
   }
   initDb().then(() => {
-    app.listen(config.port, () => {
-      console.log(`Proto Share running on http://localhost:${config.port}`);
+    app.listen(config.port, '0.0.0.0', () => {
+      console.log(`Proto Share running on http://0.0.0.0:${config.port}`);
     });
   }).catch((err) => {
     console.error('Failed to initialize database:', err);

@@ -3,67 +3,80 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{name}} — Admin</title>
+<title>{{name}} — Engagement Cloud ProtoLab (Beta!)</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#1a1a2e;background:#f4f5f7;min-height:100vh}
-a{color:#0052cc;text-decoration:none}
-.topbar{background:#0052cc;height:52px;display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:100}
-.topbar__back{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.8);font-size:13px;cursor:pointer;background:none;border:none;padding:4px 8px;border-radius:4px;text-decoration:none}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh}
+a{color:hsl(252,83%,57%);text-decoration:none}
+.topbar{background:hsl(252,83%,57%);height:52px;display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.topbar__back{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.8);font-size:13px;cursor:pointer;background:none;border:none;padding:4px 8px;border-radius:8px;text-decoration:none}
 .topbar__back:hover{background:rgba(255,255,255,.15);color:#fff;text-decoration:none}
 .topbar__sep{color:rgba(255,255,255,.3);font-size:16px}
 .topbar__title{font-weight:700;font-size:15px;color:#fff;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px}
 .page{max-width:1100px;margin:0 auto;padding:28px 24px}
 .stats{display:flex;gap:14px;margin-bottom:24px}
-.stat{flex:1;background:#fff;border:1px solid #e0e4ea;border-radius:8px;padding:16px 20px}
-.stat__num{font-size:26px;font-weight:700;color:#0052cc}
-.stat__label{font-size:12px;color:#888;margin-top:2px}
-.tabs{display:flex;border-bottom:2px solid #e0e4ea;margin-bottom:0;background:#fff;border-radius:8px 8px 0 0;border:1px solid #e0e4ea;border-bottom:none;overflow:hidden}
-.tab{padding:13px 22px;font-size:13px;font-weight:500;color:#666;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;border-top:none;border-left:none;border-right:none;white-space:nowrap}
-.tab:hover{color:#0052cc;background:#f8f9fc}
-.tab.active{color:#0052cc;border-bottom-color:#0052cc;font-weight:600;background:#fff}
-.tab-body{background:#fff;border:1px solid #e0e4ea;border-top:none;border-radius:0 0 8px 8px;min-height:300px}
+.stat{flex:1;background:#fff;border:1px solid hsl(220,13%,91%);border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.stat__num{font-size:26px;font-weight:700;color:hsl(252,83%,57%)}
+.stat__label{font-size:12px;color:hsl(220,9%,46%);margin-top:2px}
+.tabs{display:flex;border-bottom:2px solid hsl(220,13%,91%);margin-bottom:0;background:#fff;border-radius:12px 12px 0 0;border:1px solid hsl(220,13%,91%);border-bottom:none;overflow:hidden}
+.tab{padding:13px 22px;font-size:13px;font-weight:500;color:hsl(220,9%,46%);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;border-top:none;border-left:none;border-right:none;white-space:nowrap}
+.tab:hover{color:hsl(252,83%,57%);background:hsl(252,83%,98%)}
+.tab.active{color:hsl(252,83%,57%);border-bottom-color:hsl(252,83%,57%);font-weight:600;background:#fff}
+.tab-body{background:#fff;border:1px solid hsl(220,13%,91%);border-top:none;border-radius:0 0 12px 12px;min-height:300px}
 .tab-panel{display:none}.tab-panel.active{display:block}
-.card{background:#fff;border-radius:8px;border:1px solid #e0e4ea;overflow:hidden}
 .tbl{width:100%;border-collapse:collapse}
-.tbl th{text-align:left;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.6px;padding:11px 16px;border-bottom:2px solid #e0e4ea;white-space:nowrap}
-.tbl td{padding:13px 16px;border-bottom:1px solid #f0f2f5;vertical-align:top;font-size:13px;line-height:1.5}
+.tbl th{text-align:left;font-size:11px;font-weight:700;color:hsl(220,9%,46%);text-transform:uppercase;letter-spacing:.6px;padding:11px 16px;border-bottom:2px solid hsl(220,13%,91%);white-space:nowrap}
+.tbl td{padding:13px 16px;border-bottom:1px solid hsl(220,14%,96%);vertical-align:top;font-size:13px;line-height:1.5}
 .tbl tr:last-child td{border-bottom:none}
-.tbl tr:hover td{background:#fafbfd}
+.tbl tr:hover td{background:hsl(252,83%,98%)}
 .tbl-wrap{overflow-x:auto}
-.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid #e0e4ea;font-size:13px;color:#888}
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid hsl(220,13%,91%);font-size:13px;color:hsl(220,9%,46%)}
 .pager{display:flex;gap:4px}
-.pager-btn{padding:4px 10px;border:1px solid #d0d5dd;border-radius:4px;background:#fff;font-size:12px;cursor:pointer;color:#333;font-weight:500}
-.pager-btn:hover:not(:disabled){background:#f4f5f7}
+.pager-btn{padding:4px 10px;border:1px solid hsl(220,13%,87%);border-radius:6px;background:#fff;font-size:12px;cursor:pointer;color:hsl(222,47%,11%);font-weight:500}
+.pager-btn:hover:not(:disabled){background:hsl(252,83%,96%);border-color:hsl(252,83%,57%);color:hsl(252,83%,57%)}
 .pager-btn:disabled{opacity:.4;cursor:default}
-.pager-btn.on{background:#0052cc;border-color:#0052cc;color:#fff}
-.empty-state{text-align:center;padding:60px 24px;color:#aaa}
-.empty-state svg{width:40px;height:40px;margin:0 auto 12px;display:block;color:#d0d5dd}
+.pager-btn.on{background:hsl(252,83%,57%);border-color:hsl(252,83%,57%);color:#fff}
+.empty-state{text-align:center;padding:60px 24px;color:hsl(220,9%,46%)}
+.empty-state svg{width:40px;height:40px;margin:0 auto 12px;display:block;color:hsl(220,13%,80%)}
 .empty-state p{font-size:13px;margin-top:6px}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.badge-element{background:#e6f0ff;color:#0052cc}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-element{background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
 .badge-general{background:#e6f9f0;color:#1a7f4b}
-.breadcrumb{color:#888;font-size:12px;max-width:280px}
-.selector{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:11px;color:#666;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.badge-bug{background:hsl(0,84%,93%);color:hsl(0,84%,40%)}
+.badge-copy{background:hsl(38,92%,92%);color:hsl(38,92%,30%)}
+.badge-question{background:hsl(217,91%,92%);color:hsl(217,91%,35%)}
+.badge-idea{background:hsl(142,71%,90%);color:hsl(142,71%,28%)}
+.badge-other{background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
+.breadcrumb{color:hsl(220,9%,46%);font-size:12px;max-width:280px}
+.selector{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:11px;color:hsl(220,9%,46%);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
 .comment-text{max-width:320px}
-.ts{color:#aaa;font-size:11px;white-space:nowrap}
+.ts{color:hsl(220,9%,46%);font-size:11px;white-space:nowrap}
 .field{margin-bottom:16px}
-.field label{display:block;font-size:13px;font-weight:600;color:#444;margin-bottom:6px}
-.input{width:100%;padding:8px 12px;border:1px solid #d0d5dd;border-radius:6px;font-size:14px;font-family:inherit;outline:none;background:#fff;color:#1a1a2e}
-.input:focus{border-color:#0052cc;box-shadow:0 0 0 3px rgba(0,82,204,.12)}
+.field label{display:block;font-size:13px;font-weight:600;color:hsl(222,47%,20%);margin-bottom:6px}
+.input{width:100%;padding:8px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff;color:hsl(222,47%,11%)}
+.input:focus{border-color:hsl(252,83%,57%);box-shadow:0 0 0 3px hsl(252,83%,90%)}
 textarea.input{resize:vertical;line-height:1.5}
-.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none}
-.btn-primary{background:#0052cc;color:#fff}.btn-primary:hover{background:#0040a8}
-.btn-secondary{background:#fff;color:#333;border:1px solid #d0d5dd}.btn-secondary:hover{background:#f4f5f7}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+.btn-primary{background:hsl(252,83%,57%);color:#fff}.btn-primary:hover{background:hsl(252,83%,48%)}
+.btn-secondary{background:#fff;color:hsl(222,47%,11%);border:1px solid hsl(220,13%,87%)}.btn-secondary:hover{background:hsl(252,83%,96%)}
 .btn-danger{background:#fff;color:#c0392b;border:1px solid #e0c0bd}.btn-danger:hover{background:#fdf2f2}
 .form-pad{padding:24px}
-.danger-zone{margin-top:28px;padding:16px;border:1px solid #fccfcf;border-radius:8px;background:#fffafa}
+.danger-zone{margin-top:28px;padding:16px;border:1px solid #fccfcf;border-radius:12px;background:#fffafa}
 .danger-zone__title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#c0392b;margin-bottom:10px}
-.alert{padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:16px;background:#e6f9f0;color:#1a7f4b;border:1px solid #b3e8cf;display:none}
-.filter-bar{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f2f5;background:#fafbfd}
-.filter-bar select{padding:5px 10px;border:1px solid #d0d5dd;border-radius:5px;font-size:13px;background:#fff;outline:none;cursor:pointer}
-.filter-bar select:focus{border-color:#0052cc}
-.ua-cell{font-size:11px;color:#aaa;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;background:#e6f9f0;color:#1a7f4b;border:1px solid #b3e8cf;display:none}
+.filter-bar{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid hsl(220,14%,96%);background:hsl(220,14%,98%)}
+.filter-bar select{padding:5px 10px;border:1px solid hsl(220,13%,87%);border-radius:6px;font-size:13px;background:#fff;outline:none;cursor:pointer}
+.filter-bar select:focus{border-color:hsl(252,83%,57%)}
+.ua-cell{font-size:11px;color:hsl(220,9%,46%);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,20,40,.45);z-index:1000;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
+.modal-backdrop.open{opacity:1}
+.modal{background:#fff;border-radius:16px;padding:28px 28px 24px;width:400px;max-width:calc(100vw - 32px);box-shadow:0 8px 40px rgba(0,0,0,.18);transform:translateY(8px) scale(.98);transition:transform .15s,opacity .15s;opacity:0}
+.modal-backdrop.open .modal{transform:none;opacity:1}
+.modal__icon{width:40px;height:40px;border-radius:50%;background:hsl(0,84%,95%);display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.modal__icon svg{width:20px;height:20px;color:hsl(0,84%,50%)}
+.modal h3{font-size:16px;font-weight:700;color:hsl(222,47%,11%);margin-bottom:8px}
+.modal p{font-size:13px;color:hsl(220,9%,46%);line-height:1.6;margin-bottom:22px}
+.modal__actions{display:flex;gap:10px;justify-content:flex-end}
 </style>
 </head>
 <body>
@@ -87,18 +100,22 @@ textarea.input{resize:vertical;line-height:1.5}
     <button class="tab active" data-tab="comments">Comments</button>
     <button class="tab" data-tab="log">Access Log</button>
     <button class="tab" data-tab="settings">Settings</button>
+    <button class="tab" data-tab="funnels">Funnels</button>
+    <button class="tab" data-tab="explanations">Explanations</button>
   </div>
   <div class="tab-body">
 
     <!-- Comments tab -->
     <div class="tab-panel active" id="tab-comments">
       <div class="filter-bar">
-        <label style="font-size:13px;font-weight:600;color:#555">Type:</label>
+        <label style="font-size:13px;font-weight:600;color:hsl(220,9%,46%)">Type:</label>
         <select id="type-filter">
           <option value="">All</option>
           <option value="general">General</option>
           <option value="element">Element</option>
         </select>
+        <div style="flex:1"></div>
+        <button class="btn btn-danger" style="font-size:12px;padding:5px 12px" onclick="clearAllComments()">Clear all comments</button>
       </div>
       <div class="tbl-wrap">
         <table class="tbl">
@@ -106,15 +123,15 @@ textarea.input{resize:vertical;line-height:1.5}
             <tr>
               <th>Email</th>
               <th>Type</th>
+              <th>Tag</th>
               <th>Element</th>
-              <th>Journey</th>
               <th>Comment</th>
               <th>Submitted</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="comments-body">
-            <tr><td colspan="7" style="text-align:center;padding:40px;color:#aaa">Loading…</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -136,13 +153,62 @@ textarea.input{resize:vertical;line-height:1.5}
             </tr>
           </thead>
           <tbody id="log-body">
-            <tr><td colspan="3" style="text-align:center;padding:40px;color:#aaa">Loading…</td></tr>
+            <tr><td colspan="3" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Loading…</td></tr>
           </tbody>
         </table>
       </div>
       <div class="pagination" id="log-pagination" style="display:none">
         <span id="log-info"></span>
         <div class="pager" id="log-pager"></div>
+      </div>
+    </div>
+
+    <!-- Funnels tab -->
+    <div class="tab-panel" id="tab-funnels">
+      <div id="funnels-loading" style="padding:40px;text-align:center;color:hsl(220,9%,46%)">Loading…</div>
+      <div id="funnels-empty" style="display:none;padding:40px;text-align:center;color:hsl(220,9%,46%)">
+        <p style="font-size:13px">No navigation data yet. Share the prototype link to start collecting sessions.</p>
+      </div>
+      <div id="funnels-content" style="display:none">
+
+        <!-- Panel 1: Page Funnel -->
+        <div style="margin-bottom:24px;padding:0 16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 10px">
+            <h3 style="font-size:13px;font-weight:700;color:hsl(222,47%,11%);margin:0">Page Funnel</h3>
+            <label style="font-size:12px;color:hsl(220,9%,46%);display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="funnel-unique"> Unique visitors only
+            </label>
+          </div>
+          <div class="tbl-wrap"><table class="tbl" id="funnel-table">
+            <thead><tr>
+              <th>Page</th>
+              <th>Sessions</th>
+              <th>% of total</th>
+              <th>Drop-off</th>
+            </tr></thead>
+            <tbody id="funnel-body"></tbody>
+          </table></div>
+        </div>
+
+        <!-- Panel 2: Session Journeys -->
+        <div style="margin-bottom:24px;padding:0 16px">
+          <h3 style="font-size:13px;font-weight:700;color:hsl(222,47%,11%);margin:0 0 10px">Session Journeys</h3>
+          <div id="journeys-list"></div>
+        </div>
+
+        <!-- Panel 3: Time on Page -->
+        <div style="margin-bottom:24px;padding:0 16px">
+          <h3 style="font-size:13px;font-weight:700;color:hsl(222,47%,11%);margin:0 0 10px">Time on Page</h3>
+          <div class="tbl-wrap"><table class="tbl" id="time-table">
+            <thead><tr>
+              <th>Page</th>
+              <th>Median time</th>
+              <th>Visits</th>
+            </tr></thead>
+            <tbody id="time-body"></tbody>
+          </table></div>
+        </div>
+
       </div>
     </div>
 
@@ -156,7 +222,7 @@ textarea.input{resize:vertical;line-height:1.5}
             <input class="input" id="proto-name" name="name" type="text" value="{{name}}" required>
           </div>
           <div class="field">
-            <label for="allowlist">Email allowlist <span style="font-weight:400;color:#999">(one per line)</span></label>
+            <label for="allowlist">Email allowlist <span style="font-weight:400;color:hsl(220,9%,46%)">(one per line)</span></label>
             <textarea class="input" id="allowlist" name="allowlist" rows="8">{{allowlist}}</textarea>
           </div>
           <div style="display:flex;gap:10px;margin-top:6px">
@@ -170,12 +236,47 @@ textarea.input{resize:vertical;line-height:1.5}
       </div>
     </div>
 
+    <!-- Explanations tab -->
+    <div class="tab-panel" id="tab-explanations">
+      <div class="tbl-wrap">
+        <table class="tbl" id="explanations-table">
+          <thead>
+            <tr>
+              <th>Selector</th>
+              <th>Explanation</th>
+              <th>Page</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="explanations-body">
+            <tr><td colspan="4" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div><!-- tab-body -->
+</div>
+
+<div class="modal-backdrop" id="confirm-modal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal__icon">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+    </div>
+    <h3 id="modal-title">Are you sure?</h3>
+    <p id="modal-body"></p>
+    <div class="modal__actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" id="modal-confirm" style="background:hsl(0,84%,50%);color:#fff;border-color:transparent">Delete</button>
+    </div>
+  </div>
 </div>
 
 <script>
 const PROTO_ID = '{{id}}';
+const SHARE_TOKEN = '{{shareToken}}';
 const PAGE_SIZE = 25;
+const TAG_COLOR = { bug:'hsl(0,84%,60%)', copy:'hsl(38,92%,50%)', question:'hsl(217,91%,60%)', idea:'hsl(142,71%,45%)', other:'hsl(252,83%,57%)' };
 
 // Tab switching
 document.querySelectorAll('.tab').forEach(btn => {
@@ -184,10 +285,11 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'funnels') loadFunnels();
+    if (btn.dataset.tab === 'explanations') loadExplanations();
   });
 });
 
-// Check for ?saved=1
 if (location.search.includes('saved=1')) {
   document.getElementById('save-alert').style.display = 'flex';
   setTimeout(() => document.getElementById('save-alert').style.display = 'none', 3000);
@@ -199,6 +301,12 @@ function esc(s) {
 
 function fmtDate(iso) {
   return new Date(iso).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+function tagBadge(tag) {
+  if (!tag) return '';
+  const label = tag.charAt(0).toUpperCase() + tag.slice(1);
+  return `<span class="badge badge-${tag}">${label}</span>`;
 }
 
 function renderPager(containerId, infoId, total, page, onPage) {
@@ -225,31 +333,39 @@ let commentType = '';
 
 async function loadComments(page) {
   commentsPage = page;
-  const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/comments', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE, sortingKey: 'created_at', sortingOrder: 'desc', filterValues: commentType ? {type: commentType} : {} })
-  });
-  const {data, totalCount} = await resp.json();
-  document.getElementById('stat-comments').textContent = totalCount;
+  try {
+    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/comments', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE, sortingKey: 'created_at', sortingOrder: 'desc', filterValues: commentType ? {type: commentType} : {} })
+    });
+    if (!resp.ok) { window.location.href = '/admin/login'; return; }
+    const {data, totalCount} = await resp.json();
+    document.getElementById('stat-comments').textContent = totalCount;
 
-  const tbody = document.getElementById('comments-body');
-  if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg><p>No comments yet</p></div></td></tr>`;
-    document.getElementById('comments-pagination').style.display = 'none';
-    return;
+    const tbody = document.getElementById('comments-body');
+    if (!data.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg><p>No comments yet</p></div></td></tr>`;
+      document.getElementById('comments-pagination').style.display = 'none';
+      return;
+    }
+    tbody.innerHTML = data.map(r => `
+      <tr id="comment-row-${r.id}">
+        <td style="white-space:nowrap">${esc(r.email)}</td>
+        <td><span class="badge badge-${r.type}">${r.type}</span></td>
+        <td>${tagBadge(r.tag)}</td>
+        <td>${r.element_label ? `<span style="font-weight:500">${esc(r.element_label)}</span><br><span class="selector" title="${esc(r.element_selector||'')}">${esc(r.element_selector||'')}</span>` : '<span style="color:hsl(220,13%,80%)">—</span>'}</td>
+        <td class="comment-text">${esc(r.comment)}</td>
+        <td class="ts">${fmtDate(r.created_at)}</td>
+        <td style="white-space:nowrap;display:flex;gap:6px;align-items:center">
+          ${r.type === 'element' ? `<a href="/p/${SHARE_TOKEN}?focus=${r.id}" target="_blank" class="btn btn-secondary" style="font-size:11px;padding:4px 8px;white-space:nowrap">View</a>` : ''}
+          <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="deleteComment('${r.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+    renderPager('comments-pager', 'comments-info', totalCount, page, 'loadComments');
+  } catch (e) {
+    document.getElementById('comments-body').innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Failed to load comments.</td></tr>`;
   }
-  tbody.innerHTML = data.map(r => `
-    <tr>
-      <td style="white-space:nowrap">${esc(r.email)}</td>
-      <td><span class="badge badge-${r.type}">${r.type}</span></td>
-      <td>${r.element_label ? `<span style="font-weight:500">${esc(r.element_label)}</span><br><span class="selector" title="${esc(r.element_selector||'')}">${esc(r.element_selector||'')}</span>` : '<span style="color:#ccc">—</span>'}</td>
-      <td class="breadcrumb">${r.breadcrumb_display ? esc(r.breadcrumb_display) : '<span style="color:#ccc">—</span>'}</td>
-      <td class="comment-text">${esc(r.comment)}</td>
-      <td class="ts">${fmtDate(r.created_at)}</td>
-      <td>${r.type === 'element' ? `<a href="/admin/prototypes/${PROTO_ID}/preview?comment=${r.id}" target="_blank" class="btn btn-secondary" style="font-size:11px;padding:4px 8px;white-space:nowrap">View in prototype</a>` : ''}</td>
-    </tr>
-  `).join('');
-  renderPager('comments-pager', 'comments-info', totalCount, page, 'loadComments');
 }
 
 document.getElementById('type-filter').addEventListener('change', e => {
@@ -285,7 +401,6 @@ async function loadLog(page) {
   renderPager('log-pager', 'log-info', totalCount, page, 'loadLog');
 }
 
-// Allowlist count
 async function loadAllowlistCount() {
   const resp = await fetch('/admin/prototypes/{{id}}/allowlist-count');
   if (resp.ok) {
@@ -300,10 +415,232 @@ async function deleteProto() {
   location.href = '/admin/prototypes';
 }
 
-// Init
 loadComments(1);
 loadLog(1);
 loadAllowlistCount();
+
+// Funnels
+let funnelsLoaded = false;
+
+function fmtDuration(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + 's';
+  return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+}
+
+function renderFunnelTable(data, uniqueOnly) {
+  const body = document.getElementById('funnel-body');
+  if (!data.funnel.length) {
+    body.innerHTML = '<tr><td colspan="4" style="color:hsl(220,9%,46%);text-align:center;padding:20px">No pages tracked yet.</td></tr>';
+    return;
+  }
+  const maxSessions = data.funnel[0].sessions || 1;
+  body.innerHTML = data.funnel.map((row, i) => {
+    const count = uniqueOnly
+      ? new Set(data.journeys.filter(j => j.pages.includes(row.page)).map(j => j.email)).size
+      : row.sessions;
+    const pct = maxSessions ? Math.round(count / maxSessions * 100) : 0;
+    const dropColor = row.dropPct > 30 ? 'color:hsl(0,84%,50%)' : 'color:hsl(220,9%,46%)';
+    return `<tr>
+      <td><code style="font-size:11px">${esc(row.page)}</code></td>
+      <td>${count}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="background:hsl(252,83%,57%);height:6px;border-radius:3px;width:${pct}%;min-width:2px;max-width:120px"></div>
+          <span>${pct}%</span>
+        </div>
+      </td>
+      <td style="${i === 0 ? 'color:hsl(220,9%,60%)' : dropColor}">${i === 0 ? '—' : row.dropPct + '%'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderFunnels(data) {
+  document.getElementById('funnels-loading').style.display = 'none';
+  if (!data.funnel.length && !data.journeys.length) {
+    document.getElementById('funnels-empty').style.display = 'block';
+    return;
+  }
+  const content = document.getElementById('funnels-content');
+  content.style.display = 'block';
+
+  renderFunnelTable(data, false);
+  document.getElementById('funnel-unique').addEventListener('change', e => {
+    renderFunnelTable(data, e.target.checked);
+  });
+
+  // Journeys
+  const jList = document.getElementById('journeys-list');
+  if (!data.journeys.length) {
+    jList.innerHTML = '<p style="font-size:13px;color:hsl(220,9%,46%);padding:8px 0">No sessions recorded yet.</p>';
+  } else {
+    jList.innerHTML = data.journeys.map(j => {
+      const pages = j.pages.map(p => `<code style="background:hsl(220,14%,96%);border:1px solid hsl(220,13%,87%);padding:1px 6px;border-radius:4px;font-size:11px">${esc(p)}</code>`).join(' <span style="color:hsl(220,9%,60%);font-size:12px">→</span> ');
+      const pin = j.hadComment ? ' <span title="Had comment">📌</span>' : '';
+      const ts = new Date(j.startedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      return `<div style="padding:10px 0;border-bottom:1px solid hsl(220,13%,91%);font-size:12px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <span style="color:hsl(252,83%,50%);font-weight:600;white-space:nowrap">${esc(j.email)}</span>
+        <span style="color:hsl(220,9%,46%);white-space:nowrap">${ts}</span>
+        <span style="flex:1">${pages}${pin}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Time on page
+  const tBody = document.getElementById('time-body');
+  if (!data.timeOnPage.length) {
+    tBody.innerHTML = '<tr><td colspan="3" style="color:hsl(220,9%,46%);text-align:center;padding:20px">Not enough data yet.</td></tr>';
+  } else {
+    tBody.innerHTML = data.timeOnPage.map(r => `
+      <tr>
+        <td><code style="font-size:11px">${esc(r.page)}</code></td>
+        <td>${fmtDuration(r.medianMs)}</td>
+        <td>${r.visits}</td>
+      </tr>
+    `).join('');
+  }
+}
+
+async function deleteComment(commentId) {
+  showModal(
+    'Delete comment?',
+    'This comment will be permanently removed and cannot be recovered.',
+    async () => {
+      await fetch('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId, { method: 'DELETE' });
+      document.getElementById('comment-row-' + commentId)?.remove();
+      const count = parseInt(document.getElementById('stat-comments').textContent, 10);
+      if (!isNaN(count)) document.getElementById('stat-comments').textContent = count - 1;
+    }
+  );
+}
+
+async function clearAllComments() {
+  showModal(
+    'Clear all comments?',
+    'Every comment on this prototype will be permanently deleted. This cannot be undone.',
+    async () => {
+      await fetch('/admin/prototypes/' + PROTO_ID + '/comments', { method: 'DELETE' });
+      loadComments(1);
+    }
+  );
+}
+
+let _modalCallback = null;
+function showModal(title, body, onConfirm) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = body;
+  _modalCallback = onConfirm;
+  const el = document.getElementById('confirm-modal');
+  el.style.display = 'flex';
+  requestAnimationFrame(() => el.classList.add('open'));
+}
+function closeModal() {
+  const el = document.getElementById('confirm-modal');
+  el.classList.remove('open');
+  el.addEventListener('transitionend', () => { el.style.display = 'none'; }, { once: true });
+}
+document.getElementById('modal-confirm').addEventListener('click', async () => {
+  closeModal();
+  if (_modalCallback) await _modalCallback();
+  _modalCallback = null;
+});
+
+async function loadFunnels() {
+  if (funnelsLoaded) return;
+  try {
+    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/funnels');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    renderFunnels(await resp.json());
+    funnelsLoaded = true;
+  } catch (e) {
+    document.getElementById('funnels-loading').textContent = 'Failed to load. Click Funnels tab to retry.';
+  }
+}
+
+// Explanations tab
+let explanationsLoaded = false;
+let adminExplanations = [];
+
+async function loadExplanations() {
+  if (explanationsLoaded) return;
+  try {
+    const resp = await fetch('/api/explanations/' + PROTO_ID);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    adminExplanations = await resp.json();
+    renderExplanations();
+    explanationsLoaded = true;
+  } catch (e) {
+    document.getElementById('explanations-body').innerHTML =
+      `<tr><td colspan="4" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Failed to load explanations.</td></tr>`;
+  }
+}
+
+function renderExplanations() {
+  const tbody = document.getElementById('explanations-body');
+  if (!adminExplanations.length) {
+    tbody.innerHTML = `<tr><td colspan="4">
+      <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><line x1="12" y1="8" x2="12" y2="12" stroke-width="1.5"/><line x1="12" y1="16" x2="12.01" y2="16" stroke-width="1.5"/></svg>
+        <p>No explanations yet. Open the prototype in Explain mode to add some.</p>
+      </div>
+    </td></tr>`;
+    return;
+  }
+  tbody.innerHTML = adminExplanations.map(ex => `
+    <tr id="exp-row-${ex.id}">
+      <td><span class="selector" title="${esc(ex.element_selector)}">${esc(ex.element_selector)}</span></td>
+      <td style="max-width:320px">${esc(ex.body.length > 80 ? ex.body.slice(0, 80) + '…' : ex.body)}</td>
+      <td class="ts">${esc(ex.page_url || '—')}</td>
+      <td style="white-space:nowrap;display:flex;gap:6px;align-items:center">
+        <button class="btn btn-secondary" style="font-size:11px;padding:4px 8px" onclick="editExplanation('${ex.id}')">Edit</button>
+        <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="deleteExplanation('${ex.id}','${esc(ex.element_selector)}')">Delete</button>
+      </td>
+    </tr>
+    <tr id="exp-edit-row-${ex.id}" style="display:none">
+      <td colspan="4" style="padding:12px 16px;background:hsl(220,14%,98%)">
+        <textarea class="input" id="exp-edit-ta-${ex.id}" rows="4" style="margin-bottom:8px">${esc(ex.body)}</textarea>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" style="font-size:12px;padding:5px 12px" onclick="saveExplanationEdit('${ex.id}')">Save</button>
+          <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="cancelExplanationEdit('${ex.id}')">Cancel</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function editExplanation(id) {
+  document.getElementById('exp-edit-row-' + id).style.display = '';
+  document.getElementById('exp-row-' + id).style.display = 'none';
+}
+
+function cancelExplanationEdit(id) {
+  document.getElementById('exp-edit-row-' + id).style.display = 'none';
+  document.getElementById('exp-row-' + id).style.display = '';
+}
+
+async function saveExplanationEdit(id) {
+  const body = document.getElementById('exp-edit-ta-' + id).value.trim();
+  if (!body) return;
+  await fetch('/api/explanations/' + id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  const idx = adminExplanations.findIndex(e => e.id === id);
+  if (idx !== -1) adminExplanations[idx].body = body;
+  renderExplanations();
+}
+
+function deleteExplanation(id, selector) {
+  showModal(
+    'Delete explanation?',
+    `The explanation for "${selector}" will be permanently removed.`,
+    async () => {
+      await fetch('/api/explanations/' + id, { method: 'DELETE' });
+      adminExplanations = adminExplanations.filter(e => e.id !== id);
+      renderExplanations();
+    }
+  );
+}
 </script>
 </body>
 </html>

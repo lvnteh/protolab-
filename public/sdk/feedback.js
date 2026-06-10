@@ -5,298 +5,922 @@
   const PROTO_ID = script.getAttribute('data-proto-id');
   const EMAIL = decodeURIComponent(script.getAttribute('data-email') || '');
 
+  const TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
+  const TAG_LABEL = { bug: 'Bug', copy: 'Copy', question: 'Question', idea: 'Idea', other: 'Other' };
+  const TAG_COLOR = {
+    bug:      'hsl(0,84%,60%)',
+    copy:     'hsl(38,92%,50%)',
+    question: 'hsl(217,91%,60%)',
+    idea:     'hsl(142,71%,45%)',
+    other:    'hsl(252,83%,57%)',
+  };
+  const CLUSTER_PX = 28;
+  const EDIT_WINDOW_MS = 5 * 60 * 1000;
+
+  /* ── styles ── */
   const STYLE = `
-    #__fb-panel {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 2147483647;
-      background: #fff; border-top: 2px solid #0052cc;
-      padding: 8px 16px; display: flex; align-items: center; gap: 10px;
+    #__fb-toolbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 2147483647;
+      height: 44px; background: #fff; border-bottom: 1px solid hsl(220,13%,91%);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; gap: 12px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px; box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
-      box-sizing: border-box;
+      font-size: 13px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
     }
-    #__fb-panel * { box-sizing: border-box; font-family: inherit; font-size: 13px; }
-    #__fb-text {
-      flex: 1; resize: none; border: 1px solid #c8d0d8; border-radius: 4px;
-      padding: 5px 8px; line-height: 1.4; outline: none; min-width: 0;
-      background: #fff; color: #333;
+    #__fb-toolbar-title { font-weight: 600; font-size: 13px; color: hsl(222,47%,11%); }
+    #__fb-mode-switcher {
+      display: inline-flex; border-radius: 8px; border: 1px solid hsl(220,13%,91%);
+      background: hsl(220,14%,96%); padding: 2px; gap: 0;
     }
-    #__fb-text:focus { border-color: #0052cc; box-shadow: 0 0 0 2px rgba(0,82,204,0.15); }
-    #__fb-submit {
-      background: #0052cc; color: #fff; border: none; border-radius: 4px;
-      padding: 6px 14px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
-      font-weight: 600;
-    }
-    #__fb-submit:hover { background: #003fa3; }
-    #__fb-mode-label {
-      display: flex; align-items: center; gap: 6px; white-space: nowrap;
-      flex-shrink: 0; cursor: pointer; user-select: none;
-    }
-    #__fb-mode-label span { color: #555; }
-    #__fb-mode-toggle {
-      width: 36px; height: 20px; background: #c8d0d8; border-radius: 10px;
-      position: relative; cursor: pointer; transition: background 0.2s;
-      flex-shrink: 0; border: none; display: inline-block;
-    }
-    #__fb-mode-toggle::after {
-      content: ''; position: absolute; width: 14px; height: 14px; background: #fff;
-      border-radius: 50%; top: 3px; left: 3px; transition: left 0.2s;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    #__fb-mode-toggle.active { background: #0052cc; }
-    #__fb-mode-toggle.active::after { left: 19px; }
-    #__fb-toast {
-      position: fixed; bottom: 60px; right: 16px; z-index: 2147483647;
-      background: #1a7f4b; color: #fff; border-radius: 6px; padding: 8px 14px;
+    .fb-mode-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; border-radius: 6px; border: none; cursor: pointer;
+      font-size: 12px; font-weight: 500; background: none;
+      color: hsl(220,9%,46%); transition: background .15s, color .15s;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px; opacity: 0; transition: opacity 0.2s; pointer-events: none;
     }
-    #__fb-toast.visible { opacity: 1; }
-    body.__fb-mode * { cursor: crosshair !important; }
-    #__fb-popup {
-      position: fixed; z-index: 2147483646;
-      background: #fff; border: 1px solid #0052cc; border-radius: 8px;
-      padding: 14px; width: 260px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    .fb-mode-btn:hover { color: hsl(222,47%,11%); }
+    .fb-mode-btn.active-view    { background: #fff; color: hsl(222,47%,11%); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .fb-mode-btn.active-comment { background: hsl(252,83%,57%); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .fb-mode-btn.active-review  { background: #fff; color: hsl(222,47%,11%); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .fb-mode-btn.active-explain { background: hsl(38,92%,50%); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+    #__fb-comment-banner {
+      position: fixed; top: 44px; left: 0; right: 0; z-index: 2147483646;
+      background: hsl(252,83%,57%); color: #fff; text-align: center;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px;
+      font-size: 12px; padding: 6px; pointer-events: none; display: none;
     }
-    #__fb-popup * { box-sizing: border-box; font-family: inherit; font-size: 13px; }
-    .__fb-popup-textarea {
-      width: 100%; resize: none; border: 1px solid #c8d0d8; border-radius: 4px;
-      padding: 5px 8px; line-height: 1.4; outline: none; background: #fff; color: #333;
-    }
-    .__fb-popup-textarea:focus { border-color: #0052cc; box-shadow: 0 0 0 2px rgba(0,82,204,0.15); }
-    .__fb-popup-actions { display: flex; gap: 8px; margin-top: 8px; }
-    .__fb-btn {
-      border: 1px solid #c8d0d8; background: #fff; color: #333;
-      border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: 500;
-    }
-    .__fb-btn:hover { background: #f5f5f5; }
-    .__fb-btn-primary { background: #0052cc; color: #fff; border-color: #0052cc; font-weight: 600; }
-    .__fb-btn-primary:hover { background: #003fa3; }
+    body.__fb-comment-mode #__fb-comment-banner { display: block; }
+    body.__fb-comment-mode { cursor: crosshair !important; }
+    body.__fb-comment-mode * { cursor: crosshair !important; }
+
+    /* pin layer */
     #__fb-pins {
-      position: fixed; top: 0; left: 0; width: 0; height: 0; pointer-events: none;
-      z-index: 2147483639;
+      position: fixed; top: 0; left: 0; width: 0; height: 0;
+      pointer-events: none; z-index: 2147483639;
     }
-    .__fb-pin {
-      position: absolute; width: 22px; height: 22px;
-      background: #0052cc; border-radius: 50%;
+    .fb-pin {
+      position: absolute; width: 24px; height: 24px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       color: #fff; font-size: 11px; font-weight: 700;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      box-shadow: 0 2px 6px rgba(0,82,204,0.4);
+      box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 2px #fff;
       cursor: pointer; pointer-events: auto;
-      transition: transform 0.15s;
+      transform: translate(-50%,-50%);
     }
-    .__fb-pin:hover { transform: scale(1.15); }
-    #__fb-tooltip {
-      position: fixed; z-index: 2147483646;
-      background: #fff; border: 1px solid #e0e4ea; border-radius: 8px;
-      padding: 10px 12px; width: 220px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    .fb-pin:hover { transform: translate(-50%,-50%); }
+    .fb-pin--draft { opacity: .8; animation: fb-pulse .8s ease-in-out infinite; }
+    .fb-pin--focus { animation: fb-focus-pulse 1.2s ease-in-out 3; }
+    .fb-pin--dim { opacity: .25; transition: opacity .3s; }
+    .fb-cluster--dim { opacity: .25; transition: opacity .3s; }
+    @keyframes fb-pulse { 0%,100% { transform: translate(-50%,-50%) scale(1); } 50% { transform: translate(-50%,-50%) scale(1.2); } }
+    @keyframes fb-focus-pulse { 0%,100% { box-shadow: 0 2px 8px rgba(0,0,0,.25),0 0 0 2px #fff; } 50% { box-shadow: 0 2px 8px rgba(0,0,0,.25),0 0 0 8px hsl(252,83%,70%); } }
+
+    .fb-cluster {
+      position: absolute; width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: hsl(222,47%,11%); color: #fff; font-size: 12px; font-weight: 700;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 12px; line-height: 1.5; pointer-events: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 2px #fff;
+      cursor: pointer; pointer-events: auto; transform: translate(-50%,-50%);
     }
-    .__fb-tooltip-email { font-weight: 700; color: #0052cc; margin-bottom: 3px; }
-    .__fb-tooltip-comment { color: #333; margin-bottom: 3px; }
-    .__fb-tooltip-date { color: #aaa; font-size: 11px; }
+    .fb-cluster:hover { transform: translate(-50%,-50%); }
+
+    /* pin popover */
+    .fb-popover {
+      position: absolute; left: calc(100% + 8px); top: -4px;
+      width: 240px; background: #fff;
+      border: 1px solid hsl(220,13%,91%); border-radius: 12px;
+      padding: 12px; font-size: 12px; line-height: 1.5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      box-shadow: 0 4px 16px rgba(0,0,0,.12);
+      pointer-events: auto; z-index: 10;
+    }
+    .fb-popover__tag {
+      display: inline-block; padding: 2px 8px; border-radius: 20px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; color: #fff; margin-bottom: 6px;
+    }
+    .fb-popover__body { color: hsl(222,47%,11%); white-space: pre-wrap; word-break: break-word; }
+    .fb-popover__meta { font-size: 11px; color: hsl(220,9%,46%); margin-top: 4px; }
+    .fb-popover__actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid hsl(220,13%,91%); }
+    .fb-popover__timer { font-size: 10px; color: hsl(220,9%,46%); }
+    .fb-popover__btns { display: flex; gap: 4px; }
+    .fb-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; border-radius: 6px; cursor: pointer; background: none; color: hsl(220,9%,46%); }
+    .fb-icon-btn:hover { background: hsl(220,14%,93%); color: hsl(222,47%,11%); }
+    .fb-icon-btn--danger:hover { background: hsl(0,84%,95%); color: hsl(0,84%,50%); }
+    .fb-popover textarea {
+      width: 100%; resize: none; border: 1px solid hsl(220,13%,87%); border-radius: 8px;
+      padding: 6px 8px; font-size: 12px; font-family: inherit; outline: none;
+      background: #fff; color: hsl(222,47%,11%); line-height: 1.4; margin-top: 6px;
+    }
+    .fb-popover textarea:focus { border-color: hsl(252,83%,57%); box-shadow: 0 0 0 3px hsl(252,83%,90%); }
+    .fb-popover__save { margin-top: 6px; display: flex; gap: 6px; justify-content: flex-end; }
+    .fb-btn-sm {
+      padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: none; font-family: inherit;
+    }
+    .fb-btn-primary { background: hsl(252,83%,57%); color: #fff; }
+    .fb-btn-primary:hover { background: hsl(252,83%,48%); }
+    .fb-btn-primary:disabled { opacity: .5; cursor: default; }
+    .fb-btn-ghost { background: none; color: hsl(220,9%,46%); border: 1px solid hsl(220,13%,87%); }
+    .fb-btn-ghost:hover { background: hsl(220,14%,93%); }
+
+    /* draft card */
+    #__fb-draft-card {
+      position: fixed; right: 16px; top: 60px; width: 296px;
+      background: #fff; border: 1px solid hsl(220,13%,91%); border-radius: 12px;
+      padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px; z-index: 2147483645; display: none;
+    }
+    #__fb-draft-card.visible { display: block; }
+    .fb-draft-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .fb-draft-title { font-weight: 600; font-size: 13px; color: hsl(222,47%,11%); }
+    .fb-draft-close { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; border-radius: 6px; cursor: pointer; background: none; color: hsl(220,9%,46%); }
+    .fb-draft-close:hover { background: hsl(220,14%,93%); }
+    .fb-draft-selector { font-size: 11px; color: hsl(220,9%,46%); margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fb-tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .fb-tag-pill {
+      padding: 3px 10px; border-radius: 20px; border: 1.5px solid; font-size: 11px;
+      font-weight: 600; cursor: pointer; background: none; font-family: inherit;
+      transition: background .12s, color .12s;
+    }
+    .fb-tag-pill.active { color: #fff !important; }
+    #__fb-draft-textarea {
+      width: 100%; resize: none; border: 1px solid hsl(220,13%,87%); border-radius: 8px;
+      padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none;
+      background: #fff; color: hsl(222,47%,11%); line-height: 1.5;
+    }
+    #__fb-draft-textarea:focus { border-color: hsl(252,83%,57%); box-shadow: 0 0 0 3px hsl(252,83%,90%); }
+    #__fb-draft-submit {
+      margin-top: 10px; width: 100%; padding: 8px; border-radius: 8px; border: none;
+      background: hsl(252,83%,57%); color: #fff; font-size: 13px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+    }
+    #__fb-draft-submit:hover { background: hsl(252,83%,48%); }
+    #__fb-draft-submit:disabled { opacity: .5; cursor: default; }
+
+    /* toast */
+    #__fb-toast {
+      position: fixed; bottom: 24px; right: 16px; z-index: 2147483647;
+      background: hsl(142,71%,30%); color: #fff; border-radius: 8px; padding: 10px 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
+    #__fb-toast.visible { opacity: 1; }
+
+    /* ── explain mode ── */
+    #__fb-explain-banner {
+      position: fixed; top: 44px; left: 0; right: 0; z-index: 2147483646;
+      background: hsl(38,92%,50%); color: #fff; text-align: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 12px; padding: 6px; pointer-events: none; display: none;
+    }
+    body.__fb-explain-mode #__fb-explain-banner { display: block; }
+
+    #__fb-explains {
+      position: fixed; top: 0; left: 0; width: 0; height: 0;
+      pointer-events: none; z-index: 2147483638;
+    }
+    .fb-explain-marker {
+      position: absolute; width: 18px; height: 18px; border-radius: 50%;
+      background: hsl(38,92%,50%); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; font-family: serif;
+      box-shadow: 0 1px 4px rgba(0,0,0,.25), 0 0 0 2px #fff;
+      cursor: pointer; pointer-events: auto;
+      transform: translate(-50%, -50%);
+    }
+    .fb-explain-marker:hover { transform: translate(-50%,-50%) scale(1.15); }
+
+    .fb-explain-popover {
+      position: absolute; left: calc(100% + 8px); top: -4px;
+      width: 260px; background: #fff;
+      border: 1px solid hsl(220,13%,91%); border-radius: 12px;
+      overflow: hidden;
+      font-size: 12px; line-height: 1.5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      box-shadow: 0 4px 16px rgba(0,0,0,.12);
+      pointer-events: auto; z-index: 10;
+    }
+    .fb-explain-popover__head {
+      display: flex; align-items: center; gap: 6px;
+      background: hsl(38,92%,50%); color: #fff;
+      padding: 6px 10px; font-size: 11px; font-weight: 700;
+    }
+    .fb-explain-popover__body {
+      padding: 10px; color: hsl(222,47%,11%);
+      white-space: pre-wrap; word-break: break-word;
+    }
+
+    #__fb-explain-card {
+      position: fixed; right: 16px; top: 60px; width: 296px;
+      background: #fff; border: 1px solid hsl(220,13%,91%); border-radius: 12px;
+      padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px; z-index: 2147483645; display: none;
+    }
+    #__fb-explain-card.visible { display: block; }
+    .fb-explain-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .fb-explain-card-title { font-weight: 600; font-size: 13px; color: hsl(222,47%,11%); }
+    .fb-explain-card-close { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; border-radius: 6px; cursor: pointer; background: none; color: hsl(220,9%,46%); }
+    .fb-explain-card-close:hover { background: hsl(220,14%,93%); }
+    #__fb-explain-selector { font-size: 11px; color: hsl(220,9%,46%); margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #__fb-explain-textarea {
+      width: 100%; resize: vertical; border: 1px solid hsl(220,13%,87%); border-radius: 8px;
+      padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none;
+      background: #fff; color: hsl(222,47%,11%); line-height: 1.5; min-height: 80px;
+    }
+    #__fb-explain-textarea:focus { border-color: hsl(38,92%,50%); box-shadow: 0 0 0 3px hsl(38,92%,85%); }
+    .fb-explain-foot { margin-top: 10px; display: flex; gap: 6px; justify-content: flex-end; }
+    #__fb-explain-delete { background: none; border: 1px solid #e0c0bd; color: #c0392b; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; margin-right: auto; }
+    #__fb-explain-delete:hover { background: #fdf2f2; }
   `;
 
   const styleEl = document.createElement('style');
   styleEl.textContent = STYLE;
   document.head.appendChild(styleEl);
 
-  // --- Pin layer ---
+  /* ── adjust body to not be hidden behind toolbar ── */
+  document.body.style.paddingTop = '44px';
+
+  /* ── toolbar ── */
+  const toolbar = document.createElement('div');
+  toolbar.id = '__fb-toolbar';
+  toolbar.innerHTML = `
+    <span id="__fb-toolbar-title"></span>
+    <div id="__fb-mode-switcher">
+      <button class="fb-mode-btn active-view" data-mode="view">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        View
+      </button>
+      <button class="fb-mode-btn" data-mode="comment">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Comment
+      </button>
+      <button class="fb-mode-btn" data-mode="review">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        Review
+      </button>
+      <button class="fb-mode-btn" data-mode="explain">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Explain
+      </button>
+    </div>
+  `;
+  document.body.insertBefore(toolbar, document.body.firstChild);
+
+  const commentBanner = document.createElement('div');
+  commentBanner.id = '__fb-comment-banner';
+  commentBanner.textContent = 'Click any element to leave a comment · Esc to exit';
+  document.body.insertBefore(commentBanner, toolbar.nextSibling);
+
+  const explainBanner = document.createElement('div');
+  explainBanner.id = '__fb-explain-banner';
+  explainBanner.textContent = 'Hover any element to see its explanation · Click to add or edit · Esc to exit';
+  document.body.insertBefore(explainBanner, commentBanner.nextSibling);
+
+  /* ── pin layer ── */
   const pinContainer = document.createElement('div');
   pinContainer.id = '__fb-pins';
   document.body.appendChild(pinContainer);
-  document.body.style.paddingBottom = '56px';
 
-  let pinData = []; // [{ id, email, element_selector, comment, created_at, order, el, pin, offset }]
-  let rafId = null;
+  /* ── explain layer ── */
+  const explainContainer = document.createElement('div');
+  explainContainer.id = '__fb-explains';
+  document.body.appendChild(explainContainer);
 
-  function repositionPins() {
-    pinData.forEach(p => {
-      if (!p.el || !p.pin) return;
-      try {
-        const rect = p.el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return;
-        p.pin.style.left = (rect.right - 11 - p.offset * 26) + 'px';
-        p.pin.style.top  = (rect.top  - 11) + 'px';
-      } catch (e) { /* element removed */ }
-    });
-    rafId = requestAnimationFrame(repositionPins);
-  }
-
-  function renderPins(comments) {
-    hideTooltip();
-    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-    pinContainer.innerHTML = '';
-    pinData = [];
-
-    const selectorOffset = {};
-
-    comments.forEach(c => {
-      let el = null;
-      try { el = document.querySelector(c.element_selector); } catch (e) {}
-      if (!el) return;
-
-      const offset = selectorOffset[c.element_selector] || 0;
-      selectorOffset[c.element_selector] = offset + 1;
-
-      const pin = document.createElement('div');
-      pin.className = '__fb-pin';
-      pin.textContent = c.order;
-      pin.dataset.commentId = c.id;
-      pinContainer.appendChild(pin);
-
-      pinData.push({ ...c, el, pin, offset });
-
-      pin.addEventListener('click', (e) => {
-        e.stopPropagation();
-        showTooltip(c, pin);
-      });
-    });
-
-    if (pinData.length > 0) rafId = requestAnimationFrame(repositionPins);
-  }
-
-  // --- Tooltip ---
-  let tooltipEl = null;
-
-  function showTooltip(c, pin) {
-    hideTooltip();
-    tooltipEl = document.createElement('div');
-    tooltipEl.id = '__fb-tooltip';
-    const date = new Date(c.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    tooltipEl.innerHTML = `
-      <div class="__fb-tooltip-email">${escHtml(c.email)}</div>
-      <div class="__fb-tooltip-comment">${escHtml(c.comment)}</div>
-      <div class="__fb-tooltip-date">${date}</div>
-    `;
-    pinContainer.appendChild(tooltipEl);
-    const rect = pin.getBoundingClientRect();
-    const rawLeft = rect.left - 99;
-    const rawTop = rect.top - 90;
-    tooltipEl.style.left = Math.max(4, Math.min(rawLeft, window.innerWidth - 224)) + 'px';
-    tooltipEl.style.top  = (rawTop < 4 ? rect.bottom + 4 : rawTop) + 'px';
-  }
-
-  function hideTooltip() {
-    if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
-  }
-
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.__fb-pin')) hideTooltip();
-  });
-
-  async function loadPins() {
-    try {
-      const resp = await fetch('/api/comments/' + PROTO_ID, { credentials: 'include' });
-      if (resp.ok) renderPins(await resp.json());
-    } catch (e) {}
-  }
-
-  // --- Bottom panel ---
-  const panel = document.createElement('div');
-  panel.id = '__fb-panel';
-  panel.innerHTML = `
-    <textarea id="__fb-text" rows="1" placeholder="General comment about this screen..."></textarea>
-    <button type="button" id="__fb-submit">Submit</button>
-    <label id="__fb-mode-label">
-      <div id="__fb-mode-toggle"></div>
-      <span>Pin Mode</span>
-    </label>
+  /* ── draft card ── */
+  const draftCard = document.createElement('div');
+  draftCard.id = '__fb-draft-card';
+  draftCard.innerHTML = `
+    <div class="fb-draft-header">
+      <span class="fb-draft-title">New comment</span>
+      <button class="fb-draft-close" id="__fb-draft-close">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="fb-draft-selector" id="__fb-draft-selector"></div>
+    <div class="fb-tag-row" id="__fb-tag-row">
+      ${TAGS.map(t => `<button class="fb-tag-pill" data-tag="${t}" style="border-color:${TAG_COLOR[t]};color:${TAG_COLOR[t]}">${TAG_LABEL[t]}</button>`).join('')}
+    </div>
+    <textarea id="__fb-draft-textarea" rows="4" placeholder="What's your feedback?"></textarea>
+    <button id="__fb-draft-submit" disabled>Post comment</button>
   `;
-  document.body.appendChild(panel);
+  document.body.appendChild(draftCard);
 
+  /* ── explain edit card ── */
+  const explainCard = document.createElement('div');
+  explainCard.id = '__fb-explain-card';
+  explainCard.innerHTML = `
+    <div class="fb-explain-card-header">
+      <span class="fb-explain-card-title" id="__fb-explain-card-title">Add explanation</span>
+      <button class="fb-explain-card-close" id="__fb-explain-close">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="__fb-explain-selector"></div>
+    <textarea id="__fb-explain-textarea" rows="5" placeholder="Describe this element: user story, Gherkin, notes…"></textarea>
+    <div class="fb-explain-foot">
+      <button id="__fb-explain-delete" style="display:none">Delete</button>
+      <button class="fb-btn-sm fb-btn-ghost" id="__fb-explain-cancel">Cancel</button>
+      <button class="fb-btn-sm fb-btn-primary" id="__fb-explain-save" disabled>Save</button>
+    </div>
+  `;
+  document.body.appendChild(explainCard);
+
+  /* ── toast ── */
   const toast = document.createElement('div');
   toast.id = '__fb-toast';
-  toast.textContent = 'Feedback submitted.';
   document.body.appendChild(toast);
 
-  document.getElementById('__fb-submit').addEventListener('click', async () => {
-    const text = document.getElementById('__fb-text').value.trim();
-    if (!text) return;
+  /* ── helpers ── */
+  function currentPageKey() {
+    if (location.hash && location.hash.length > 1) return location.hash.slice(1);
+    return location.pathname + location.search;
+  }
+  function pageKeyOf(url) {
     try {
-      await postComment({ type: 'general', comment: text, pageUrl: location.href });
-      document.getElementById('__fb-text').value = '';
-      showToast('Feedback submitted.');
-    } catch (e) {
-      showToast('Failed to submit. Please try again.', true);
+      const u = new URL(url);
+      if (u.hash && u.hash.length > 1) return u.hash.slice(1);
+      return u.pathname + u.search;
+    } catch (_) { return url; }
+  }
+
+  /* ── state ── */
+  let mode = 'view';
+  let pins = [];          // [{id,email,element_selector,comment,created_at,order,tag,x_pct,y_pct,page_url}]
+  let pinPositions = {};  // {id: {x,y,visible}}
+  let pinElements = {};   // {id: domElement} — persistent map for RAF repositioning
+  let clusterElements = []; // cluster bubble elements for dimming
+  let openPinId = null;
+  let openClusterKey = null;
+  let draft = null;       // {selector, xPct, yPct, tag}
+  let rafId = null;
+  let editingPinId = null;
+  let unpinActive = null; // callback to close whichever pin is currently pinned open
+  let navHistory = [];   // page URLs visited this session, for breadcrumb
+  let explanations = [];    // [{id,element_selector,x_pct,y_pct,page_url,body}]
+  let explainMarkerEls = {}; // {id: domElement}
+  let explainDraft = null;   // {selector, xPct, yPct, existingId|null}
+  let now = Date.now();
+
+  setInterval(() => { now = Date.now(); }, 1000);
+
+  /* ── mode switching ── */
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.fb-mode-btn').forEach(btn => {
+      const bm = btn.dataset.mode;
+      btn.className = 'fb-mode-btn' + (bm === m ? ` active-${m}` : '');
+    });
+    document.body.classList.toggle('__fb-comment-mode', m === 'comment');
+    document.body.classList.toggle('__fb-explain-mode', m === 'explain');
+    if (m !== 'comment') closeDraft();
+    if (m !== 'explain') closeExplainCard();
+    renderPinLayer();
+    renderExplainLayer();
+  }
+
+  toolbar.querySelectorAll('.fb-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (unpinActive) { unpinActive(); unpinActive = null; return; }
+      if (draft) { closeDraft(); return; }
+      if (explainDraft) { closeExplainCard(); return; }
+      if (mode !== 'view') setMode('view');
     }
   });
 
-  // --- Pin mode toggle ---
-  let pinModeActive = false;
-  const toggleBtn = document.getElementById('__fb-mode-toggle');
-  let popup = null;
+  /* ── load pins ── */
+  async function loadPins() {
+    try {
+      const resp = await fetch('/api/comments/' + PROTO_ID, { credentials: 'include' });
+      if (resp.ok) {
+        pins = await resp.json();
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          renderPinLayer();
+          if (focusId) focusPin(focusId);
+        }));
+      }
+    } catch (e) {}
+  }
 
-  document.getElementById('__fb-mode-label').addEventListener('click', () => {
-    pinModeActive = !pinModeActive;
-    toggleBtn.classList.toggle('active', pinModeActive);
-    document.body.classList.toggle('__fb-mode', pinModeActive);
-    if (!pinModeActive) closePopup();
+  async function loadExplanations() {
+    try {
+      const resp = await fetch('/api/explanations/' + PROTO_ID, { credentials: 'include' });
+      if (resp.ok) {
+        explanations = await resp.json();
+        renderExplainLayer();
+      }
+    } catch (e) {}
+  }
+
+  function renderExplainLayer() {
+    explainContainer.innerHTML = '';
+    explainMarkerEls = {};
+    if (mode !== 'explain') return;
+
+    explanations.forEach(ex => {
+      if (ex.page_url && pageKeyOf(ex.page_url) !== currentPageKey()) return;
+      let el;
+      try { el = document.querySelector(ex.element_selector); } catch (_) { return; }
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) return;
+
+      const mx = r.right;
+      const my = r.top;
+
+      const marker = document.createElement('div');
+      marker.className = 'fb-explain-marker';
+      marker.style.cssText = `left:${mx}px;top:${my}px`;
+      marker.textContent = 'ℹ';
+
+      let popoverEl = null;
+
+      const showPopover = () => {
+        if (popoverEl) return;
+        popoverEl = document.createElement('div');
+        popoverEl.className = 'fb-explain-popover';
+        popoverEl.innerHTML = `
+          <div class="fb-explain-popover__head">
+            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Explanation
+          </div>
+          <div class="fb-explain-popover__body">${escHtml(ex.body)}</div>
+        `;
+        popoverEl.addEventListener('mouseleave', e => {
+          if (e.relatedTarget && marker.contains(e.relatedTarget)) return;
+          hidePopover();
+        });
+        marker.appendChild(popoverEl);
+      };
+
+      const hidePopover = () => {
+        if (popoverEl) { popoverEl.remove(); popoverEl = null; }
+      };
+
+      marker.addEventListener('mouseenter', showPopover);
+      marker.addEventListener('mouseleave', e => {
+        if (e.relatedTarget && (marker.contains(e.relatedTarget) || (popoverEl && popoverEl.contains(e.relatedTarget)))) return;
+        hidePopover();
+      });
+
+      explainContainer.appendChild(marker);
+      explainMarkerEls[ex.id] = marker;
+    });
+  }
+
+  function openExplainCard(selector, xPct, yPct) {
+    const existing = explanations.find(e =>
+      e.element_selector === selector &&
+      (e.page_url ? pageKeyOf(e.page_url) === currentPageKey() : true)
+    );
+    explainDraft = { selector, xPct, yPct, existingId: existing ? existing.id : null };
+    document.getElementById('__fb-explain-card-title').textContent = existing ? 'Edit explanation' : 'Add explanation';
+    document.getElementById('__fb-explain-selector').textContent = selector;
+    document.getElementById('__fb-explain-textarea').value = existing ? existing.body : '';
+    document.getElementById('__fb-explain-save').disabled = !existing;
+    document.getElementById('__fb-explain-delete').style.display = existing ? '' : 'none';
+    explainCard.classList.add('visible');
+    document.getElementById('__fb-explain-textarea').focus();
+  }
+
+  function closeExplainCard() {
+    explainDraft = null;
+    explainCard.classList.remove('visible');
+  }
+
+  document.getElementById('__fb-explain-close').addEventListener('click', closeExplainCard);
+  document.getElementById('__fb-explain-cancel').addEventListener('click', closeExplainCard);
+
+  document.getElementById('__fb-explain-textarea').addEventListener('input', e => {
+    document.getElementById('__fb-explain-save').disabled = !e.target.value.trim();
   });
 
-  document.addEventListener('click', (e) => {
-    if (!pinModeActive) return;
-    if (e.target.closest('#__fb-panel') || e.target.closest('#__fb-popup') || e.target.closest('.__fb-pin')) return;
-    e.preventDefault();
-    e.stopPropagation();
+  document.getElementById('__fb-explain-save').addEventListener('click', async () => {
+    if (!explainDraft) return;
+    const body = document.getElementById('__fb-explain-textarea').value.trim();
+    if (!body) return;
+    const saveBtn = document.getElementById('__fb-explain-save');
+    saveBtn.disabled = true;
+    try {
+      if (explainDraft.existingId) {
+        await fetch('/api/explanations/' + explainDraft.existingId, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body }),
+          credentials: 'include',
+        });
+        const idx = explanations.findIndex(e => e.id === explainDraft.existingId);
+        if (idx !== -1) explanations[idx].body = body;
+      } else {
+        const resp = await fetch('/api/explanations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prototypeId: PROTO_ID,
+            elementSelector: explainDraft.selector,
+            xPct: explainDraft.xPct,
+            yPct: explainDraft.yPct,
+            pageUrl: location.href,
+            body,
+          }),
+          credentials: 'include',
+        });
+        const { id } = await resp.json();
+        explanations.push({
+          id, element_selector: explainDraft.selector,
+          x_pct: explainDraft.xPct, y_pct: explainDraft.yPct,
+          page_url: location.href, body,
+        });
+      }
+      closeExplainCard();
+      showToast('Explanation saved.');
+      renderExplainLayer();
+    } catch (_) {
+      showToast('Failed to save.', true);
+      saveBtn.disabled = false;
+    }
+  });
+
+  document.getElementById('__fb-explain-delete').addEventListener('click', async () => {
+    if (!explainDraft?.existingId) return;
+    try {
+      await fetch('/api/explanations/' + explainDraft.existingId, {
+        method: 'DELETE', credentials: 'include',
+      });
+      explanations = explanations.filter(e => e.id !== explainDraft.existingId);
+      closeExplainCard();
+      showToast('Explanation deleted.');
+      renderExplainLayer();
+    } catch (_) {
+      showToast('Failed to delete.', true);
+    }
+  });
+
+  function focusPin(id) {
+    const pin = pinElements[id];
+    if (!pin) { requestAnimationFrame(() => focusPin(id)); return; }
+    Object.entries(pinElements).forEach(([pid, el]) => {
+      if (pid !== id) el.classList.add('fb-pin--dim');
+    });
+    clusterElements.forEach(el => el.classList.add('fb-cluster--dim'));
+    pin.classList.add('fb-pin--focus');
+    const pos = pinPositions[id];
+    if (pos) window.scrollTo({ top: Math.max(0, pos.y - window.innerHeight / 2), behavior: 'smooth' });
+    pin.addEventListener('animationend', () => {
+      pin.classList.remove('fb-pin--focus');
+      Object.values(pinElements).forEach(el => el.classList.remove('fb-pin--dim'));
+      clusterElements.forEach(el => el.classList.remove('fb-cluster--dim'));
+    }, { once: true });
+  }
+
+  /* ── pin position polling ── */
+  function recomputePositions() {
+    const map = {};
+    pins.forEach(p => {
+      if (!p.element_selector) { map[p.id] = { x: 0, y: 0, visible: false }; return; }
+      if (p.page_url && pageKeyOf(p.page_url) !== currentPageKey()) { map[p.id] = { x: 0, y: 0, visible: false }; return; }
+      try {
+        const el = document.querySelector(p.element_selector);
+        if (!el) { map[p.id] = { x: 0, y: 0, visible: false }; return; }
+        const r = el.getBoundingClientRect();
+        const ox = typeof p.x_pct === 'number' ? p.x_pct : 0.5;
+        const oy = typeof p.y_pct === 'number' ? p.y_pct : 0.5;
+        map[p.id] = { visible: r.width > 0 || r.height > 0, x: r.left + r.width * ox, y: r.top + r.height * oy };
+      } catch (_) { map[p.id] = { x: 0, y: 0, visible: false }; }
+    });
+    if (draft?.selector) {
+      try {
+        const el = document.querySelector(draft.selector);
+        if (el) {
+          const r = el.getBoundingClientRect();
+          map['__draft__'] = { visible: true, x: r.left + r.width * draft.xPct, y: r.top + r.height * draft.yPct };
+        }
+      } catch (_) {}
+    }
+
+    // If the set of visible pins changed, rebuild the DOM
+    const prevVisible = new Set(Object.keys(pinElements));
+    const nextVisible = new Set(Object.entries(map).filter(([, v]) => v.visible).map(([k]) => k));
+    const visibilityChanged = prevVisible.size !== nextVisible.size ||
+      [...nextVisible].some(id => !prevVisible.has(id));
+
+    pinPositions = map;
+
+    if (visibilityChanged) {
+      renderPinLayer();
+    } else {
+      // Directly update positions of existing pin DOM elements
+      Object.entries(pinElements).forEach(([id, el]) => {
+        const pos = map[id];
+        if (!pos) return;
+        el.style.left = pos.x + 'px';
+        el.style.top = pos.y + 'px';
+        el.style.display = pos.visible ? '' : 'none';
+      });
+    }
+
+    if (mode === 'explain') renderExplainLayer();
+    rafId = requestAnimationFrame(recomputePositions);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
+    else if (!rafId) rafId = requestAnimationFrame(recomputePositions);
+  });
+
+  /* ── clustering ── */
+  function buildClusters(visibleItems) {
+    const used = new Array(visibleItems.length).fill(false);
+    const clusters = [];
+    for (let i = 0; i < visibleItems.length; i++) {
+      if (used[i]) continue;
+      const group = [visibleItems[i]];
+      used[i] = true;
+      for (let j = i + 1; j < visibleItems.length; j++) {
+        if (used[j]) continue;
+        const dx = visibleItems[j].pos.x - visibleItems[i].pos.x;
+        const dy = visibleItems[j].pos.y - visibleItems[i].pos.y;
+        if (Math.hypot(dx, dy) < CLUSTER_PX) { group.push(visibleItems[j]); used[j] = true; }
+      }
+      const cx = group.reduce((s, g) => s + g.pos.x, 0) / group.length;
+      const cy = group.reduce((s, g) => s + g.pos.y, 0) / group.length;
+      clusters.push({ x: cx, y: cy, members: group });
+    }
+    return clusters;
+  }
+
+  /* ── render ── */
+  function renderPinLayer() {
+    pinContainer.innerHTML = '';
+    pinElements = {};
+    clusterElements = [];
+    if (mode === 'review' || mode === 'explain') return;
+
+    const visibleItems = pins
+      .map((p, i) => ({ pin: p, idx: i + 1, pos: pinPositions[p.id] }))
+      .filter(x => x.pos?.visible);
+
+    const clusters = buildClusters(visibleItems);
+
+    clusters.forEach(c => {
+      const key = c.members.map(m => m.pin.id).join('|');
+      if (c.members.length === 1) {
+        renderPinEl(c.members[0], c.x, c.y);
+      } else if (openClusterKey === key) {
+        const radius = 28;
+        c.members.forEach((m, i) => {
+          const angle = (i / c.members.length) * Math.PI * 2 - Math.PI / 2;
+          renderPinEl(m, c.x + Math.cos(angle) * radius, c.y + Math.sin(angle) * radius);
+        });
+        const collapseBtn = document.createElement('div');
+        collapseBtn.className = 'fb-cluster';
+        collapseBtn.style.cssText = `left:${c.x}px;top:${c.y}px;width:10px;height:10px;background:hsl(220,13%,87%)`;
+        collapseBtn.addEventListener('click', () => { openClusterKey = null; renderPinLayer(); });
+        pinContainer.appendChild(collapseBtn);
+        clusterElements.push(collapseBtn);
+      } else {
+        const btn = document.createElement('div');
+        btn.className = 'fb-cluster';
+        btn.textContent = c.members.length;
+        btn.style.cssText = `left:${c.x}px;top:${c.y}px`;
+        btn.addEventListener('click', () => { openClusterKey = key; renderPinLayer(); });
+        pinContainer.appendChild(btn);
+        clusterElements.push(btn);
+      }
+    });
+
+    // draft pin
+    if (draft && pinPositions['__draft__']?.visible) {
+      const pos = pinPositions['__draft__'];
+      const dPin = document.createElement('div');
+      dPin.className = 'fb-pin fb-pin--draft';
+      dPin.style.cssText = `left:${pos.x}px;top:${pos.y}px;background:${TAG_COLOR[draft.tag || 'other']}`;
+      pinContainer.appendChild(dPin);
+      pinElements['__draft__'] = dPin;
+    }
+  }
+
+  function renderPinEl(item, x, y) {
+    const pin = item.pin;
+
+    const btn = document.createElement('div');
+    btn.className = 'fb-pin';
+    btn.textContent = item.idx;
+    btn.style.cssText = `left:${x}px;top:${y}px;background:${TAG_COLOR[pin.tag || 'other']}`;
+    btn.dataset.pinId = pin.id;
+
+    pinElements[pin.id] = btn;
+
+    const ageMs = now - new Date(pin.created_at).getTime();
+    const canEdit = pin.email === EMAIL && ageMs < EDIT_WINDOW_MS;
+
+    // popover
+    let popoverEl = null;
+    const showPopover = () => {
+      if (popoverEl) return;
+      openPinId = pin.id;
+      popoverEl = document.createElement('div');
+      popoverEl.className = 'fb-popover';
+      popoverEl.addEventListener('mouseleave', e => {
+        if (pinned) return;
+        if (e.relatedTarget && btn.contains(e.relatedTarget)) return;
+        hidePopover();
+      });
+
+      const tagHtml = pin.tag
+        ? `<div class="fb-popover__tag" style="background:${TAG_COLOR[pin.tag]}">${TAG_LABEL[pin.tag]}</div>`
+        : '';
+
+      const timeStr = new Date(pin.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+
+      if (editingPinId === pin.id) {
+        popoverEl.innerHTML = `${tagHtml}
+          <textarea rows="3">${escHtml(pin.comment)}</textarea>
+          <div class="fb-popover__save">
+            <button class="fb-btn-sm fb-btn-ghost" id="__pop-cancel">Cancel</button>
+            <button class="fb-btn-sm fb-btn-primary" id="__pop-save">Save</button>
+          </div>`;
+        btn.appendChild(popoverEl);
+        popoverEl.querySelector('#__pop-cancel').onclick = () => { editingPinId = null; hidePopover(); };
+        const saveBtn = popoverEl.querySelector('#__pop-save');
+        const ta = popoverEl.querySelector('textarea');
+        saveBtn.onclick = async () => {
+          const newBody = ta.value.trim();
+          if (!newBody) return;
+          await updateComment(pin.id, newBody);
+        };
+      } else {
+        const actionsHtml = canEdit ? `
+          <div class="fb-popover__actions">
+            <span class="fb-popover__timer">${formatRemaining(EDIT_WINDOW_MS - ageMs)} left to edit</span>
+            <div class="fb-popover__btns">
+              <button class="fb-icon-btn" id="__pop-edit" title="Edit">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button class="fb-icon-btn fb-icon-btn--danger" id="__pop-del" title="Delete">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
+            </div>
+          </div>` : '';
+
+        popoverEl.innerHTML = `${tagHtml}
+          <div class="fb-popover__body">${escHtml(pin.comment)}</div>
+          <div class="fb-popover__meta">${escHtml(pin.email)} · ${timeStr}</div>
+          ${actionsHtml}`;
+
+        btn.appendChild(popoverEl);
+
+        if (canEdit) {
+          popoverEl.querySelector('#__pop-edit').onclick = e => {
+            e.stopPropagation();
+            editingPinId = pin.id;
+            hidePopover();
+            showPopover();
+          };
+          popoverEl.querySelector('#__pop-del').onclick = async e => {
+            e.stopPropagation();
+            await deleteComment(pin.id);
+          };
+        }
+      }
+    };
+
+    const hidePopover = () => {
+      if (popoverEl) { popoverEl.remove(); popoverEl = null; }
+      if (openPinId === pin.id) openPinId = null;
+      pinned = false;
+      if (unpinActive === doHide) unpinActive = null;
+    };
+    const doHide = hidePopover;
+
+    let pinned = false;
+
+    btn.addEventListener('mouseenter', showPopover);
+    btn.addEventListener('mouseleave', e => {
+      if (pinned) return;
+      if (e.relatedTarget && (btn.contains(e.relatedTarget) || (popoverEl && popoverEl.contains(e.relatedTarget)))) return;
+      hidePopover();
+    });
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (pinned) return; // already pinned, let outside-click handler close
+      pinned = true;
+      if (unpinActive && unpinActive !== doHide) unpinActive();
+      unpinActive = doHide;
+      showPopover();
+    });
+
+    pinContainer.appendChild(btn);
+  }
+
+  /* ── comment mode click ── */
+  document.addEventListener('click', e => {
+    if (mode !== 'comment') return;
+    if (e.target.closest('#__fb-draft-card') || e.target.closest('.fb-pin') || e.target.closest('.fb-cluster') || e.target.closest('#__fb-toolbar')) return;
+    e.preventDefault(); e.stopPropagation();
 
     const el = e.target;
     const selector = getCssSelector(el);
-    closePopup();
-
-    popup = document.createElement('div');
-    popup.id = '__fb-popup';
-    popup.innerHTML = `
-      <textarea class="__fb-popup-textarea" rows="3" placeholder="What do you think about this element?"></textarea>
-      <div class="__fb-popup-actions">
-        <button type="button" class="__fb-btn __fb-btn-primary" id="__fb-popup-post">Post</button>
-        <button type="button" class="__fb-btn" id="__fb-popup-cancel">Cancel</button>
-      </div>
-    `;
-
     const rect = el.getBoundingClientRect();
-    popup.style.top  = Math.min(rect.bottom + 8, window.innerHeight - 160) + 'px';
-    popup.style.left = Math.min(rect.left, window.innerWidth - 280) + 'px';
-    document.body.appendChild(popup);
+    const xPct = rect.width ? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) : 0.5;
+    const yPct = rect.height ? Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)) : 0.5;
 
-    document.getElementById('__fb-popup-cancel').onclick = closePopup;
-    document.getElementById('__fb-popup-post').onclick = async () => {
-      const text = popup.querySelector('textarea').value.trim();
-      if (!text) return;
-      const label = (el.innerText || el.value || el.getAttribute('aria-label') || el.tagName)
-        .trim().replace(/\s+/g, ' ').slice(0, 60);
-      try {
-        await postComment({
-          type: 'element',
-          element: { selector, label, tagName: el.tagName },
-          comment: text,
-          pageUrl: location.href,
-        });
-        closePopup();
-        showToast('Feedback submitted.');
-        await loadPins();
-      } catch (e) {
-        closePopup();
-        showToast('Failed to submit. Please try again.', true);
-      }
-    };
+    draft = { selector, xPct, yPct, tag: null };
+    openDraftCard(selector);
   }, true);
 
-  function closePopup() {
-    if (popup) { popup.remove(); popup = null; }
+  /* ── explain mode click ── */
+  document.addEventListener('click', e => {
+    if (mode !== 'explain') return;
+    if (e.target.closest('#__fb-explain-card') || e.target.closest('.fb-explain-marker') || e.target.closest('#__fb-toolbar')) return;
+    e.preventDefault(); e.stopPropagation();
+
+    const el = e.target;
+    const selector = getCssSelector(el);
+    const rect = el.getBoundingClientRect();
+    const xPct = rect.width ? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) : 0.5;
+    const yPct = rect.height ? Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)) : 0.5;
+
+    openExplainCard(selector, xPct, yPct);
+  }, true);
+
+  function openDraftCard(selector) {
+    document.getElementById('__fb-draft-selector').textContent = selector;
+    document.getElementById('__fb-draft-textarea').value = '';
+    document.getElementById('__fb-draft-submit').disabled = true;
+    // reset tags
+    document.querySelectorAll('.fb-tag-pill').forEach(p => { p.classList.remove('active'); p.style.background = 'none'; p.style.color = TAG_COLOR[p.dataset.tag]; });
+    if (draft) draft.tag = null;
+    draftCard.classList.add('visible');
+    document.getElementById('__fb-draft-textarea').focus();
   }
 
-  function showToast(msg, isError) {
-    const t = document.getElementById('__fb-toast');
-    t.textContent = msg;
-    t.style.background = isError ? '#c0392b' : '#1a7f4b';
-    t.classList.add('visible');
-    setTimeout(() => t.classList.remove('visible'), 2500);
+  document.getElementById('__fb-draft-close').addEventListener('click', closeDraft);
+
+  document.getElementById('__fb-draft-textarea').addEventListener('input', e => {
+    document.getElementById('__fb-draft-submit').disabled = !e.target.value.trim();
+  });
+
+  document.getElementById('__fb-tag-row').addEventListener('click', e => {
+    const pill = e.target.closest('.fb-tag-pill');
+    if (!pill || !draft) return;
+    const t = pill.dataset.tag;
+    const isActive = pill.classList.contains('active');
+    document.querySelectorAll('.fb-tag-pill').forEach(p => { p.classList.remove('active'); p.style.background = 'none'; p.style.color = TAG_COLOR[p.dataset.tag]; });
+    if (!isActive) {
+      pill.classList.add('active');
+      pill.style.background = TAG_COLOR[t];
+      pill.style.color = '#fff';
+      draft.tag = t;
+    } else {
+      draft.tag = null;
+    }
+  });
+
+  document.getElementById('__fb-draft-submit').addEventListener('click', async () => {
+    if (!draft) return;
+    const text = document.getElementById('__fb-draft-textarea').value.trim();
+    if (!text) return;
+    const btn = document.getElementById('__fb-draft-submit');
+    btn.disabled = true;
+    btn.textContent = 'Posting…';
+    try {
+      await postComment({
+        type: 'element',
+        element: { selector: draft.selector, label: '', tagName: '' },
+        comment: text,
+        pageUrl: location.href,
+        tag: draft.tag,
+        xPct: draft.xPct,
+        yPct: draft.yPct,
+        breadcrumb: navHistory,
+      });
+      closeDraft();
+      showToast('Comment posted.');
+      await loadPins();
+    } catch (_) {
+      showToast('Failed to post comment.', true);
+      btn.disabled = false;
+      btn.textContent = 'Post comment';
+    }
+  });
+
+  function closeDraft() {
+    draft = null;
+    draftCard.classList.remove('visible');
   }
 
+  /* ── api helpers ── */
   async function postComment(payload) {
     const resp = await fetch('/api/comments', {
       method: 'POST',
@@ -305,8 +929,41 @@
       credentials: 'include',
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return resp.json();
   }
 
+  async function updateComment(id, comment) {
+    const resp = await fetch('/api/comments/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment }),
+      credentials: 'include',
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    editingPinId = null;
+    showToast('Comment updated.');
+    await loadPins();
+  }
+
+  async function deleteComment(id) {
+    const resp = await fetch('/api/comments/' + id, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    showToast('Comment deleted.');
+    await loadPins();
+  }
+
+  /* ── toast ── */
+  function showToast(msg, isError) {
+    toast.textContent = msg;
+    toast.style.background = isError ? 'hsl(0,84%,45%)' : 'hsl(142,71%,30%)';
+    toast.classList.add('visible');
+    setTimeout(() => toast.classList.remove('visible'), 2500);
+  }
+
+  /* ── helpers ── */
   function getCssSelector(el) {
     if (el.id) return '#' + el.id;
     const parts = [];
@@ -325,14 +982,63 @@
     return parts.join(' > ');
   }
 
+  function formatRemaining(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+  }
+
   function escHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  loadPins();
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
-    else if (pinData.length > 0 && !rafId) rafId = requestAnimationFrame(repositionPins);
+  // close pinned popover on outside click
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.fb-pin') && !e.target.closest('.fb-popover')) {
+      if (unpinActive) { unpinActive(); unpinActive = null; }
+      openPinId = null;
+    }
   });
+
+  /* ── navigation tracking ── */
+  (function () {
+    let lastUrl = '';
+
+    function recordNav() {
+      const url = currentPageKey();
+      if (url === lastUrl) return;
+      lastUrl = url;
+      navHistory.push(url);
+      fetch('/api/nav', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prototypeId: PROTO_ID, email: EMAIL || 'local@test.com', pageUrl: url }),
+      }).catch(() => {});
+      // Clear pins from the previous page immediately; the RAF loop will show
+      // pins for the new page once the SPA has rendered its new DOM elements.
+      renderPinLayer();
+    }
+
+    // Patch history methods to fire a custom event
+    ['pushState', 'replaceState'].forEach(method => {
+      const orig = history[method];
+      history[method] = function (...args) {
+        orig.apply(this, args);
+        window.dispatchEvent(new Event('fb-nav'));
+      };
+    });
+
+    window.addEventListener('popstate', recordNav);
+    window.addEventListener('hashchange', recordNav);
+    window.addEventListener('fb-nav', recordNav);
+
+    // Record initial page
+    recordNav();
+  })();
+
+  /* ── boot ── */
+  const focusId = new URLSearchParams(location.search).get('focus') || '';
+
+  loadPins();
+  loadExplanations();
+  rafId = requestAnimationFrame(recomputePositions);
 })();

@@ -30,6 +30,10 @@ app.use('/admin', adminRouter);
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'views/landing.html')));
 
 if (require.main === module) {
+  if (!config.databaseUrl) {
+    console.error('DATABASE_URL environment variable is required');
+    process.exit(1);
+  }
   initDb().then(() => {
     app.listen(config.port, () => {
       console.log(`Proto Share running on http://localhost:${config.port}`);

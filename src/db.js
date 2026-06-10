@@ -5,7 +5,11 @@ const config = require('./config');
 let _pool = null;
 
 async function initDb() {
-  _pool = new Pool({ connectionString: config.databaseUrl });
+  if (_pool) return _pool;
+  _pool = new Pool({
+    connectionString: config.databaseUrl,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
 
   await _pool.query(`
     CREATE TABLE IF NOT EXISTS prototypes (

@@ -848,7 +848,12 @@
     if (e.target.closest('#__fb-explain-card') || e.target.closest('.fb-explain-marker') || e.target.closest('#__fb-toolbar')) return;
     e.preventDefault(); e.stopPropagation();
 
-    const el = e.target;
+    // Walk up from SVG internals (<path>, <circle>, etc.) to their owning SVG or parent element
+    let el = e.target;
+    while (el && (el.tagName === 'path' || el.tagName === 'circle' || el.tagName === 'rect' || el.tagName === 'line' || el.tagName === 'polyline' || el.tagName === 'polygon' || el.tagName === 'ellipse' || el.tagName === 'use') && el.parentElement) {
+      el = el.parentElement;
+    }
+
     const selector = getCssSelector(el);
     const rect = el.getBoundingClientRect();
     const xPct = rect.width ? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) : 0.5;
@@ -968,12 +973,13 @@
 
   /* ── helpers ── */
   function getCssSelector(el) {
-    if (el.id) return '#' + el.id;
+    if (el.id) return '#' + CSS.escape(el.id);
     const parts = [];
     let node = el;
     while (node && node !== document.body) {
       let part = node.tagName.toLowerCase();
-      const first = (node.className || '').toString().trim().split(/\s+/)[0];
+      const rawClass = typeof node.className === 'string' ? node.className : (node.className && node.className.baseVal) || '';
+      const first = rawClass.trim().split(/\s+/).find(c => c.length > 0 && c.length < 40);
       if (first) part += '.' + CSS.escape(first);
       const siblings = node.parentElement
         ? Array.from(node.parentElement.children).filter(c => c.tagName === node.tagName)

@@ -507,19 +507,20 @@
 
   document.getElementById('__fb-explain-save').addEventListener('click', async () => {
     if (!explainDraft) return;
+    const draft = explainDraft;
     const body = document.getElementById('__fb-explain-textarea').value.trim();
     if (!body) return;
     const saveBtn = document.getElementById('__fb-explain-save');
     saveBtn.disabled = true;
     try {
-      if (explainDraft.existingId) {
-        await fetch('/api/explanations/' + explainDraft.existingId, {
+      if (draft.existingId) {
+        await fetch('/api/explanations/' + draft.existingId, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ body }),
           credentials: 'include',
         });
-        const idx = explanations.findIndex(e => e.id === explainDraft.existingId);
+        const idx = explanations.findIndex(e => e.id === draft.existingId);
         if (idx !== -1) explanations[idx].body = body;
       } else {
         const resp = await fetch('/api/explanations', {
@@ -527,18 +528,19 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prototypeId: PROTO_ID,
-            elementSelector: explainDraft.selector,
-            xPct: explainDraft.xPct,
-            yPct: explainDraft.yPct,
+            elementSelector: draft.selector,
+            xPct: draft.xPct,
+            yPct: draft.yPct,
             pageUrl: location.href,
             body,
           }),
           credentials: 'include',
         });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const { id } = await resp.json();
         explanations.push({
-          id, element_selector: explainDraft.selector,
-          x_pct: explainDraft.xPct, y_pct: explainDraft.yPct,
+          id, element_selector: draft.selector,
+          x_pct: draft.xPct, y_pct: draft.yPct,
           page_url: location.href, body,
         });
       }
@@ -553,11 +555,12 @@
 
   document.getElementById('__fb-explain-delete').addEventListener('click', async () => {
     if (!explainDraft?.existingId) return;
+    const draft = explainDraft;
     try {
-      await fetch('/api/explanations/' + explainDraft.existingId, {
+      await fetch('/api/explanations/' + draft.existingId, {
         method: 'DELETE', credentials: 'include',
       });
-      explanations = explanations.filter(e => e.id !== explainDraft.existingId);
+      explanations = explanations.filter(e => e.id !== draft.existingId);
       closeExplainCard();
       showToast('Explanation deleted.');
       renderExplainLayer();

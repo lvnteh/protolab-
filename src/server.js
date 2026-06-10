@@ -21,7 +21,7 @@ app.use(session({
   secret: config.sessionSecret,
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 8 * 60 * 60 * 1000 },
+  cookie: { httpOnly: true, sameSite: 'lax' },
 }));
 
 app.use('/sdk', express.static(path.join(__dirname, '../public/sdk')));
@@ -29,7 +29,7 @@ app.use('/p', deliveryRouter);
 app.use('/api', apiRouter);
 app.use('/admin', adminRouter);
 
-app.get('/', (_req, res) => res.redirect('/admin/prototypes'));
+app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'views/landing.html')));
 
 if (require.main === module) {
   app.listen(config.port, () => {

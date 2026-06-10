@@ -593,7 +593,7 @@ function renderExplanations() {
       <td class="ts">${esc(ex.page_url || '—')}</td>
       <td style="white-space:nowrap;display:flex;gap:6px;align-items:center">
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 8px" onclick="editExplanation('${ex.id}')">Edit</button>
-        <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="deleteExplanation('${ex.id}','${esc(ex.element_selector)}')">Delete</button>
+        <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="deleteExplanation('${ex.id}')">Delete</button>
       </td>
     </tr>
     <tr id="exp-edit-row-${ex.id}" style="display:none">
@@ -621,16 +621,22 @@ function cancelExplanationEdit(id) {
 async function saveExplanationEdit(id) {
   const body = document.getElementById('exp-edit-ta-' + id).value.trim();
   if (!body) return;
-  await fetch('/api/explanations/' + id, {
+  const resp = await fetch('/api/explanations/' + id, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ body }),
   });
+  if (!resp.ok) {
+    alert('Failed to save. Please try again.');
+    return;
+  }
   const idx = adminExplanations.findIndex(e => e.id === id);
   if (idx !== -1) adminExplanations[idx].body = body;
   renderExplanations();
 }
 
-function deleteExplanation(id, selector) {
+function deleteExplanation(id) {
+  const ex = adminExplanations.find(e => e.id === id);
+  const selector = ex ? ex.element_selector : '';
   showModal(
     'Delete explanation?',
     `The explanation for "${selector}" will be permanently removed.`,

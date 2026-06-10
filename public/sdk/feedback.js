@@ -363,9 +363,10 @@
   let editingPinId = null;
   let unpinActive = null; // callback to close whichever pin is currently pinned open
   let navHistory = [];   // page URLs visited this session, for breadcrumb
-  let explanations = [];    // [{id,element_selector,x_pct,y_pct,page_url,body}]
-  let explainMarkerEls = {}; // {id: domElement}
-  let explainDraft = null;   // {selector, xPct, yPct, existingId|null}
+  let explanations = [];       // [{id,element_selector,x_pct,y_pct,page_url,body}]
+  let explainPositions = {};   // {id: {x,y,visible}} — computed each RAF frame
+  let explainMarkerEls = {};   // {id: domElement}
+  let explainDraft = null;     // {selector, xPct, yPct, existingId|null}
   let now = Date.now();
 
   setInterval(() => { now = Date.now(); }, 1000);
@@ -382,7 +383,8 @@
     if (m !== 'comment') closeDraft();
     if (m !== 'explain') closeExplainCard();
     renderPinLayer();
-    renderExplainLayer();
+    // explain layer is driven by the RAF loop; clear it immediately when leaving explain mode
+    if (m !== 'explain') { explainContainer.innerHTML = ''; explainMarkerEls = {}; }
   }
 
   toolbar.querySelectorAll('.fb-mode-btn').forEach(btn => {
@@ -417,7 +419,6 @@
       const resp = await fetch('/api/explanations/' + PROTO_ID, { credentials: 'include' });
       if (resp.ok) {
         explanations = await resp.json();
-        renderExplainLayer();
       }
     } catch (e) {}
   }
@@ -428,19 +429,12 @@
     if (mode !== 'explain') return;
 
     explanations.forEach(ex => {
-      if (ex.page_url && pageKeyOf(ex.page_url) !== currentPageKey()) return;
-      let el;
-      try { el = document.querySelector(ex.element_selector); } catch (_) { return; }
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      if (r.width === 0 && r.height === 0) return;
-
-      const mx = r.right;
-      const my = r.top;
+      const pos = explainPositions[ex.id];
+      if (!pos?.visible) return;
 
       const marker = document.createElement('div');
       marker.className = 'fb-explain-marker';
-      marker.style.cssText = `left:${mx}px;top:${my}px`;
+      marker.style.cssText = `left:${pos.x}px;top:${pos.y}px`;
       marker.textContent = 'ℹ';
 
       let popoverEl = null;
@@ -632,7 +626,39 @@
       });
     }
 
-    if (mode === 'explain') renderExplainLayer();
+    if (mode === 'explain') {
+      const exMap = {};
+      explanations.forEach(ex => {
+        if (ex.page_url && pageKeyOf(ex.page_url) !== currentPageKey()) { exMap[ex.id] = { x: 0, y: 0, visible: false }; return; }
+        try {
+          const el = document.querySelector(ex.element_selector);
+          if (!el) { exMap[ex.id] = { x: 0, y: 0, visible: false }; return; }
+          const r = el.getBoundingClientRect();
+          const ox = typeof ex.x_pct === 'number' ? ex.x_pct : 0.5;
+          const oy = typeof ex.y_pct === 'number' ? ex.y_pct : 0.5;
+          exMap[ex.id] = { visible: r.width > 0 || r.height > 0, x: r.left + r.width * ox, y: r.top + r.height * oy };
+        } catch (_) { exMap[ex.id] = { x: 0, y: 0, visible: false }; }
+      });
+
+      const prevExVisible = new Set(Object.keys(explainMarkerEls));
+      const nextExVisible = new Set(Object.entries(exMap).filter(([, v]) => v.visible).map(([k]) => k));
+      const exVisibilityChanged = prevExVisible.size !== nextExVisible.size ||
+        [...nextExVisible].some(id => !prevExVisible.has(id));
+
+      explainPositions = exMap;
+
+      if (exVisibilityChanged) {
+        renderExplainLayer();
+      } else {
+        Object.entries(explainMarkerEls).forEach(([id, el]) => {
+          const pos = exMap[id];
+          if (!pos) return;
+          el.style.left = pos.x + 'px';
+          el.style.top = pos.y + 'px';
+          el.style.display = pos.visible ? '' : 'none';
+        });
+      }
+    }
     rafId = requestAnimationFrame(recomputePositions);
   }
 

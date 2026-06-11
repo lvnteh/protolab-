@@ -189,7 +189,8 @@
 
 **Acceptance Criteria:**
 - Prototype HTML renders faithfully with toolbar above it
-- Toolbar shows: prototype title, View / Comment / Review / Explain mode buttons
+- Toolbar shows: ProtoLab rocket logo, prototype title, View / Comment / Review / Explain mode buttons
+- Toolbar uses purple brand colour (`hsl(252,83%,57%)`) matching the admin interface
 - Body is offset by 44px so toolbar does not overlap content
 - Default mode on load is View
 - Each view is logged with email and user-agent in access_log
@@ -571,14 +572,17 @@ Feature: Funnel Analytics
 
 Injected into every shared prototype view. Initialised via `<script>` tag with `data-proto-id` and `data-email` attributes.
 
+**Toolbar appearance:**
+The toolbar (`#__fb-toolbar`, 44px fixed at top) uses the same purple brand colour as the admin interface: `background: hsl(252,83%,57%)`, white text, `box-shadow: 0 1px 3px rgba(0,0,0,.12)`. The left side (`#__fb-toolbar-left`) shows the ProtoLab rocket logo (white, 18×18px SVG) followed by the prototype title. The mode switcher on the right uses a semi-transparent pill container (`border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.15)`) with inactive buttons at `rgba(255,255,255,.75)` and active-view / active-review states as white pills with purple text.
+
 **Toolbar Modes:**
 
-| Mode | Class on body | Behaviour |
-|------|--------------|-----------|
-| View | — | Shows pins; no interaction |
-| Comment | `__fb-comment-mode` | Crosshair cursor; click to place pin |
-| Review | — | Hides all pins |
-| Explain | `__fb-explain-mode` | Click to add/edit explanations |
+| Mode | Class on body | Active button style | Behaviour |
+|------|--------------|---------------------|-----------|
+| View | — | White pill, purple text | Shows pins; no interaction |
+| Comment | `__fb-comment-mode` | Semi-white pill, white text | Crosshair cursor; click to place pin |
+| Review | — | White pill, purple text | Hides all pins |
+| Explain | `__fb-explain-mode` | Amber (`hsl(38,92%,50%)`) pill, white text | Click to add/edit explanations |
 
 **Events tracked:**
 - `hashchange` — hash-based SPA routing

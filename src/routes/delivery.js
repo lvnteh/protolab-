@@ -19,7 +19,9 @@ router.get('/:shareToken', async (req, res) => {
     [req.params.shareToken]
   );
   if (!rows[0]) return res.status(404).send('Prototype not found.');
-  const html = readView('email-entry.html').split('{{shareToken}}').join(req.params.shareToken);
+  const html = readView('email-entry.html')
+    .split('{{shareToken}}').join(req.params.shareToken)
+    .split('{{error}}').join('');
   res.send(html);
 });
 
@@ -37,7 +39,12 @@ router.post('/:shareToken/enter', async (req, res) => {
     [proto.id, email]
   );
 
-  if (!allowRows.length) return res.status(403).send(readView('access-denied.html'));
+  if (!allowRows.length) {
+    const html = readView('email-entry.html')
+      .split('{{shareToken}}').join(req.params.shareToken)
+      .split('{{error}}').join('<div class="alert">That email isn\'t on the access list for this prototype.</div>');
+    return res.status(403).send(html);
+  }
 
   req.session.customerEmail = email;
   req.session.prototypeId = proto.id;

@@ -1,6 +1,6 @@
 # ProtoLab — Product Specification
 
-> Reverse-engineered from live codebase. Last updated: 2026-06-11.
+> Reverse-engineered from live codebase. Last updated: 2026-06-11. v2 — gaps filled.
 
 ---
 
@@ -15,6 +15,9 @@
 7. [API Reference](#7-api-reference)
 8. [SDK Reference](#8-sdk-reference)
 9. [Business Rules](#9-business-rules)
+10. [Environment Variables](#10-environment-variables)
+11. [Template Rendering System](#11-template-rendering-system)
+12. [Funnel Algorithm (Precise)](#12-funnel-algorithm-precise)
 
 ---
 
@@ -551,9 +554,10 @@ Feature: Funnel Analytics
 | POST | /admin/prototypes | admin | Upload new prototype |
 | GET | /admin/prototypes/:id | admin | Prototype detail page |
 | POST | /admin/prototypes/:id/settings | admin | Update name & allowlist |
+| GET | /admin/prototypes/:id/allowlist-count | admin | Returns `{count}` — current allowlist size |
 | DELETE | /admin/prototypes/:id | admin | Delete prototype + cascade |
 | GET | /admin/prototypes/:id/preview | admin | Admin preview with SDK |
-| POST | /admin/prototypes/:id/comments | admin | Paginated comment list |
+| POST | /admin/prototypes/:id/comments | admin | Paginated+filtered comment list. Body: `{pageSize, offset, sortingKey, sortingOrder, filterValues: {type}}`. Allowed sort keys: `email`, `type`, `created_at`. Returns `{data, totalCount}`. |
 | DELETE | /admin/prototypes/:id/comments | admin | Clear all comments |
 | DELETE | /admin/prototypes/:id/comments/:commentId | admin | Delete single comment |
 | POST | /admin/prototypes/:id/access-log | admin | Paginated access log |
@@ -587,7 +591,25 @@ Injected into every shared prototype view. Initialised via `<script>` tag with `
 
 ### preview.js (Admin Preview SDK)
 
-Injected into admin prototype preview. Receives pre-loaded comment data via `data-comments` attribute. Read-only — no comment creation. Supports `?focus=<commentId>` to highlight a specific pin on load.
+Injected into admin prototype preview. Receives pre-loaded comment data via `data-comments` attribute (JSON array serialised server-side). Read-only — no comment creation.
+
+**Initialisation attributes on the `<script>` tag:**
+- `data-proto-id` — prototype ID
+- `data-highlight-comment` — comment ID to highlight on load (from `?comment=` query param)
+- `data-comments` — JSON array of `{id, order, email, element_selector, comment, created_at, tag, x_pct, y_pct}` objects
+
+Supports `?comment=<commentId>` to highlight a specific pin on load — the pin pulses 3 times (`scale(1 → 1.4 → 1)`) and the page scrolls to it.
+
+**Pin offset for multiple comments on the same selector:**
+When multiple comments share the same `element_selector`, their x position is staggered: `x = 1 - offset * 0.15` (first pin at x=1.0, second at x=0.85, etc.). If `x_pct` is stored on the comment, that value is used directly instead.
+
+**Tooltip behaviour:**
+- Hover pin → tooltip appears (positioned above-left of pin, clamped to viewport)
+- Click pin → tooltip stays pinned; click outside to close
+- Tooltip shows: tag badge (coloured), email (bold), comment text, date
+
+**Difference from feedback.js:**
+`feedback.js` is the full interactive SDK (toolbar, all modes, comment creation, explain mode). `preview.js` is read-only — pins with tooltips only, no toolbar, no comment creation. `injectSdk()` injects `feedback.js`; `injectPreview()` injects `preview.js` with the comments JSON baked into the script tag attribute.
 
 ---
 
@@ -608,3 +630,76 @@ Injected into admin prototype preview. Receives pre-loaded comment data via `dat
 | Access log retention | NOT cascaded on prototype deletion — preserved as audit trail |
 | Share token | Separate from prototype ID; used only in public-facing URLs |
 | Session scope | Reviewer session is per-prototype; entering one prototype does not grant access to others |
+| Default prototype name | If no name is provided on upload, defaults to "Untitled" |
+| Upload file handling | Multer writes to a temp path first; server renames to `{uploadsPath}/{id}.html` |
+| Settings save redirect | After saving settings, server redirects to `/admin/prototypes/:id?saved=1`; the UI reads `?saved=1` on load to show a success flash |
+| Path traversal guard | Preview route verifies `path.basename(proto.filename) === proto.filename` before serving the file |
+| Admin comments endpoint | `POST /admin/prototypes/:id/comments` — uses POST (not GET) because pagination/filter state is sent in the request body |
+| Allowed sort keys (comments) | Only `email`, `type`, `created_at` are accepted; any other value falls back to `created_at` |
+
+---
+
+## 10. Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes | — | PostgreSQL connection string |
+| `SESSION_SECRET` | Yes (prod) | `dev-secret` | Secret for signing session cookies |
+| `ADMIN_USER` | No | `admin` | Admin username |
+| `ADMIN_PASSWORD_HASH` | Yes | — | bcrypt hash of admin password |
+| `BASE_URL` | Yes (prod) | `http://localhost:3000` | Public base URL used in generated share links (must include `https://` in production) |
+| `UPLOADS_PATH` | No | `./uploads` | Directory where uploaded HTML files are stored. Use a persistent volume path in production (e.g. `/data/uploads` on Railway) |
+| `PORT` | No | `3000` | HTTP port the server listens on. Railway injects this automatically |
+
+**Generating a password hash:**
+```bash
+node -e "require('bcryptjs').hash('yourpassword', 10).then(console.log)"
+```
+
+---
+
+## 11. Template Rendering System
+
+The server uses a minimal string-replace template engine — no template library dependency.
+
+**`renderView(name, vars)`** reads the HTML file from `src/views/`, then replaces every `{{key}}` placeholder with its value using a global string split/join (handles multiple occurrences).
+
+Example placeholders used across views:
+| View | Placeholders |
+|------|-------------|
+| admin-login.html | `{{error}}` — inlined HTML for error alert, empty string when no error |
+| admin-prototypes.html | `{{prototypesJson}}` — JSON array of prototype rows; `<` escaped to `<` to prevent XSS in script context |
+| admin-prototype-detail.html | `{{id}}`, `{{name}}`, `{{allowlist}}`, `{{shareToken}}` — all HTML-escaped except id and shareToken |
+| admin-upload.html | `{{success}}` — inlined HTML for success banner, empty string when no upload yet |
+| email-entry.html | `{{shareToken}}` — inserted into form action URL |
+
+**Security note:** Values inserted into HTML attributes or visible text are passed through `escapeHtml()` (replaces `&`, `<`, `>`, `"`). Values inserted into `<script>` JSON context use `JSON.stringify(...).replace(/</g, '\\u003c')`.
+
+---
+
+## 12. Funnel Algorithm (Precise)
+
+The funnel is computed entirely server-side in `GET /admin/prototypes/:id/funnels`.
+
+### Step 1 — Determine each user's root page
+Each reviewer's root page is the **first URL they ever visited** for this prototype (chronologically).
+
+### Step 2 — Determine the prototype's root page
+The prototype root is the **most common first-page across all users**. Used to split journeys.
+
+### Step 3 — Stitch nav events into sessions
+Iterate nav events ordered by `(email, occurred_at ASC)`:
+- Start a new session when: a new email is encountered, OR the current event's URL equals that user's root page AND the current session already has at least one page.
+- Within a session, **deduplicate consecutive identical pages** (e.g. two rapid navigations to the same URL become one entry).
+
+### Step 4 — Build page funnel
+- Exclude root pages from the funnel (they are the starting point, not a funnel step).
+- For each non-root page, collect the position index it appears at across all sessions.
+- Sort pages by **median position** across sessions (earlier in median journey = first in funnel).
+- For each page: count sessions that visited it (unique per session), compute `% of total sessions`, compute `drop-off %` vs previous page.
+
+### Step 5 — Session journeys
+Return the **last 50 sessions** (most recent first). For each session, cross-reference the comments table to flag whether a comment was posted during the session window (+1 minute buffer on session end).
+
+### Step 6 — Time on page
+For each session, compare timestamps of consecutive nav events. The time spent on page N = `occurred_at[N+1] - occurred_at[N]`, capped at **4 hours** to exclude abandoned tabs. Compute **median** across all sessions. Only pages with **≥ 2 data points** are included.

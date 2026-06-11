@@ -3,8 +3,8 @@ function escAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function sdkScript(protoId, email, protoName) {
-  return `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}" data-proto-name="${escAttr(protoName || '')}"></script>`;
+function sdkScript(protoId, email) {
+  return `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"></script>`;
 }
 
 function previewScript(protoId, highlightId, commentsJson) {
@@ -73,9 +73,9 @@ function scanHtml(html) {
   return { lastHeadClose, lastBodyClose };
 }
 
-function injectSdk(html, protoId, email, protoName) {
+function injectSdk(html, protoId, email) {
   const { lastBodyClose } = scanHtml(html);
-  const sdkTag = sdkScript(protoId, email, protoName);
+  const sdkTag = sdkScript(protoId, email);
   if (lastBodyClose !== -1) {
     return html.slice(0, lastBodyClose) + `\n${sdkTag}\n` + html.slice(lastBodyClose);
   }

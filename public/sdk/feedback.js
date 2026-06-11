@@ -276,7 +276,7 @@
       </button>
     </div>
   `;
-  document.getElementById('__fb-toolbar-title').textContent = PROTO_NAME;
+  toolbar.querySelector('#__fb-toolbar-title').textContent = PROTO_NAME;
   document.body.insertBefore(toolbar, document.body.firstChild);
 
   const commentBanner = document.createElement('div');

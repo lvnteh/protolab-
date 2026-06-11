@@ -57,7 +57,7 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
   if (!fs.existsSync(filePath)) return res.status(404).send('Prototype file not found.');
 
   const raw = fs.readFileSync(filePath, 'utf8');
-  const injected = injectSdk(raw, proto.id, req.session.customerEmail);
+  const injected = injectSdk(raw, proto.id, req.session.customerEmail, proto.name);
 
   await getDb().query(
     'INSERT INTO access_log (prototype_id, email, opened_at, user_agent) VALUES ($1,$2,$3,$4)',

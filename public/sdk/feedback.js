@@ -4,6 +4,7 @@
   if (!script) return;
   const PROTO_ID = script.getAttribute('data-proto-id');
   const EMAIL = decodeURIComponent(script.getAttribute('data-email') || '');
+  const PROTO_NAME = script.getAttribute('data-proto-name') || '';
 
   const TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
   const TAG_LABEL = { bug: 'Bug', copy: 'Copy', question: 'Question', idea: 'Idea', other: 'Other' };
@@ -48,7 +49,7 @@
 
     #__fb-comment-banner {
       position: fixed; top: 44px; left: 0; right: 0; z-index: 2147483646;
-      background: hsl(252,83%,57%); color: #fff; text-align: center;
+      background: hsl(252,83%,45%); color: #fff; text-align: center;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 12px; padding: 6px; pointer-events: none; display: none;
     }
@@ -275,6 +276,7 @@
       </button>
     </div>
   `;
+  document.getElementById('__fb-toolbar-title').textContent = PROTO_NAME;
   document.body.insertBefore(toolbar, document.body.firstChild);
 
   const commentBanner = document.createElement('div');

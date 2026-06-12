@@ -147,6 +147,25 @@
 
 ## 5. Features & User Stories
 
+### F0 — Landing Page
+
+**Description:** The public-facing landing page at `/` explains what ProtoLab is and links to the admin login. The page is protected by a client-side password overlay to prevent casual public discovery.
+
+**User Story:**
+> As an admin, I want the landing page to be gated so that random visitors can't browse the product before it's ready to be public.
+
+**Acceptance Criteria:**
+- Visiting `/` shows a blurred overlay with a password field
+- Entering the correct password removes the overlay and reveals the page
+- The unlocked state persists for the browser session (`sessionStorage`) — no re-prompt on refresh
+- Wrong password shows an inline "Incorrect password" error and clears the field
+- Enter key submits the password field
+- The landing page itself has no footer
+
+**Implementation note:** Password is checked client-side only (`magiclvnte`). This is intentional — the goal is casual obscurity, not real security. The unlock flag is stored as `pl_unlocked = '1'` in `sessionStorage`.
+
+---
+
 ### F1 — Prototype Upload
 
 **Description:** An admin uploads a self-contained HTML file and assigns a name and an email allowlist. The system stores the file, generates a unique share link, and makes it accessible.
@@ -175,7 +194,8 @@
 - Share link shows an email entry form, not the prototype directly
 - Email matching is case-insensitive
 - Correct email grants access and records the reviewer's session
-- Incorrect email shows an "Access Denied" page
+- Incorrect email shows an inline red alert on the same form — the page does not navigate away
+- Browser native validation is disabled (`novalidate`) — validation is server-side only
 - Session is scoped to the specific prototype
 
 ---
@@ -367,7 +387,7 @@ Feature: Email-Gated Access
   Scenario: Reviewer with invalid email is denied
     Given "reviewer@sap.com" is NOT on the allowlist
     When I enter "reviewer@sap.com" on the entry form
-    Then I see the "Access Denied" page
+    Then I see an inline error alert on the email entry form
     And I am not granted a session
 
   Scenario: Direct URL access without session is redirected
@@ -573,7 +593,7 @@ Feature: Funnel Analytics
 Injected into every shared prototype view. Initialised via `<script>` tag with `data-proto-id` and `data-email` attributes.
 
 **Toolbar appearance:**
-The toolbar (`#__fb-toolbar`, 44px fixed at top) uses the same purple brand colour as the admin interface: `background: hsl(252,83%,57%)`, white text, `box-shadow: 0 1px 3px rgba(0,0,0,.12)`. The left side (`#__fb-toolbar-left`) shows the ProtoLab rocket logo (white, 18×18px SVG) followed by the prototype title. The mode switcher on the right uses a semi-transparent pill container (`border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.15)`) with inactive buttons at `rgba(255,255,255,.75)` and active-view / active-review states as white pills with purple text.
+The toolbar (`#__fb-toolbar`, 44px fixed at top) uses the same purple brand colour as the admin interface: `background: hsl(252,83%,57%)`, white text, `box-shadow: 0 1px 3px rgba(0,0,0,.12)`. The left side (`#__fb-toolbar-left`) shows the ProtoLab rocket logo (white, 18×18px SVG) followed by the hardcoded text "ProtoLab". The mode switcher on the right uses a semi-transparent pill container (`border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.15)`) with inactive buttons at `rgba(255,255,255,.75)` and active-view / active-review states as white pills with purple text.
 
 **Toolbar Modes:**
 
@@ -675,7 +695,8 @@ Example placeholders used across views:
 | admin-prototypes.html | `{{prototypesJson}}` — JSON array of prototype rows; `<` escaped to `<` to prevent XSS in script context |
 | admin-prototype-detail.html | `{{id}}`, `{{name}}`, `{{allowlist}}`, `{{shareToken}}` — all HTML-escaped except id and shareToken |
 | admin-upload.html | `{{success}}` — inlined HTML for success banner, empty string when no upload yet |
-| email-entry.html | `{{shareToken}}` — inserted into form action URL |
+| email-entry.html | `{{shareToken}}` — inserted into form action URL; `{{error}}` — inlined HTML for error alert, empty string on initial load |
+| landing.html | No server-side placeholders; password overlay is purely client-side |
 
 **Security note:** Values inserted into HTML attributes or visible text are passed through `escapeHtml()` (replaces `&`, `<`, `>`, `"`). Values inserted into `<script>` JSON context use `JSON.stringify(...).replace(/</g, '\\u003c')`.
 

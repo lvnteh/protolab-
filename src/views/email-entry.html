@@ -27,10 +27,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
   </div>
   <div class="subtitle">Enter your email to view this prototype</div>
   {{error}}
-  <form method="POST" action="/p/{{shareToken}}/enter">
+  <form method="POST" action="/p/{{shareToken}}/enter" novalidate>
     <div class="field">
       <label for="email">Email address</label>
-      <input class="input" id="email" name="email" type="email" placeholder="you@company.com" autofocus required>
+      <input class="input" id="email" name="email" type="email" placeholder="you@company.com" autofocus>
     </div>
     <button type="submit" class="btn">Continue</button>
   </form>

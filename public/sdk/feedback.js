@@ -394,6 +394,7 @@
   let rafId = null;
   let editingPinId = null;
   let unpinActive = null; // callback to close whichever pin is currently pinned open
+  let reopenPinId = null; // set before loadPins(); consumed by renderPinEl to reopen the popover after re-render
   let navHistory = [];   // page URLs visited this session, for breadcrumb
   let explanations = [];       // [{id,element_selector,x_pct,y_pct,page_url,body}]
   let explainPositions = {};   // {id: {x,y,visible}} — computed each RAF frame
@@ -888,9 +889,9 @@
           try {
             await postComment({ type: 'reply', comment: text, parentId: pin.id });
             showToast('Reply posted.');
+            reopenPinId = pin.id;
             await loadPins();
-            pinned = true;
-            showPopover();
+            // reopenPinId is consumed by renderPinEl after re-render
           } catch (_) {
             showToast('Failed to post reply.', true);
             replyBtn.disabled = false;
@@ -926,6 +927,12 @@
     });
 
     pinContainer.appendChild(btn);
+
+    // If this pin was just replied to, reopen its popover after re-render
+    if (reopenPinId === pin.id) {
+      reopenPinId = null;
+      setTimeout(showPopover, 0);
+    }
   }
 
   /* ── comment mode click ── */

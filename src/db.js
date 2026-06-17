@@ -46,7 +46,7 @@ async function initDb() {
       id TEXT PRIMARY KEY,
       prototype_id TEXT NOT NULL,
       email TEXT NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('general', 'element')),
+      type TEXT NOT NULL CONSTRAINT comments_type_check CHECK(type IN ('general', 'element')),
       element_selector TEXT,
       element_label TEXT,
       element_tag TEXT,
@@ -60,15 +60,13 @@ async function initDb() {
     )
   `);
 
-  // Widen the type CHECK to also allow 'reply' rows
+  // Widen the type CHECK to also allow 'reply' rows (atomic drop + add)
   await _pool.query(`
-    ALTER TABLE comments
-      DROP CONSTRAINT IF EXISTS comments_type_check
-  `);
-  await _pool.query(`
-    ALTER TABLE comments
-      ADD CONSTRAINT comments_type_check
-      CHECK(type IN ('general', 'element', 'reply'))
+    DO $$ BEGIN
+      ALTER TABLE comments DROP CONSTRAINT IF EXISTS comments_type_check;
+      ALTER TABLE comments ADD CONSTRAINT comments_type_check
+        CHECK(type IN ('general', 'element', 'reply'));
+    END $$
   `);
 
   // Add parent_id FK (idempotent)

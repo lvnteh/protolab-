@@ -62,9 +62,9 @@
       pointer-events: none; z-index: 2147483639;
     }
     .fb-pin {
-      position: absolute; width: 24px; height: 24px; border-radius: 50%;
+      position: absolute; width: 28px; height: 28px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      color: #fff; font-size: 11px; font-weight: 700;
+      color: #fff; font-size: 12px; font-weight: 700;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 2px #fff;
       cursor: pointer; pointer-events: auto;

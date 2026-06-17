@@ -93,7 +93,7 @@
       position: absolute; left: calc(100% + 8px); top: -4px;
       width: 280px; background: #fff;
       border: 1px solid hsl(220,13%,91%); border-radius: 12px;
-      padding: 12px; font-size: 12px; line-height: 1.5;
+      padding: 12px; font-size: 12px; font-weight: 400; line-height: 1.5;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       box-shadow: 0 4px 16px rgba(0,0,0,.12);
       pointer-events: auto; z-index: 10;
@@ -859,6 +859,18 @@
           </div>`;
 
         btn.appendChild(popoverEl);
+
+        // Flip popover left if it would overflow the right edge
+        const popRect = popoverEl.getBoundingClientRect();
+        if (popRect.right > window.innerWidth - 8) {
+          popoverEl.style.left = 'auto';
+          popoverEl.style.right = 'calc(100% + 8px)';
+        }
+        // Flip up if it would overflow the bottom edge
+        if (popRect.bottom > window.innerHeight - 8) {
+          popoverEl.style.top = 'auto';
+          popoverEl.style.bottom = '-4px';
+        }
 
         if (canEdit) {
           popoverEl.querySelector('#__pop-edit').onclick = e => {

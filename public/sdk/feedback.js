@@ -91,7 +91,7 @@
     /* pin popover */
     .fb-popover {
       position: absolute; left: calc(100% + 8px); top: -4px;
-      width: 240px; background: #fff;
+      width: 280px; background: #fff;
       border: 1px solid hsl(220,13%,91%); border-radius: 12px;
       padding: 12px; font-size: 12px; line-height: 1.5;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -239,6 +239,34 @@
     .fb-explain-foot { margin-top: 10px; display: flex; gap: 6px; justify-content: flex-end; }
     #__fb-explain-delete { background: none; border: 1px solid #e0c0bd; color: #c0392b; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; margin-right: auto; }
     #__fb-explain-delete:hover { background: #fdf2f2; }
+
+    .fb-popover__replies {
+      margin-top: 8px; padding-top: 8px;
+      border-top: 1px solid hsl(220,13%,91%);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .fb-popover__reply { font-size: 12px; line-height: 1.45; }
+    .fb-popover__reply-email { font-weight: 600; color: hsl(252,83%,50%); margin-right: 4px; }
+    .fb-popover__reply-body { color: hsl(222,47%,11%); }
+    .fb-popover__reply-date { color: hsl(220,9%,46%); font-size: 11px; margin-left: 4px; }
+    .fb-reply-form {
+      margin-top: 8px; padding-top: 8px;
+      border-top: 1px solid hsl(220,13%,91%);
+      display: flex; gap: 6px; align-items: flex-start;
+    }
+    .fb-reply-input {
+      flex: 1; resize: none; border: 1px solid hsl(220,13%,87%); border-radius: 8px;
+      padding: 5px 8px; font-size: 12px; font-family: inherit; outline: none;
+      background: #fff; color: hsl(222,47%,11%); line-height: 1.4;
+    }
+    .fb-reply-input:focus { border-color: hsl(252,83%,57%); box-shadow: 0 0 0 2px hsl(252,83%,90%); }
+    .fb-reply-btn {
+      padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: none; background: hsl(252,83%,57%); color: #fff;
+      font-family: inherit; white-space: nowrap;
+    }
+    .fb-reply-btn:hover { background: hsl(252,83%,48%); }
+    .fb-reply-btn:disabled { opacity: .5; cursor: default; }
   `;
 
   const styleEl = document.createElement('style');
@@ -806,10 +834,28 @@
             </div>
           </div>` : '';
 
+        const repliesHtml = (pin.replies || []).map(r => {
+          const rDate = new Date(r.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+          return `<div class="fb-popover__reply">
+            <span class="fb-popover__reply-email">${escHtml(r.email)}</span>
+            <span class="fb-popover__reply-body">${escHtml(r.comment)}</span>
+            <span class="fb-popover__reply-date">· ${rDate}</span>
+          </div>`;
+        }).join('');
+
+        const repliesBlock = (pin.replies && pin.replies.length)
+          ? `<div class="fb-popover__replies">${repliesHtml}</div>`
+          : '';
+
         popoverEl.innerHTML = `${tagHtml}
           <div class="fb-popover__body">${escHtml(pin.comment)}</div>
           <div class="fb-popover__meta">${escHtml(pin.email)} · ${timeStr}</div>
-          ${actionsHtml}`;
+          ${actionsHtml}
+          ${repliesBlock}
+          <div class="fb-reply-form">
+            <textarea class="fb-reply-input" rows="1" placeholder="Reply…"></textarea>
+            <button class="fb-reply-btn" disabled>Reply</button>
+          </div>`;
 
         btn.appendChild(popoverEl);
 
@@ -825,6 +871,32 @@
             await deleteComment(pin.id);
           };
         }
+
+        const replyInput = popoverEl.querySelector('.fb-reply-input');
+        const replyBtn   = popoverEl.querySelector('.fb-reply-btn');
+
+        replyInput.addEventListener('input', () => {
+          replyBtn.disabled = !replyInput.value.trim();
+        });
+
+        replyBtn.addEventListener('click', async e => {
+          e.stopPropagation();
+          const text = replyInput.value.trim();
+          if (!text) return;
+          replyBtn.disabled = true;
+          replyBtn.textContent = 'Posting…';
+          try {
+            await postComment({ type: 'reply', comment: text, parentId: pin.id });
+            showToast('Reply posted.');
+            await loadPins();
+            pinned = true;
+            showPopover();
+          } catch (_) {
+            showToast('Failed to post reply.', true);
+            replyBtn.disabled = false;
+            replyBtn.textContent = 'Reply';
+          }
+        });
       }
     };
 

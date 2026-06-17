@@ -75,4 +75,58 @@ let app, protoId;
     });
     expect(res.status).toBe(400);
   });
+
+  test('POST /api/comments with parentId stores a reply', async () => {
+    // create a parent pin first
+    const parent = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      type: 'element',
+      element: { selector: '#hero', label: 'Hero', tagName: 'DIV' },
+      comment: 'Parent pin',
+      pageUrl: '/p/abc/view',
+    });
+    expect(parent.status).toBe(201);
+    const parentId = parent.body.id;
+
+    const reply = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      parentId,
+      comment: 'A reply',
+    });
+    expect(reply.status).toBe(201);
+
+    const { rows } = await getDb().query('SELECT * FROM comments WHERE id = $1', [reply.body.id]);
+    expect(rows[0].parent_id).toBe(parentId);
+    expect(rows[0].type).toBe('reply');
+  });
+
+  test('POST /api/comments with unknown parentId returns 404', async () => {
+    const res = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      parentId: 'nonexistent-id',
+      comment: 'orphan reply',
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test('POST /api/comments cannot reply to a reply', async () => {
+    const parent = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      type: 'element',
+      element: { selector: '#x', label: 'X', tagName: 'DIV' },
+      comment: 'Parent',
+      pageUrl: '/p/abc/view',
+    });
+    const r1 = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      parentId: parent.body.id,
+      comment: 'First reply',
+    });
+    const r2 = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      parentId: r1.body.id,
+      comment: 'Nested reply — must fail',
+    });
+    expect(r2.status).toBe(400);
+  });
 });

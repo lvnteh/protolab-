@@ -7,12 +7,31 @@ const router = express.Router();
 const VALID_TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
 
 router.post('/comments', async (req, res) => {
-  const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email } = req.body;
+  const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email, parentId } = req.body;
   const commentEmail = email || 'local@test.com';
   if (!comment || !comment.trim()) return res.status(400).json({ error: 'Comment is required.' });
-  if (!['general', 'element'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
 
   const id = nanoid(12);
+
+  if (parentId) {
+    const { rows: parentRows } = await getDb().query(
+      'SELECT id, parent_id FROM comments WHERE id = $1 AND prototype_id = $2',
+      [parentId, prototypeId]
+    );
+    if (!parentRows.length) return res.status(404).json({ error: 'Parent comment not found.' });
+    if (parentRows[0].parent_id) return res.status(400).json({ error: 'Cannot reply to a reply.' });
+
+    await getDb().query(
+      `INSERT INTO comments
+        (id, prototype_id, email, type, comment, created_at, parent_id)
+       VALUES ($1,$2,$3,'reply',$4,$5,$6)`,
+      [id, prototypeId, commentEmail, comment.trim(), new Date().toISOString(), parentId]
+    );
+    return res.status(201).json({ ok: true, id });
+  }
+
+  if (!['general', 'element'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
+
   await getDb().query(
     `INSERT INTO comments
       (id, prototype_id, email, type, element_selector, element_label, element_tag,

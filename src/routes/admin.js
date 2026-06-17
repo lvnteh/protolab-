@@ -250,6 +250,7 @@ router.get('/prototypes/:id/preview', adminAuth, async (req, res) => {
 
   const raw = fs.readFileSync(filePath, 'utf8');
   const html = injectPreview(raw, proto.id, highlightId, JSON.stringify(comments));
+  res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
 

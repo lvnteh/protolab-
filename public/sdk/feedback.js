@@ -788,15 +788,21 @@
 
     // popover
     let popoverEl = null;
+    let hideTimer = null;
+    const cancelHide = () => { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } };
+    const scheduleHide = () => { if (pinned) return; cancelHide(); hideTimer = setTimeout(() => { if (!pinned) hidePopover(); }, 120); };
+
     const showPopover = () => {
+      cancelHide();
       if (popoverEl) return;
       openPinId = pin.id;
       popoverEl = document.createElement('div');
       popoverEl.className = 'fb-popover';
+      popoverEl.addEventListener('mouseenter', cancelHide);
       popoverEl.addEventListener('mouseleave', e => {
         if (pinned) return;
         if (e.relatedTarget && btn.contains(e.relatedTarget)) return;
-        hidePopover();
+        scheduleHide();
       });
 
       const tagHtml = pin.tag
@@ -927,7 +933,7 @@
     btn.addEventListener('mouseleave', e => {
       if (pinned) return;
       if (e.relatedTarget && (btn.contains(e.relatedTarget) || (popoverEl && popoverEl.contains(e.relatedTarget)))) return;
-      hidePopover();
+      scheduleHide();
     });
     btn.addEventListener('click', e => {
       e.stopPropagation();

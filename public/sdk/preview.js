@@ -42,18 +42,18 @@
     #__fb-tooltip {
       position: fixed; z-index: 2147483646;
       background: #fff; border: 1px solid hsl(220,13%,91%); border-radius: 12px;
-      padding: 12px 14px; width: 240px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+      padding: 14px 16px; width: 280px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 12px; line-height: 1.5; pointer-events: none;
+      font-size: 13px; line-height: 1.55; pointer-events: none;
     }
     .__fb-tooltip-tag {
       display: inline-block; padding: 2px 8px; border-radius: 20px;
-      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-      color: #fff; margin-bottom: 6px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      color: #fff; margin-bottom: 7px;
     }
-    .__fb-tooltip-email { font-weight: 700; color: hsl(252,83%,50%); margin-bottom: 3px; }
-    .__fb-tooltip-comment { color: hsl(222,47%,11%); margin-bottom: 3px; white-space: pre-wrap; }
-    .__fb-tooltip-date { color: hsl(220,9%,46%); font-size: 11px; }
+    .__fb-tooltip-email { font-weight: 600; color: hsl(252,83%,50%); margin-bottom: 4px; }
+    .__fb-tooltip-comment { font-weight: 400; color: hsl(222,47%,11%); margin-bottom: 4px; white-space: pre-wrap; }
+    .__fb-tooltip-date { color: hsl(220,9%,46%); font-size: 12px; }
   `;
 
   const styleEl = document.createElement('style');
@@ -104,10 +104,16 @@
     `;
     pinContainer.appendChild(tooltipEl);
     const rect = pin.getBoundingClientRect();
-    const rawLeft = rect.left - 99;
-    const rawTop  = rect.top  - 90;
-    tooltipEl.style.left = Math.max(4, Math.min(rawLeft, window.innerWidth - 254)) + 'px';
-    tooltipEl.style.top  = (rawTop < 4 ? rect.bottom + 4 : rawTop) + 'px';
+    const TW = 280, MARGIN = 8;
+    const th = tooltipEl.offsetHeight || 120;
+    let left = rect.left + rect.width / 2 - TW / 2;
+    let top  = rect.top - th - 10;
+    if (left + TW + MARGIN > window.innerWidth) left = window.innerWidth - TW - MARGIN;
+    if (left < MARGIN) left = MARGIN;
+    if (top < MARGIN) top = rect.bottom + 10;
+    if (top + th + MARGIN > window.innerHeight) top = rect.top - th - 10;
+    tooltipEl.style.left = left + 'px';
+    tooltipEl.style.top  = top  + 'px';
   }
 
   document.addEventListener('click', (e) => {

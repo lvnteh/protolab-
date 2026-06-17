@@ -173,7 +173,27 @@ router.post('/prototypes/:id/comments', adminAuth, async (req, res) => {
     ...r,
     breadcrumb_display: (() => { try { return r.breadcrumb ? JSON.parse(r.breadcrumb).join(' → ') : ''; } catch { return ''; } })(),
   }));
-  res.json({ data: rows, totalCount: total });
+
+  // Fetch replies for the returned page of parent comments
+  const parentIds = rows.filter(r => r.type !== 'reply').map(r => r.id);
+  let replyRows = [];
+  if (parentIds.length) {
+    const placeholders = parentIds.map((_, i) => `$${i + 1}`).join(',');
+    const rr = await getDb().query(
+      `SELECT id, parent_id, email, comment, created_at FROM comments WHERE parent_id IN (${placeholders}) ORDER BY created_at ASC`,
+      parentIds
+    );
+    replyRows = rr.rows;
+  }
+
+  const replyMap = {};
+  replyRows.forEach(r => {
+    if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
+    replyMap[r.parent_id].push(r);
+  });
+
+  const rowsWithReplies = rows.map(r => ({ ...r, replies: replyMap[r.id] || [] }));
+  res.json({ data: rowsWithReplies, totalCount: total });
 });
 
 router.delete('/prototypes/:id/comments', adminAuth, async (req, res) => {
@@ -211,13 +231,22 @@ router.get('/prototypes/:id/preview', adminAuth, async (req, res) => {
   if (!fs.existsSync(filePath)) return res.status(404).send('Prototype file not found.');
 
   const highlightId = req.query.comment || '';
-  const { rows: commentRows } = await getDb().query(
-    `SELECT id, email, element_selector, element_label, comment, created_at
-     FROM comments WHERE prototype_id = $1 AND type = 'element'
+  const { rows: allCommentRows } = await getDb().query(
+    `SELECT id, email, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id
+     FROM comments WHERE prototype_id = $1
      ORDER BY created_at ASC`,
     [proto.id]
   );
-  const comments = commentRows.map((r, i) => ({ ...r, order: i + 1 }));
+
+  const replyMap = {};
+  allCommentRows.filter(r => r.parent_id).forEach(r => {
+    if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
+    replyMap[r.parent_id].push({ id: r.id, email: r.email, comment: r.comment, created_at: r.created_at });
+  });
+
+  const comments = allCommentRows
+    .filter(r => !r.parent_id)
+    .map((r, i) => ({ ...r, order: i + 1, replies: replyMap[r.id] || [] }));
 
   const raw = fs.readFileSync(filePath, 'utf8');
   const html = injectPreview(raw, proto.id, highlightId, JSON.stringify(comments));

@@ -150,20 +150,20 @@ router.post('/prototypes/:id/comments', adminAuth, async (req, res) => {
   let totalResult, rowsResult;
   if (hasFilter) {
     totalResult = await getDb().query(
-      'SELECT COUNT(*) AS n FROM comments WHERE prototype_id = $1 AND type = $2',
+      'SELECT COUNT(*) AS n FROM comments WHERE prototype_id = $1 AND type = $2 AND parent_id IS NULL',
       [req.params.id, typeFilter]
     );
     rowsResult = await getDb().query(
-      `SELECT * FROM comments WHERE prototype_id = $1 AND type = $2 ORDER BY ${orderBy} ${order} LIMIT $3 OFFSET $4`,
+      `SELECT * FROM comments WHERE prototype_id = $1 AND type = $2 AND parent_id IS NULL ORDER BY ${orderBy} ${order} LIMIT $3 OFFSET $4`,
       [req.params.id, typeFilter, parseInt(pageSize, 10), parseInt(offset, 10)]
     );
   } else {
     totalResult = await getDb().query(
-      'SELECT COUNT(*) AS n FROM comments WHERE prototype_id = $1',
+      'SELECT COUNT(*) AS n FROM comments WHERE prototype_id = $1 AND parent_id IS NULL',
       [req.params.id]
     );
     rowsResult = await getDb().query(
-      `SELECT * FROM comments WHERE prototype_id = $1 ORDER BY ${orderBy} ${order} LIMIT $2 OFFSET $3`,
+      `SELECT * FROM comments WHERE prototype_id = $1 AND parent_id IS NULL ORDER BY ${orderBy} ${order} LIMIT $2 OFFSET $3`,
       [req.params.id, parseInt(pageSize, 10), parseInt(offset, 10)]
     );
   }

@@ -22,7 +22,9 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: 'lax' },
 }));
 
-app.use('/sdk', express.static(path.join(__dirname, '../public/sdk')));
+app.use('/sdk', express.static(path.join(__dirname, '../public/sdk'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 app.use('/p', deliveryRouter);
 app.use('/api', apiRouter);
 app.use('/admin', adminRouter);

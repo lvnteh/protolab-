@@ -129,4 +129,31 @@ let app, protoId;
     });
     expect(r2.status).toBe(400);
   });
+
+  test('POST /api/comments rejects parentId from a different prototype', async () => {
+    // Create a parent pin on the main protoId
+    const parent = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      type: 'element',
+      element: { selector: '#z', label: 'Z', tagName: 'DIV' },
+      comment: 'Parent on proto A',
+      pageUrl: '/p/abc/view',
+    });
+    expect(parent.status).toBe(201);
+
+    // Create a second prototype
+    const otherProtoId = 'other-' + Date.now();
+    await getDb().query(
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
+      [otherProtoId, 'Other Proto', 'other.html', 'tok-other', new Date().toISOString()]
+    );
+
+    // Attempt to reply using the wrong prototypeId
+    const res = await request(app).post('/api/comments').send({
+      prototypeId: otherProtoId,
+      parentId: parent.body.id,
+      comment: 'Cross-proto reply',
+    });
+    expect(res.status).toBe(404);
+  });
 });

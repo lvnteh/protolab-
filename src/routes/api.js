@@ -7,51 +7,57 @@ const router = express.Router();
 const VALID_TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
 
 router.post('/comments', async (req, res) => {
-  const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email, parentId } = req.body;
-  const commentEmail = email || 'local@test.com';
-  if (!comment || !comment.trim()) return res.status(400).json({ error: 'Comment is required.' });
+  try {
+    const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email, parentId } = req.body;
+    const commentEmail = email || 'local@test.com';
+    if (!comment || !comment.trim()) return res.status(400).json({ error: 'Comment is required.' });
 
-  const id = nanoid(12);
+    const id = nanoid(12);
 
-  if (parentId) {
-    const { rows: parentRows } = await getDb().query(
-      'SELECT id, parent_id FROM comments WHERE id = $1 AND prototype_id = $2',
-      [parentId, prototypeId]
-    );
-    if (!parentRows.length) return res.status(404).json({ error: 'Parent comment not found.' });
-    if (parentRows[0].parent_id) return res.status(400).json({ error: 'Cannot reply to a reply.' });
+    if (parentId) {
+      if (!prototypeId) return res.status(400).json({ error: 'prototypeId is required.' });
+      const { rows: parentRows } = await getDb().query(
+        'SELECT id, parent_id FROM comments WHERE id = $1 AND prototype_id = $2',
+        [parentId, prototypeId]
+      );
+      if (!parentRows.length) return res.status(404).json({ error: 'Parent comment not found.' });
+      if (parentRows[0].parent_id) return res.status(400).json({ error: 'Cannot reply to a reply.' });
+
+      await getDb().query(
+        `INSERT INTO comments
+          (id, prototype_id, email, type, comment, created_at, parent_id)
+         VALUES ($1,$2,$3,'reply',$4,$5,$6)`,
+        [id, prototypeId, commentEmail, comment.trim(), new Date().toISOString(), parentId]
+      );
+      return res.status(201).json({ ok: true, id });
+    }
+
+    if (!['general', 'element'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
 
     await getDb().query(
       `INSERT INTO comments
-        (id, prototype_id, email, type, comment, created_at, parent_id)
-       VALUES ($1,$2,$3,'reply',$4,$5,$6)`,
-      [id, prototypeId, commentEmail, comment.trim(), new Date().toISOString(), parentId]
+        (id, prototype_id, email, type, element_selector, element_label, element_tag,
+         breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [
+        id, prototypeId, commentEmail, type,
+        element?.selector || null,
+        element?.label    || null,
+        element?.tagName  || null,
+        breadcrumb ? JSON.stringify(breadcrumb) : null,
+        comment.trim(),
+        pageUrl || null,
+        new Date().toISOString(),
+        VALID_TAGS.includes(tag) ? tag : null,
+        typeof xPct === 'number' ? xPct : null,
+        typeof yPct === 'number' ? yPct : null,
+      ]
     );
-    return res.status(201).json({ ok: true, id });
+    res.status(201).json({ ok: true, id });
+  } catch (err) {
+    console.error('POST /comments error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
   }
-
-  if (!['general', 'element'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
-
-  await getDb().query(
-    `INSERT INTO comments
-      (id, prototype_id, email, type, element_selector, element_label, element_tag,
-       breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-    [
-      id, prototypeId, commentEmail, type,
-      element?.selector || null,
-      element?.label    || null,
-      element?.tagName  || null,
-      breadcrumb ? JSON.stringify(breadcrumb) : null,
-      comment.trim(),
-      pageUrl || null,
-      new Date().toISOString(),
-      VALID_TAGS.includes(tag) ? tag : null,
-      typeof xPct === 'number' ? xPct : null,
-      typeof yPct === 'number' ? yPct : null,
-    ]
-  );
-  res.status(201).json({ ok: true, id });
 });
 
 router.get('/comments/:prototypeId', async (req, res) => {

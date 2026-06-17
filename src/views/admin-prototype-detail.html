@@ -530,7 +530,7 @@ async function deleteComment(commentId) {
     'This comment will be permanently removed and cannot be recovered.',
     async () => {
       await fetch('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId, { method: 'DELETE' });
-      document.getElementById('comment-row-' + commentId)?.remove();
+      (document.getElementById('comment-row-' + commentId) || document.getElementById('reply-row-' + commentId))?.remove();
       const count = parseInt(document.getElementById('stat-comments').textContent, 10);
       if (!isNaN(count)) document.getElementById('stat-comments').textContent = count - 1;
     }

@@ -60,6 +60,24 @@ async function initDb() {
     )
   `);
 
+  // Widen the type CHECK to also allow 'reply' rows
+  await _pool.query(`
+    ALTER TABLE comments
+      DROP CONSTRAINT IF EXISTS comments_type_check
+  `);
+  await _pool.query(`
+    ALTER TABLE comments
+      ADD CONSTRAINT comments_type_check
+      CHECK(type IN ('general', 'element', 'reply'))
+  `);
+
+  // Add parent_id FK (idempotent)
+  await _pool.query(`
+    ALTER TABLE comments
+      ADD COLUMN IF NOT EXISTS parent_id TEXT
+      REFERENCES comments(id) ON DELETE CASCADE
+  `);
+
   await _pool.query(`
     CREATE TABLE IF NOT EXISTS nav_events (
       id SERIAL PRIMARY KEY,

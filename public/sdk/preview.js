@@ -54,6 +54,14 @@
     .__fb-tooltip-email { font-weight: 600; color: hsl(252,83%,50%); margin-bottom: 4px; }
     .__fb-tooltip-comment { font-weight: 400; color: hsl(222,47%,11%); margin-bottom: 4px; white-space: pre-wrap; }
     .__fb-tooltip-date { color: hsl(220,9%,46%); font-size: 12px; }
+    .__fb-tooltip-replies {
+      margin-top: 8px; padding-top: 8px;
+      border-top: 1px solid hsl(220,13%,91%);
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .__fb-tooltip-reply { font-size: 12px; color: hsl(222,47%,11%); line-height: 1.4; }
+    .__fb-tooltip-reply-email { font-weight: 600; color: hsl(252,83%,50%); margin-right: 3px; }
+    .__fb-tooltip-reply-date { color: hsl(220,9%,46%); font-size: 11px; margin-left: 3px; }
   `;
 
   const styleEl = document.createElement('style');
@@ -96,11 +104,23 @@
     const tagHtml = c.tag
       ? `<div class="__fb-tooltip-tag" style="background:${pinColor(c.tag)}">${TAG_LABEL[c.tag] || c.tag}</div>`
       : '';
+    const repliesHtml = (c.replies || []).map(r => {
+      const rDate = new Date(r.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+      return `<div class="__fb-tooltip-reply">
+        <span class="__fb-tooltip-reply-email">${escHtml(r.email)}</span>${escHtml(r.comment)}<span class="__fb-tooltip-reply-date">· ${rDate}</span>
+      </div>`;
+    }).join('');
+
+    const repliesBlock = (c.replies && c.replies.length)
+      ? `<div class="__fb-tooltip-replies">${repliesHtml}</div>`
+      : '';
+
     tooltipEl.innerHTML = `
       ${tagHtml}
       <div class="__fb-tooltip-email">${escHtml(c.email)}</div>
       <div class="__fb-tooltip-comment">${escHtml(c.comment)}</div>
       <div class="__fb-tooltip-date">${date}</div>
+      ${repliesBlock}
     `;
     pinContainer.appendChild(tooltipEl);
     const rect = pin.getBoundingClientRect();

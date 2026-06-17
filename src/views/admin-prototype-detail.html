@@ -77,6 +77,9 @@ textarea.input{resize:vertical;line-height:1.5}
 .modal h3{font-size:16px;font-weight:700;color:hsl(222,47%,11%);margin-bottom:8px}
 .modal p{font-size:13px;color:hsl(220,9%,46%);line-height:1.6;margin-bottom:22px}
 .modal__actions{display:flex;gap:10px;justify-content:flex-end}
+.reply-row td { background: hsl(252,83%,98%); border-left: 3px solid hsl(252,83%,57%); padding-left: 32px; font-size: 12px; }
+.reply-row:hover td { background: hsl(252,83%,95%); }
+.reply-badge { display:inline-block; padding:1px 7px; border-radius:20px; font-size:10px; font-weight:700; background:hsl(252,83%,95%); color:hsl(252,83%,40%); margin-left:6px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -348,20 +351,40 @@ async function loadComments(page) {
       document.getElementById('comments-pagination').style.display = 'none';
       return;
     }
-    tbody.innerHTML = data.map(r => `
-      <tr id="comment-row-${r.id}">
-        <td style="white-space:nowrap">${esc(r.email)}</td>
-        <td><span class="badge badge-${r.type}">${r.type}</span></td>
-        <td>${tagBadge(r.tag)}</td>
-        <td>${r.element_label ? `<span style="font-weight:500">${esc(r.element_label)}</span><br><span class="selector" title="${esc(r.element_selector||'')}">${esc(r.element_selector||'')}</span>` : '<span style="color:hsl(220,13%,80%)">—</span>'}</td>
-        <td class="comment-text">${esc(r.comment)}</td>
-        <td class="ts">${fmtDate(r.created_at)}</td>
-        <td style="white-space:nowrap;display:flex;gap:6px;align-items:center">
-          ${r.type === 'element' ? `<a href="/p/${SHARE_TOKEN}?focus=${r.id}" target="_blank" class="btn btn-secondary" style="font-size:11px;padding:4px 8px;white-space:nowrap">View</a>` : ''}
-          <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="deleteComment('${r.id}')">Delete</button>
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = data.map(r => {
+      const replyCount = r.replies ? r.replies.length : 0;
+      const replyBadge = replyCount > 0
+        ? `<span class="reply-badge" onclick="toggleReplies('${r.id}')">${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}</span>`
+        : '';
+
+      const replyRows = (r.replies || []).map(rep => `
+        <tr class="reply-row" id="reply-row-${rep.id}">
+          <td style="white-space:nowrap">${esc(rep.email)}</td>
+          <td colspan="3"></td>
+          <td class="comment-text">${esc(rep.comment)}</td>
+          <td class="ts">${fmtDate(rep.created_at)}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="deleteComment('${rep.id}')">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+
+      return `
+        <tr id="comment-row-${r.id}">
+          <td style="white-space:nowrap">${esc(r.email)}</td>
+          <td><span class="badge badge-${r.type}">${r.type}</span></td>
+          <td>${tagBadge(r.tag)}</td>
+          <td>${r.element_label ? `<span style="font-weight:500">${esc(r.element_label)}</span><br><span class="selector" title="${esc(r.element_selector||'')}">${esc(r.element_selector||'')}</span>` : '<span style="color:hsl(220,13%,80%)">—</span>'}</td>
+          <td class="comment-text">${esc(r.comment)}${replyBadge}</td>
+          <td class="ts">${fmtDate(r.created_at)}</td>
+          <td style="white-space:nowrap;display:flex;gap:6px;align-items:center">
+            ${r.type === 'element' ? `<a href="/p/${SHARE_TOKEN}?focus=${r.id}" target="_blank" class="btn btn-secondary" style="font-size:11px;padding:4px 8px;white-space:nowrap">View</a>` : ''}
+            <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="deleteComment('${r.id}')">Delete</button>
+          </td>
+        </tr>
+        ${replyRows}
+      `;
+    }).join('');
     renderPager('comments-pager', 'comments-info', totalCount, page, 'loadComments');
   } catch (e) {
     document.getElementById('comments-body').innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Failed to load comments.</td></tr>`;
@@ -646,6 +669,16 @@ function deleteExplanation(id) {
       renderExplanations();
     }
   );
+}
+
+function toggleReplies(parentId) {
+  const parent = document.getElementById('comment-row-' + parentId);
+  if (!parent) return;
+  let el = parent.nextElementSibling;
+  while (el && el.classList.contains('reply-row')) {
+    el.style.display = el.style.display === 'none' ? '' : 'none';
+    el = el.nextElementSibling;
+  }
 }
 </script>
 </body>

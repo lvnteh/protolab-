@@ -61,14 +61,38 @@ router.post('/comments', async (req, res) => {
 });
 
 router.get('/comments/:prototypeId', async (req, res) => {
-  const { rows } = await getDb().query(
-    `SELECT id, email, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url
-     FROM comments
-     WHERE prototype_id = $1 AND type = 'element'
-     ORDER BY created_at ASC`,
-    [req.params.prototypeId]
-  );
-  res.json(rows.map((r, i) => ({ ...r, order: i + 1 })));
+  try {
+    const { rows } = await getDb().query(
+      `SELECT id, email, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id
+       FROM comments
+       WHERE prototype_id = $1
+       ORDER BY created_at ASC`,
+      [req.params.prototypeId]
+    );
+
+    const parents = [];
+    const replyMap = {};
+
+    rows.forEach(r => {
+      if (r.parent_id) {
+        if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
+        replyMap[r.parent_id].push({ id: r.id, email: r.email, comment: r.comment, created_at: r.created_at });
+      } else {
+        parents.push(r);
+      }
+    });
+
+    const result = parents.map((r, i) => ({
+      ...r,
+      order: i + 1,
+      replies: replyMap[r.id] || [],
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error('GET /comments error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
 });
 
 router.patch('/comments/:commentId', async (req, res) => {

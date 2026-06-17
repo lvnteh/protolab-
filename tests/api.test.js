@@ -130,6 +130,37 @@ let app, protoId;
     expect(r2.status).toBe(400);
   });
 
+  test('GET /api/comments/:protoId nests replies under their parent', async () => {
+    const pid = 'nest-' + Date.now();
+    await getDb().query(
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
+      [pid, 'NestTest', 'nest.html', 'tok-' + Date.now(), new Date().toISOString()]
+    );
+
+    const p = await request(app).post('/api/comments').send({
+      prototypeId: pid,
+      type: 'element',
+      element: { selector: '#a', label: 'A', tagName: 'DIV' },
+      comment: 'Top comment',
+      pageUrl: '/p/x/view',
+    });
+
+    await request(app).post('/api/comments').send({
+      prototypeId: pid,
+      parentId: p.body.id,
+      comment: 'A reply text',
+    });
+
+    const get = await request(app).get('/api/comments/' + pid);
+    expect(get.status).toBe(200);
+    const pins = get.body;
+    expect(pins.length).toBe(1);
+    expect(pins[0].replies.length).toBe(1);
+    expect(pins[0].replies[0].comment).toBe('A reply text');
+    expect(pins[0].replies[0].id).toBeDefined();
+    expect(pins.find(pin => pin.comment === 'A reply text')).toBeUndefined();
+  });
+
   test('POST /api/comments rejects parentId from a different prototype', async () => {
     // Create a parent pin on the main protoId
     const parent = await request(app).post('/api/comments').send({

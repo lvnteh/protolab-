@@ -1139,9 +1139,10 @@
 
         btn.appendChild(popoverEl);
 
-        // Flip popover left if it would overflow the right edge
+        // Flip popover left if it would overflow the right edge (accounting for sidebar width)
         const popRect = popoverEl.getBoundingClientRect();
-        if (popRect.right > window.innerWidth - 8) {
+        const sidebarW = sidebarExpanded ? 260 : 32;
+        if (popRect.right > window.innerWidth - sidebarW - 8) {
           popoverEl.style.left = 'auto';
           popoverEl.style.right = 'calc(100% + 8px)';
         }

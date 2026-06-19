@@ -616,6 +616,99 @@
     } catch (e) {}
   }
 
+  function setSidebarExpanded(expanded) {
+    sidebarExpanded = expanded;
+    sidebar.classList.toggle('expanded', expanded);
+    sidebar.classList.toggle('collapsed', !expanded);
+    document.body.style.paddingRight = expanded ? '260px' : '32px';
+    try { localStorage.setItem('__fb_sidebar_' + PROTO_ID, expanded ? '1' : '0'); } catch (_) {}
+  }
+
+  function renderSidebar() {
+    const currentPage = currentPageKey();
+    const pagePins = pins.filter(p =>
+      !p.page_url || pageKeyOf(p.page_url) === currentPage
+    );
+    const totalCount = pagePins.length + generalComments.length;
+
+    const stored = (() => { try { return localStorage.getItem('__fb_sidebar_' + PROTO_ID); } catch (_) { return null; } })();
+    if (stored === null) {
+      setSidebarExpanded(totalCount > 0);
+    }
+
+    document.getElementById('__fb-pins-badge').textContent = pagePins.length;
+    document.getElementById('__fb-gen-badge').textContent = generalComments.length;
+    document.getElementById('__fb-sidebar-badge').textContent = totalCount;
+
+    const pinsList = document.getElementById('__fb-sidebar-pins-list');
+    pinsList.innerHTML = '';
+    if (pagePins.length === 0) {
+      pinsList.innerHTML = '<div class="fb-sidebar-empty">No pins on this page yet.</div>';
+    } else {
+      pagePins.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'fb-sidebar-pin-row';
+        const tagHtml = p.tag
+          ? `<span class="fb-sidebar-pin-tag" style="background:${TAG_COLOR[p.tag] || TAG_COLOR.other}">${TAG_LABEL[p.tag] || p.tag}</span>`
+          : '';
+        const repliesHtml = (p.replies && p.replies.length)
+          ? `<div class="fb-sidebar-pin-replies">${p.replies.length} repl${p.replies.length === 1 ? 'y' : 'ies'}</div>`
+          : '';
+        row.innerHTML = `
+          <div class="fb-sidebar-pin-row-head">
+            <div class="fb-sidebar-pin-dot" style="background:${TAG_COLOR[p.tag] || TAG_COLOR.other}">${p.order}</div>
+            <span class="fb-sidebar-pin-email">${escHtml(p.email)}</span>
+            ${tagHtml}
+          </div>
+          <div class="fb-sidebar-pin-body">${escHtml(p.comment)}</div>
+          ${repliesHtml}
+        `;
+        row.addEventListener('click', () => {
+          if (mode === 'comment' || mode === 'explain') setMode('view');
+          focusPin(p.id);
+          setTimeout(() => {
+            const pinEl = pinElements[p.id];
+            if (pinEl) pinEl.click();
+          }, 50);
+        });
+        pinsList.appendChild(row);
+      });
+    }
+
+    const genList = document.getElementById('__fb-sidebar-gen-list');
+    genList.innerHTML = '';
+    if (generalComments.length === 0) {
+      genList.innerHTML = '<div class="fb-sidebar-empty">No general comments yet.</div>';
+    } else {
+      generalComments.forEach(c => {
+        const item = document.createElement('div');
+        item.className = 'fb-sidebar-gen-item';
+        const date = new Date(c.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        item.innerHTML = `
+          <div class="fb-sidebar-gen-email">${escHtml(c.email)}</div>
+          <div class="fb-sidebar-gen-body">${escHtml(c.comment)}</div>
+          <div class="fb-sidebar-gen-date">${date}</div>
+        `;
+        genList.appendChild(item);
+      });
+    }
+  }
+
+  document.getElementById('__fb-sidebar-tabs').addEventListener('click', e => {
+    const tabBtn = e.target.closest('.fb-sidebar-tab');
+    if (!tabBtn) return;
+    const tab = tabBtn.dataset.tab;
+    document.querySelectorAll('.fb-sidebar-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.getElementById('__fb-sidebar-pins').classList.toggle('active', tab === 'pins');
+    document.getElementById('__fb-sidebar-general').classList.toggle('active', tab === 'general');
+  });
+
+  sidebar.addEventListener('click', e => {
+    if (e.target.closest('#__fb-sidebar-collapse') || e.target.closest('#__fb-sidebar-strip')) {
+      setSidebarExpanded(!sidebarExpanded);
+    }
+  });
+
   function renderExplainLayer() {
     explainContainer.innerHTML = '';
     explainMarkerEls = {};
@@ -1337,4 +1430,6 @@
   loadPins();
   loadExplanations();
   rafId = requestAnimationFrame(recomputePositions);
+  const _storedSidebar = (() => { try { return localStorage.getItem('__fb_sidebar_' + PROTO_ID); } catch (_) { return null; } })();
+  setSidebarExpanded(_storedSidebar === '1');
 })();

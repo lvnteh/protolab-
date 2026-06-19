@@ -616,12 +616,14 @@
     } catch (e) {}
   }
 
-  function setSidebarExpanded(expanded) {
+  function setSidebarExpanded(expanded, persist = true) {
     sidebarExpanded = expanded;
     sidebar.classList.toggle('expanded', expanded);
     sidebar.classList.toggle('collapsed', !expanded);
     document.body.style.paddingRight = expanded ? '260px' : '32px';
-    try { localStorage.setItem('__fb_sidebar_' + PROTO_ID, expanded ? '1' : '0'); } catch (_) {}
+    if (persist) {
+      try { localStorage.setItem('__fb_sidebar_' + PROTO_ID, expanded ? '1' : '0'); } catch (_) {}
+    }
   }
 
   function renderSidebar() {
@@ -633,7 +635,7 @@
 
     const stored = (() => { try { return localStorage.getItem('__fb_sidebar_' + PROTO_ID); } catch (_) { return null; } })();
     if (stored === null) {
-      setSidebarExpanded(totalCount > 0);
+      setSidebarExpanded(totalCount > 0, false);
     }
 
     document.getElementById('__fb-pins-badge').textContent = pagePins.length;
@@ -1450,5 +1452,10 @@
   loadExplanations();
   rafId = requestAnimationFrame(recomputePositions);
   const _storedSidebar = (() => { try { return localStorage.getItem('__fb_sidebar_' + PROTO_ID); } catch (_) { return null; } })();
-  setSidebarExpanded(_storedSidebar === '1');
+  if (_storedSidebar !== null) {
+    setSidebarExpanded(_storedSidebar === '1');
+  } else {
+    sidebar.classList.add('collapsed');
+    document.body.style.paddingRight = '32px';
+  }
 })();

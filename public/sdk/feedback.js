@@ -709,6 +709,24 @@
     }
   });
 
+  document.getElementById('__fb-sidebar-gen-submit').addEventListener('click', async () => {
+    const input = document.getElementById('__fb-sidebar-gen-input');
+    const submitBtn = document.getElementById('__fb-sidebar-gen-submit');
+    const text = input.value.trim();
+    if (!text) return;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Posting…';
+    try {
+      await postComment({ type: 'general', comment: text });
+      input.value = '';
+      await loadPins();
+    } catch (_) {
+      showToast('Failed to post comment.', true);
+    }
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Post comment';
+  });
+
   function renderExplainLayer() {
     explainContainer.innerHTML = '';
     explainMarkerEls = {};

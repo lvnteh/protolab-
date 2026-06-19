@@ -595,9 +595,12 @@
     try {
       const resp = await fetch('/api/comments/' + PROTO_ID, { credentials: 'include' });
       if (resp.ok) {
-        pins = await resp.json();
+        const all = await resp.json();
+        pins = all.filter(c => c.element_selector);
+        generalComments = all.filter(c => !c.element_selector && !c.parent_id);
         requestAnimationFrame(() => requestAnimationFrame(() => {
           renderPinLayer();
+          renderSidebar();
           if (focusId) focusPin(focusId);
         }));
       }

@@ -447,6 +447,39 @@
   explainContainer.id = '__fb-explains';
   document.body.appendChild(explainContainer);
 
+  /* ── sidebar ── */
+  const sidebar = document.createElement('div');
+  sidebar.id = '__fb-sidebar';
+  sidebar.innerHTML = `
+  <div id="__fb-sidebar-strip" title="Show comments">
+    <button id="__fb-sidebar-collapse" style="transform:none">&#8250;</button>
+    <span id="__fb-sidebar-badge">0</span>
+    <span id="__fb-sidebar-strip-label">Comments</span>
+  </div>
+  <div id="__fb-sidebar-main">
+    <div id="__fb-sidebar-tabs">
+      <button class="fb-sidebar-tab active" data-tab="pins">
+        Pins <span class="fb-sidebar-tab-badge" id="__fb-pins-badge">0</span>
+      </button>
+      <button class="fb-sidebar-tab" data-tab="general">
+        General <span class="fb-sidebar-tab-badge" id="__fb-gen-badge">0</span>
+      </button>
+      <button id="__fb-sidebar-collapse">&#8250;</button>
+    </div>
+    <div id="__fb-sidebar-pins" class="active">
+      <div id="__fb-sidebar-pins-list"></div>
+    </div>
+    <div id="__fb-sidebar-general">
+      <div id="__fb-sidebar-gen-list"></div>
+      <div id="__fb-sidebar-gen-form">
+        <textarea id="__fb-sidebar-gen-input" rows="3" placeholder="Add a general comment…"></textarea>
+        <button id="__fb-sidebar-gen-submit">Post comment</button>
+      </div>
+    </div>
+  </div>
+`;
+  document.body.appendChild(sidebar);
+
   /* ── draft card ── */
   const draftCard = document.createElement('div');
   draftCard.id = '__fb-draft-card';
@@ -507,6 +540,8 @@
   /* ── state ── */
   let mode = 'view';
   let pins = [];          // [{id,email,element_selector,comment,created_at,order,tag,x_pct,y_pct,page_url}]
+  let generalComments = [];
+  let sidebarExpanded = false;
   let pinPositions = {};  // {id: {x,y,visible}}
   let pinElements = {};   // {id: domElement} — persistent map for RAF repositioning
   let clusterElements = []; // cluster bubble elements for dimming

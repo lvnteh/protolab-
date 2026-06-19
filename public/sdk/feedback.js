@@ -1423,6 +1423,7 @@
       // Clear pins from the previous page immediately; the RAF loop will show
       // pins for the new page once the SPA has rendered its new DOM elements.
       renderPinLayer();
+      renderSidebar();
     }
 
     // Patch history methods to fire a custom event

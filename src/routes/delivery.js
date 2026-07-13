@@ -6,6 +6,7 @@ const { getDb } = require('../db');
 const { injectSdk } = require('../services/inject');
 const customerAuth = require('../middleware/customerAuth');
 const config = require('../config');
+const storage = require('../services/storage');
 
 const router = express.Router();
 
@@ -60,10 +61,9 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
   if (!proto) return res.status(404).send('Prototype not found.');
   if (req.session.prototypeId !== proto.id) return res.status(403).send('Access denied.');
 
-  const filePath = path.join(config.uploadsPath, proto.filename);
-  if (!fs.existsSync(filePath)) return res.status(404).send('Prototype file not found.');
+  const raw = await storage.getPrototype(proto.filename);
+  if (raw === null) return res.status(404).send('Prototype file not found.');
 
-  const raw = fs.readFileSync(filePath, 'utf8');
   const injected = injectSdk(raw, proto.id, req.session.customerEmail);
 
   await getDb().query(

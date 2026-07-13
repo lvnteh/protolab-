@@ -10,9 +10,6 @@ const adminRouter = require('./routes/admin');
 
 const app = express();
 
-const fs = require('fs');
-fs.mkdirSync(config.uploadsPath, { recursive: true });
-
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({

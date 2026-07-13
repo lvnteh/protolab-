@@ -176,7 +176,7 @@ let app, protoId;
     const otherProtoId = 'other-' + Date.now();
     await getDb().query(
       'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [otherProtoId, 'Other Proto', 'other.html', 'tok-other', new Date().toISOString()]
+      [otherProtoId, 'Other Proto', 'other.html', 'tok-' + otherProtoId, new Date().toISOString()]
     );
 
     // Attempt to reply using the wrong prototypeId

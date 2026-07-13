@@ -9,11 +9,12 @@ const { getDb } = require('../db');
 const adminAuth = require('../middleware/adminAuth');
 const config = require('../config');
 const { injectPreview } = require('../services/inject');
+const storage = require('../services/storage');
 
 const router = express.Router();
 
 const upload = multer({
-  dest: config.uploadsPath,
+  storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => cb(null, file.originalname.endsWith('.html')),
 });
 
@@ -37,6 +38,18 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// Fetch a prototype only if it belongs to the given owner. Returns null on
+// miss OR cross-tenant access, so the existing `if (!proto) 404` branches turn
+// another user's prototype into a 404 automatically. `columns` is always a
+// fixed internal string (never user input), so interpolation here is safe.
+async function getOwnedPrototype(id, ownerId, columns = '*') {
+  const { rows } = await getDb().query(
+    `SELECT ${columns} FROM prototypes WHERE id = $1 AND owner_id = $2`,
+    [id, ownerId]
+  );
+  return rows[0] || null;
+}
+
 router.get('/', (_req, res) => res.redirect('/admin/login'));
 
 router.get('/login', (_req, res) => {
@@ -44,23 +57,70 @@ router.get('/login', (_req, res) => {
 });
 
 router.post('/login', async (req, res) => {
-  const { username, password } = req.body;
   const errorHtml = '<div class="alert">Invalid credentials.</div>';
-  if (username !== config.adminUser) return res.status(401).send(renderView('admin-login.html', { error: errorHtml }));
-  const valid = await bcrypt.compare(password, config.adminPasswordHash);
+  const email = (req.body.email || '').trim().toLowerCase();
+  const { rows } = await getDb().query(
+    'SELECT id, password_hash FROM users WHERE email = $1',
+    [email]
+  );
+  const user = rows[0];
+  if (!user) return res.status(401).send(renderView('admin-login.html', { error: errorHtml }));
+  const valid = await bcrypt.compare(req.body.password || '', user.password_hash);
   if (!valid) return res.status(401).send(renderView('admin-login.html', { error: errorHtml }));
-  req.session.isAdmin = true;
+  req.session.userId = user.id;
   res.redirect('/admin/prototypes');
 });
 
-router.get('/prototypes', adminAuth, async (_req, res) => {
+router.get('/signup', (_req, res) => {
+  res.send(renderView('admin-signup.html', { error: '' }));
+});
+
+router.post('/signup', async (req, res) => {
+  const err = (msg, status = 400) =>
+    res.status(status).send(renderView('admin-signup.html', {
+      error: `<div class="alert">${escapeHtml(msg)}</div>`,
+    }));
+
+  const email = (req.body.email || '').trim().toLowerCase();
+  const password = req.body.password || '';
+  const confirm = req.body.confirm || '';
+
+  if (!email || !password || !confirm) return err('All fields are required.');
+  if (password !== confirm) return err('Passwords do not match.');
+  if (password.length < 8) return err('Password must be at least 8 characters.');
+
+  const domain = email.split('@')[1] || '';
+  if (!config.allowedEmailDomains.includes(domain)) {
+    return err('That email domain is not permitted.');
+  }
+
+  const { rows: existing } = await getDb().query('SELECT 1 FROM users WHERE email = $1', [email]);
+  if (existing.length) return err('An account with that email already exists.', 409);
+
+  const id = nanoid(12);
+  const passwordHash = bcrypt.hashSync(password, 10);
+  try {
+    await getDb().query(
+      'INSERT INTO users (id, email, password_hash, created_at) VALUES ($1,$2,$3,$4)',
+      [id, email, passwordHash, new Date().toISOString()]
+    );
+  } catch (e) {
+    // Unique-violation backstop in case of a race between the check and insert.
+    if (e.code === '23505') return err('An account with that email already exists.', 409);
+    throw e;
+  }
+  req.session.userId = id;
+  res.redirect('/admin/prototypes');
+});
+
+router.get('/prototypes', adminAuth, async (req, res) => {
   const { rows } = await getDb().query(`
     SELECT p.id, p.name, p.share_token, p.created_at,
       (SELECT COUNT(*) FROM allowlist  WHERE prototype_id = p.id) AS allowlist_count,
       (SELECT COUNT(*) FROM access_log WHERE prototype_id = p.id) AS view_count,
       (SELECT COUNT(*) FROM comments   WHERE prototype_id = p.id) AS comment_count
-    FROM prototypes p ORDER BY p.created_at DESC
-  `);
+    FROM prototypes p WHERE p.owner_id = $1 ORDER BY p.created_at DESC
+  `, [req.session.userId]);
   res.send(renderView('admin-prototypes.html', { prototypesJson: JSON.stringify(rows).replace(/</g, '\\u003c') }));
 });
 
@@ -73,11 +133,11 @@ router.post('/prototypes', adminAuth, upload.single('file'), async (req, res) =>
   const id = nanoid(12);
   const shareToken = nanoid(12);
   const filename = `${id}.html`;
-  fs.renameSync(req.file.path, path.join(config.uploadsPath, filename));
+  await storage.putPrototype(filename, req.file.buffer);
 
   await getDb().query(
-    'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-    [id, req.body.name || 'Untitled', filename, shareToken, new Date().toISOString()]
+    'INSERT INTO prototypes (id, name, filename, share_token, created_at, owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, req.body.name || 'Untitled', filename, shareToken, new Date().toISOString(), req.session.userId]
   );
 
   const emails = (req.body.allowlist || '').split(/\r?\n/).map(e => e.trim().toLowerCase()).filter(Boolean);
@@ -98,8 +158,7 @@ router.post('/prototypes', adminAuth, upload.single('file'), async (req, res) =>
 });
 
 router.get('/prototypes/:id', adminAuth, async (req, res) => {
-  const { rows: protoRows } = await getDb().query('SELECT * FROM prototypes WHERE id = $1', [req.params.id]);
-  const proto = protoRows[0];
+  const proto = await getOwnedPrototype(req.params.id, req.session.userId);
   if (!proto) return res.status(404).send('Not found.');
   const { rows: allowRows } = await getDb().query('SELECT email FROM allowlist WHERE prototype_id = $1', [proto.id]);
   const allowlist = allowRows.map(r => r.email).join('\n');
@@ -107,8 +166,7 @@ router.get('/prototypes/:id', adminAuth, async (req, res) => {
 });
 
 router.post('/prototypes/:id/settings', adminAuth, async (req, res) => {
-  const { rows } = await getDb().query('SELECT id FROM prototypes WHERE id = $1', [req.params.id]);
-  const proto = rows[0];
+  const proto = await getOwnedPrototype(req.params.id, req.session.userId, 'id');
   if (!proto) return res.status(404).send('Not found.');
   await getDb().query('UPDATE prototypes SET name = $1 WHERE id = $2', [req.body.name || 'Untitled', proto.id]);
   await getDb().query('DELETE FROM allowlist WHERE prototype_id = $1', [proto.id]);
@@ -123,22 +181,22 @@ router.post('/prototypes/:id/settings', adminAuth, async (req, res) => {
 });
 
 router.get('/prototypes/:id/allowlist-count', adminAuth, async (req, res) => {
+  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { rows } = await getDb().query('SELECT COUNT(*) AS n FROM allowlist WHERE prototype_id = $1', [req.params.id]);
   const count = parseInt(rows[0]?.n ?? 0, 10);
   res.json({ count });
 });
 
 router.delete('/prototypes/:id', adminAuth, async (req, res) => {
-  const { rows } = await getDb().query('SELECT * FROM prototypes WHERE id = $1', [req.params.id]);
-  const proto = rows[0];
+  const proto = await getOwnedPrototype(req.params.id, req.session.userId);
   if (!proto) return res.status(404).json({ error: 'Not found.' });
-  const filePath = path.join(config.uploadsPath, proto.filename);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  await storage.deletePrototype(proto.filename);
   await getDb().query('DELETE FROM prototypes WHERE id = $1', [proto.id]);
   res.json({ ok: true });
 });
 
 router.post('/prototypes/:id/comments', adminAuth, async (req, res) => {
+  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { pageSize = 25, offset = 0, sortingKey, sortingOrder = 'asc', filterValues = {} } = req.body || {};
   const allowedSort = ['email', 'type', 'created_at'];
   const orderBy = allowedSort.includes(sortingKey) ? sortingKey : 'created_at';
@@ -197,13 +255,13 @@ router.post('/prototypes/:id/comments', adminAuth, async (req, res) => {
 });
 
 router.delete('/prototypes/:id/comments', adminAuth, async (req, res) => {
-  const { rows } = await getDb().query('SELECT id FROM prototypes WHERE id = $1', [req.params.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Not found.' });
+  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
   await getDb().query('DELETE FROM comments WHERE prototype_id = $1', [req.params.id]);
   res.json({ ok: true });
 });
 
 router.delete('/prototypes/:id/comments/:commentId', adminAuth, async (req, res) => {
+  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { rows } = await getDb().query('SELECT id FROM comments WHERE id = $1 AND prototype_id = $2', [req.params.commentId, req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Not found.' });
   await getDb().query('DELETE FROM comments WHERE id = $1', [req.params.commentId]);
@@ -211,6 +269,7 @@ router.delete('/prototypes/:id/comments/:commentId', adminAuth, async (req, res)
 });
 
 router.post('/prototypes/:id/access-log', adminAuth, async (req, res) => {
+  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { pageSize = 25, offset = 0 } = req.body || {};
   const totalResult = await getDb().query('SELECT COUNT(*) AS n FROM access_log WHERE prototype_id = $1', [req.params.id]);
   const total = parseInt(totalResult.rows[0].n, 10);
@@ -222,13 +281,12 @@ router.post('/prototypes/:id/access-log', adminAuth, async (req, res) => {
 });
 
 router.get('/prototypes/:id/preview', adminAuth, async (req, res) => {
-  const { rows: protoRows } = await getDb().query('SELECT * FROM prototypes WHERE id = $1', [req.params.id]);
-  const proto = protoRows[0];
+  const proto = await getOwnedPrototype(req.params.id, req.session.userId);
   if (!proto) return res.status(404).send('Prototype not found.');
 
   if (path.basename(proto.filename) !== proto.filename) return res.status(400).send('Invalid prototype filename.');
-  const filePath = path.join(config.uploadsPath, proto.filename);
-  if (!fs.existsSync(filePath)) return res.status(404).send('Prototype file not found.');
+  const raw = await storage.getPrototype(proto.filename);
+  if (raw === null) return res.status(404).send('Prototype file not found.');
 
   const highlightId = req.query.comment || '';
   const { rows: allCommentRows } = await getDb().query(
@@ -248,7 +306,6 @@ router.get('/prototypes/:id/preview', adminAuth, async (req, res) => {
     .filter(r => !r.parent_id)
     .map((r, i) => ({ ...r, order: i + 1, replies: replyMap[r.id] || [] }));
 
-  const raw = fs.readFileSync(filePath, 'utf8');
   const html = injectPreview(raw, proto.id, highlightId, JSON.stringify(comments));
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
@@ -256,6 +313,7 @@ router.get('/prototypes/:id/preview', adminAuth, async (req, res) => {
 
 router.get('/prototypes/:id/funnels', adminAuth, async (req, res) => {
   const protoId = req.params.id;
+  if (!await getOwnedPrototype(protoId, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
 
   // 1. Load all nav events for this prototype, ordered for stitching
   const { rows: events } = await getDb().query(

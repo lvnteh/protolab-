@@ -59,6 +59,16 @@
 
 ## 3. Data Model
 
+### users
+| Column | Type | Notes |
+|--------|------|-------|
+| id | TEXT PK | 12-char nanoid |
+| email | TEXT UNIQUE | Login identity, lowercased/trimmed |
+| password_hash | TEXT | bcrypt hash |
+| created_at | TEXT | ISO 8601 timestamp |
+
+The first user is seeded from `ADMIN_EMAIL` + `ADMIN_PASSWORD_HASH` on boot (only when the table is empty). All existing prototypes are backfilled to this seeded user.
+
 ### prototypes
 | Column | Type | Notes |
 |--------|------|-------|
@@ -67,6 +77,7 @@
 | filename | TEXT | Stored filename on disk (`{id}.html`) |
 | share_token | TEXT UNIQUE | 12-char nanoid used in public URLs |
 | created_at | TEXT | ISO 8601 timestamp |
+| owner_id | TEXT FK → users.id | Owning user (nullable for legacy rows; enforced in code) |
 
 ### allowlist
 | Column | Type | Notes |
@@ -130,14 +141,15 @@
 
 ## 4. User Roles & Authentication
 
-### Admin
-- Single user configured via environment variables (`ADMIN_USER`, `ADMIN_PASSWORD_HASH`)
-- Password is bcrypt-hashed
-- Session set via `POST /admin/login`; `session.isAdmin = true`
-- Has access to all admin routes
+### Admin (account holder / tenant)
+- **Multi-tenant:** each admin has their own account and sees/manages **only their own** prototypes.
+- Self-serve signup at `GET/POST /admin/signup`, gated to a hardcoded allowed-email-domain list in `config.allowedEmailDomains` (`sap.com`, `emarsys.com`). Minimum password length 8.
+- Login with **email + password** (bcrypt) at `POST /admin/login`. Session set via `session.userId = users.id`.
+- The legacy single global admin is migrated into the `users` table on boot, seeded from `ADMIN_EMAIL` + `ADMIN_PASSWORD_HASH`, and owns all pre-existing prototypes.
+- Every `/admin/*` route is protected by `adminAuth` (checks `session.userId`). Accessing another user's prototype by id returns **404** (ownership enforced via a `WHERE id = $1 AND owner_id = $2` lookup).
 
 ### Reviewer
-- No account required; identified by email address
+- No account required; identified by email address. **Unchanged by multi-tenancy.**
 - Must enter email at the share link entry page
 - Email is checked case-insensitively against the prototype's allowlist
 - Session set on successful entry; `session.customerEmail` and `session.prototypeId` stored
@@ -669,8 +681,9 @@ When multiple comments share the same `element_selector`, their x position is st
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
 | `SESSION_SECRET` | Yes (prod) | `dev-secret` | Secret for signing session cookies |
-| `ADMIN_USER` | No | `admin` | Admin username |
-| `ADMIN_PASSWORD_HASH` | Yes | — | bcrypt hash of admin password |
+| `ADMIN_USER` | No | `admin` | Legacy admin username (no longer used for login; kept for reference) |
+| `ADMIN_EMAIL` | Yes (prod) | — | Email used to seed the first user on boot. Must be on an allowed signup domain. Login is email-based |
+| `ADMIN_PASSWORD_HASH` | Yes | — | bcrypt hash of the seeded admin's password |
 | `BASE_URL` | Yes (prod) | `http://localhost:3000` | Public base URL used in generated share links (must include `https://` in production) |
 | `UPLOADS_PATH` | No | `./uploads` | Directory where uploaded HTML files are stored. Use a persistent volume path in production (e.g. `/data/uploads` on Railway) |
 | `PORT` | No | `3000` | HTTP port the server listens on. Railway injects this automatically |

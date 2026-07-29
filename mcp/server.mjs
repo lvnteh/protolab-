@@ -67,9 +67,10 @@ server.tool('protoshare_pull', 'Fetch all feedback (comments, replies, explanati
   { file_or_id: z.string().describe('Local HTML file (from .protoshare.json) or prototype id') },
   tool(handlers.pull));
 
-server.tool('protoshare_source', 'Download the published (or a specific) version HTML. If the argument is a known local file, it is written to that file.',
+server.tool('protoshare_source', 'Download the published (or a specific) version HTML. If the argument is a known local file, it is written to that file — but an existing local file with differing content is NOT overwritten unless overwrite:true is passed.',
   { file_or_id: z.string().describe('Local HTML file or prototype id'),
-    version: z.number().int().optional().describe('Specific version number (defaults to published)') },
+    version: z.number().int().optional().describe('Specific version number (defaults to published)'),
+    overwrite: z.boolean().optional().describe('Overwrite the local file even if it has local changes that differ from the fetched version') },
   tool(handlers.source));
 
 server.tool('protoshare_push', 'Upload the local HTML file as a new DRAFT version (does not affect the live share link). Sends the manifest baseVersion for conflict detection.',

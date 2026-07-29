@@ -51,12 +51,31 @@ async function pull(ctx, { file_or_id }) {
   return lines.join('\n');
 }
 
-async function source(ctx, { file_or_id, version }) {
+async function source(ctx, { file_or_id, version, overwrite }) {
   const id = manifestLib.resolveId(ctx.manifest, file_or_id);
   const html = await ctx.client.source(id, version);
   const fileKey = manifestLib.fileKeyFor(ctx.manifest, file_or_id);
   if (fileKey) {
-    ctx.writeFile(fileKey, html);
+    // Dirty-check: never clobber local edits. Read the current file; if it
+    // exists and differs from the fetched HTML, refuse unless overwrite:true.
+    // ENOENT = no local file yet → safe to write.
+    if (overwrite !== true) {
+      let current;
+      try {
+        current = ctx.readFile(fileKey);
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw e;
+        current = null; // absent — safe to write
+      }
+      if (current != null && current !== html) {
+        return `Local ${fileKey} has changes that differ from ${version ? `v${version}` : 'the published version'}. Re-run with overwrite:true to replace it, or diff/back up first.`;
+      }
+    }
+    try {
+      ctx.writeFile(fileKey, html);
+    } catch (e) {
+      return `Failed to write to ${fileKey}: ${e.message}. Check the path exists and is writable, and that you're running from the prototype repo root.`;
+    }
     return `Wrote ${html.length} bytes of ${version ? `v${version}` : 'the published version'} to ${fileKey}.`;
   }
   // No local file mapping — return the HTML inline so the agent still gets it.
@@ -81,7 +100,7 @@ async function push(ctx, { file, note }) {
   } catch (e) {
     if (e.status === 409) {
       const cur = e.body && e.body.currentVersion;
-      return `Conflict: the remote moved on (current version ${cur}). Pull the latest source with protoshare_source before pushing again.`;
+      return `Conflict: the remote moved on (current version ${cur}); your push was based on v${base ?? '—'} (the highest version this manifest has seen). To recover: pull the latest with protoshare_source, integrate your local changes into it, then push again.`;
     }
     if (e.status === 404) return `Prototype for "${file}" not found (or not owned by this token).`;
     if (e.status === 401) return `Unauthorized — check PROTOSHARE_TOKEN.`;
@@ -108,11 +127,15 @@ async function status(ctx, { file_or_id }) {
   const remote = await ctx.client.versions(id);
   const latest = remote.length ? Math.max(...remote.map(v => v.version)) : null;
   const published = remote.find(v => v.status === 'published');
-  return [
+  const lines = [
     `Status for ${key || id}:`,
     `  Local:  lastPulled v${entry.lastPulled ?? '—'}, lastPushed v${entry.lastPushed ?? '—'}`,
     `  Remote: latest v${latest ?? '—'}${published ? `, published v${published.version}` : ''}`,
-  ].join('\n');
+  ];
+  if (typeof entry.lastPushed === 'number' && typeof entry.lastPulled === 'number' && entry.lastPushed > entry.lastPulled) {
+    lines.push('  (you have local pushes ahead of your last pull)');
+  }
+  return lines.join('\n');
 }
 
 async function resolve(ctx, { file_or_id, comment_id, version }) {

@@ -62,6 +62,54 @@ test('source writes the HTML to the local file when file_or_id is a known file',
   expect(text).toMatch(/checkout\.html/);
 });
 
+test('source does NOT overwrite an existing local file with differing content when overwrite is unset', async () => {
+  const { ctx, files } = makeCtx({
+    source: '<html>remote</html>',
+    files: { 'checkout.html': '<html>local edits</html>' },
+  });
+  const text = await handlers.source(ctx, { file_or_id: 'checkout.html' });
+  // File left untouched, and the message guides the caller.
+  expect(files['checkout.html']).toBe('<html>local edits</html>');
+  expect(text).toMatch(/overwrite/i);
+  expect(text).toMatch(/differ/i);
+});
+
+test('source DOES overwrite when overwrite:true is passed', async () => {
+  const { ctx, files } = makeCtx({
+    source: '<html>remote</html>',
+    files: { 'checkout.html': '<html>local edits</html>' },
+  });
+  const text = await handlers.source(ctx, { file_or_id: 'checkout.html', overwrite: true });
+  expect(files['checkout.html']).toBe('<html>remote</html>');
+  expect(text).toMatch(/Wrote/);
+});
+
+test('source writes normally when the local file is absent (ENOENT)', async () => {
+  const { ctx, files } = makeCtx({ source: '<html>fresh</html>' }); // no files seeded
+  const text = await handlers.source(ctx, { file_or_id: 'checkout.html' });
+  expect(files['checkout.html']).toBe('<html>fresh</html>');
+  expect(text).toMatch(/Wrote/);
+});
+
+test('source writes without error when local content is identical to remote', async () => {
+  const { ctx, files } = makeCtx({
+    source: '<html>same</html>',
+    files: { 'checkout.html': '<html>same</html>' },
+  });
+  const text = await handlers.source(ctx, { file_or_id: 'checkout.html' });
+  expect(files['checkout.html']).toBe('<html>same</html>');
+  expect(text).toMatch(/Wrote/);
+});
+
+test('source surfaces a writeFile failure with an actionable message', async () => {
+  const { ctx } = makeCtx({ source: '<html>fresh</html>' }); // absent local file → will attempt write
+  ctx.writeFile = () => { throw new Error('EACCES: permission denied'); };
+  const text = await handlers.source(ctx, { file_or_id: 'checkout.html' });
+  expect(text).toMatch(/Failed to write to checkout\.html/);
+  expect(text).toMatch(/EACCES/);
+  expect(text).toMatch(/writable/i);
+});
+
 test('push reads the local file, sends baseVersion from manifest, records lastPushed', async () => {
   const { ctx, calls, saved } = makeCtx({
     files: { 'checkout.html': '<html>edited</html>' },

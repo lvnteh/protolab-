@@ -16,6 +16,13 @@ const {
 
 const app = express();
 
+// Behind Railway/any reverse proxy, the real client IP arrives in
+// X-Forwarded-For and the original scheme in X-Forwarded-Proto. Without this,
+// req.ip is the proxy's IP — which would make the rate limiters key every
+// visitor to the same bucket, and the secure-cookie/HTTPS detection wrong.
+// Trust the first proxy hop (Railway terminates TLS one hop in front).
+app.set('trust proxy', 1);
+
 // Security headers. CSP is intentionally DISABLED: prototypes are arbitrary
 // user-uploaded HTML served at /p/:token/view with an injected SDK that uses
 // inline styles/scripts — a strict CSP would break served prototypes. Future

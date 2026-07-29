@@ -35,10 +35,20 @@ function csrf(req, res, next) {
   const provided = req.get('x-csrf-token')
     || (req.body && typeof req.body === 'object' ? req.body._csrf : undefined);
 
-  if (!expected || !provided || provided !== expected) {
+  if (!expected || !provided || !safeEqual(provided, expected)) {
     return res.status(403).json({ error: 'Invalid or missing CSRF token.' });
   }
   return next();
+}
+
+// Constant-time comparison so token validation can't be brute-forced by timing.
+// timingSafeEqual throws on length mismatch, so length-check first (a length
+// difference is not secret — the token length is fixed).
+function safeEqual(a, b) {
+  const ab = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
 }
 
 module.exports = csrf;

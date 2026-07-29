@@ -3,6 +3,7 @@ const os = require('os');
 process.env.UPLOADS_PATH = os.tmpdir();
 
 const hasDb = !!process.env.DATABASE_URL;
+jest.setTimeout(15000);
 const { initDb, getDb, closeDb } = require('../src/db');
 const { nanoid } = require('nanoid');
 

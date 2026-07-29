@@ -31,6 +31,16 @@ function renderView(name, vars) {
   return html;
 }
 
+// Render an admin HTML page with the per-session CSRF token always injected.
+// The token is placed on res.locals by the csrf middleware; every admin view
+// carries a `{{csrfToken}}` placeholder (hidden form input and/or <meta> tag),
+// so routing all admin pages through here guarantees the browser can echo it
+// back on unsafe requests. When enforcement is off the token is still injected
+// but never required, so existing token-less suites are unaffected.
+function renderAdmin(res, name, vars = {}) {
+  return res.send(renderView(name, { csrfToken: res.locals.csrfToken || '', ...vars }));
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -54,7 +64,7 @@ async function getOwnedPrototype(id, ownerId, columns = '*') {
 router.get('/', (_req, res) => res.redirect('/admin/login'));
 
 router.get('/login', (_req, res) => {
-  res.send(renderView('admin-login.html', { error: '' }));
+  renderAdmin(res, 'admin-login.html', { error: '' });
 });
 
 router.post('/login', async (req, res) => {
@@ -65,21 +75,22 @@ router.post('/login', async (req, res) => {
     [email]
   );
   const user = rows[0];
-  if (!user) return res.status(401).send(renderView('admin-login.html', { error: errorHtml }));
+  if (!user) return res.status(401).send(renderView('admin-login.html', { error: errorHtml, csrfToken: res.locals.csrfToken || '' }));
   const valid = await bcrypt.compare(req.body.password || '', user.password_hash);
-  if (!valid) return res.status(401).send(renderView('admin-login.html', { error: errorHtml }));
+  if (!valid) return res.status(401).send(renderView('admin-login.html', { error: errorHtml, csrfToken: res.locals.csrfToken || '' }));
   req.session.userId = user.id;
   res.redirect('/admin/prototypes');
 });
 
 router.get('/signup', (_req, res) => {
-  res.send(renderView('admin-signup.html', { error: '' }));
+  renderAdmin(res, 'admin-signup.html', { error: '' });
 });
 
 router.post('/signup', async (req, res) => {
   const err = (msg, status = 400) =>
     res.status(status).send(renderView('admin-signup.html', {
       error: `<div class="alert">${escapeHtml(msg)}</div>`,
+      csrfToken: res.locals.csrfToken || '',
     }));
 
   const email = (req.body.email || '').trim().toLowerCase();
@@ -122,7 +133,7 @@ router.get('/prototypes', adminAuth, async (req, res) => {
       (SELECT COUNT(*) FROM comments   WHERE prototype_id = p.id) AS comment_count
     FROM prototypes p WHERE p.owner_id = $1 ORDER BY p.created_at DESC
   `, [req.session.userId]);
-  res.send(renderView('admin-prototypes.html', { prototypesJson: JSON.stringify(rows).replace(/</g, '\\u003c') }));
+  res.send(renderView('admin-prototypes.html', { prototypesJson: JSON.stringify(rows).replace(/</g, '\\u003c'), csrfToken: res.locals.csrfToken || '' }));
 });
 
 router.get('/upload', adminAuth, (_req, res) => {
@@ -182,7 +193,7 @@ router.get('/prototypes/:id', adminAuth, async (req, res) => {
   if (!proto) return res.status(404).send('Not found.');
   const { rows: allowRows } = await getDb().query('SELECT email FROM allowlist WHERE prototype_id = $1', [proto.id]);
   const allowlist = allowRows.map(r => r.email).join('\n');
-  res.send(renderView('admin-prototype-detail.html', { id: proto.id, name: escapeHtml(proto.name), allowlist: escapeHtml(allowlist), shareToken: proto.share_token }));
+  res.send(renderView('admin-prototype-detail.html', { id: proto.id, name: escapeHtml(proto.name), allowlist: escapeHtml(allowlist), shareToken: proto.share_token, csrfToken: res.locals.csrfToken || '' }));
 });
 
 router.post('/prototypes/:id/settings', adminAuth, async (req, res) => {
@@ -364,7 +375,7 @@ router.delete('/tokens/:tokenId', adminAuth, async (req, res) => {
 // Account-level API-token management page. Distinct path from GET /tokens
 // (which returns JSON, consumed by this page's client-side fetch).
 router.get('/tokens/page', adminAuth, (_req, res) => {
-  res.send(readView('admin-tokens.html'));
+  renderAdmin(res, 'admin-tokens.html');
 });
 
 // Owner-scoped version history for a prototype (consumed by the detail view's

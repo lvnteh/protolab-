@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{csrfToken}}">
 <title>Prototypes — Engagement Cloud ProtoLab (Beta!)</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -175,6 +176,7 @@ textarea.input{resize:vertical;line-height:1.5}
 </div>
 
 <script>
+const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
 const rows = {{prototypesJson}};
 
 function fmtDate(iso) {
@@ -277,7 +279,7 @@ async function submitUpload() {
   btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"/></svg> Uploading…';
 
   try {
-    const resp = await fetch('/admin/prototypes', { method: 'POST', headers: { Accept: 'application/json' }, body: fd });
+    const resp = await fetch('/admin/prototypes', { method: 'POST', headers: { Accept: 'application/json', 'x-csrf-token': CSRF }, body: fd });
     if (!resp.ok) throw new Error('Upload failed');
     const { name: protoName, shareLink, id } = await resp.json();
 
@@ -309,7 +311,7 @@ function del(id, name) {
   document.getElementById('modal-title').textContent = 'Delete prototype?';
   document.getElementById('modal-body').textContent = `"${name}" and all its data will be permanently deleted. This cannot be undone.`;
   _modalCallback = async () => {
-    await fetch('/admin/prototypes/' + id, { method: 'DELETE' });
+    await fetch('/admin/prototypes/' + id, { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
     location.reload();
   };
   const el = document.getElementById('confirm-modal');

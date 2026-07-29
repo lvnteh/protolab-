@@ -144,3 +144,62 @@ describe('CSRF middleware (task 7)', () => {
     expect(res.status).toBe(200);
   });
 });
+
+// Additional CSRF coverage flagged by review: the `_csrf` body-field acceptance
+// path (both urlencoded and JSON bodies) was previously untested, and a
+// wrong-but-same-length token must still be rejected by the constant-time
+// compare. Enforcement is forced on for the whole block and restored after.
+describe('CSRF middleware — body-field + mismatch (delivery fix)', () => {
+  const csrf = require('../src/middleware/csrf');
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use(express.urlencoded({ extended: true }));
+    app.use(session({ secret: 'test', resave: false, saveUninitialized: true }));
+    app.use(csrf);
+    app.get('/token', (_req, res) => res.json({ token: res.locals.csrfToken }));
+    app.post('/thing', (_req, res) => res.json({ ok: true }));
+    return app;
+  }
+
+  const OLD_ENV = process.env;
+  beforeEach(() => { process.env.CSRF_ENABLED = '1'; });
+  afterEach(() => { process.env = { ...OLD_ENV }; });
+
+  test('accepts unsafe POST with the token in the _csrf urlencoded body field', async () => {
+    const app = buildApp();
+    const agent = request.agent(app);
+    const token = (await agent.get('/token')).body.token;
+    const res = await agent
+      .post('/thing')
+      .type('form')
+      .send({ _csrf: token, other: 'data' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  test('accepts unsafe POST with the token in the _csrf JSON body field', async () => {
+    const app = buildApp();
+    const agent = request.agent(app);
+    const token = (await agent.get('/token')).body.token;
+    const res = await agent
+      .post('/thing')
+      .send({ _csrf: token, other: 'data' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  test('rejects a wrong-but-same-length token (constant-time mismatch)', async () => {
+    const app = buildApp();
+    const agent = request.agent(app);
+    const token = (await agent.get('/token')).body.token;
+    // Flip the first hex char to a different value; length is preserved so this
+    // exercises the timingSafeEqual mismatch branch, not the length short-circuit.
+    const wrong = (token[0] === '0' ? '1' : '0') + token.slice(1);
+    expect(wrong).toHaveLength(token.length);
+    const res = await agent.post('/thing').set('x-csrf-token', wrong).send({});
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: 'Invalid or missing CSRF token.' });
+  });
+});

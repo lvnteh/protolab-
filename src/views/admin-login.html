@@ -31,6 +31,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
   <div class="subtitle">Admin dashboard</div>
   {{error}}
   <form method="POST" action="/admin/login">
+    <input type="hidden" name="_csrf" value="{{csrfToken}}">
     <div class="field">
       <label for="e">Email</label>
       <input class="input" id="e" name="email" type="email" autocomplete="email" autofocus required>

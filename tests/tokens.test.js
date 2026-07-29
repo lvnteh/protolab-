@@ -57,4 +57,37 @@ let userId;
     expect(list.map(t => t.name).sort()).toEqual(['alpha', 'beta']);
     expect(list[0]).not.toHaveProperty('token_hash');
   });
+
+  test('apiTokenAuth sets req.userId and req.tokenId for a valid bearer token', async () => {
+    const express = require('express');
+    const request = require('supertest');
+    const apiTokenAuth = require('../src/middleware/apiTokenAuth');
+    const { raw, id } = await tokens.createToken(userId, 'mw');
+    const app = express();
+    app.get('/whoami', apiTokenAuth, (req, res) => res.json({ userId: req.userId, tokenId: req.tokenId }));
+    const res = await request(app).get('/whoami').set('Authorization', `Bearer ${raw}`);
+    expect(res.status).toBe(200);
+    expect(res.body.userId).toBe(userId);
+    expect(res.body.tokenId).toBe(id);
+  });
+
+  test('apiTokenAuth 401s when the Authorization header is missing', async () => {
+    const express = require('express');
+    const request = require('supertest');
+    const apiTokenAuth = require('../src/middleware/apiTokenAuth');
+    const app = express();
+    app.get('/whoami', apiTokenAuth, (req, res) => res.json({ userId: req.userId }));
+    const res = await request(app).get('/whoami');
+    expect(res.status).toBe(401);
+  });
+
+  test('apiTokenAuth 401s for an unknown token', async () => {
+    const express = require('express');
+    const request = require('supertest');
+    const apiTokenAuth = require('../src/middleware/apiTokenAuth');
+    const app = express();
+    app.get('/whoami', apiTokenAuth, (req, res) => res.json({ userId: req.userId }));
+    const res = await request(app).get('/whoami').set('Authorization', 'Bearer nope');
+    expect(res.status).toBe(401);
+  });
 });

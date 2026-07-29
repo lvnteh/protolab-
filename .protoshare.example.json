@@ -1,0 +1,6 @@
+{
+  "remote": "https://your-protolab.up.railway.app",
+  "prototypes": {
+    "checkout.html": { "id": "PASTE_PROTOTYPE_ID_HERE" }
+  }
+}

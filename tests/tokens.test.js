@@ -91,4 +91,14 @@ let userId;
     const res = await request(app).get('/whoami').set('Authorization', 'Bearer nope');
     expect(res.status).toBe(401);
   });
+
+  test('resolveToken returns null when the id prefix is unknown', async () => {
+    expect(await tokens.resolveToken('nonexistentid.somesecret')).toBeNull();
+  });
+
+  test('resolveToken returns null for a malformed token (no dot / empty parts)', async () => {
+    expect(await tokens.resolveToken('nodot')).toBeNull();
+    expect(await tokens.resolveToken('.secretonly')).toBeNull();
+    expect(await tokens.resolveToken('idonly.')).toBeNull();
+  });
 });

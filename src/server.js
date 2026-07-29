@@ -7,6 +7,7 @@ const config = require('./config');
 const deliveryRouter = require('./routes/delivery');
 const apiRouter = require('./routes/api');
 const adminRouter = require('./routes/admin');
+const apiV1Router = require('./routes/apiV1');
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use('/sdk', express.static(path.join(__dirname, '../public/sdk'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
 }));
 app.use('/p', deliveryRouter);
+app.use('/api/v1', apiV1Router);
 app.use('/api', apiRouter);
 app.use('/admin', adminRouter);
 

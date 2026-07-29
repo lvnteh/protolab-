@@ -15,6 +15,9 @@ async function apiTokenAuth(req, res, next) {
     req.tokenId = resolved.tokenId;
     next();
   } catch (err) {
+    // NEVER log the raw bearer token (match[1]). If token context is ever
+    // needed here, mask it (e.g. token.slice(0, 4) + '***'); the error object
+    // below does not contain the token.
     console.error('apiTokenAuth error:', err);
     res.status(500).json({ error: 'Internal server error.' });
   }

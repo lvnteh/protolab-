@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{csrfToken}}">
 <title>{{name}} — Engagement Cloud ProtoLab (Beta!)</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -221,6 +222,7 @@ textarea.input{resize:vertical;line-height:1.5}
       <div class="form-pad">
         <div id="save-alert" class="alert">Changes saved.</div>
         <form method="POST" action="/admin/prototypes/{{id}}/settings">
+          <input type="hidden" name="_csrf" value="{{csrfToken}}">
           <div class="field">
             <label for="proto-name">Prototype name</label>
             <input class="input" id="proto-name" name="name" type="text" value="{{name}}" required>
@@ -296,6 +298,7 @@ textarea.input{resize:vertical;line-height:1.5}
 </div>
 
 <script>
+const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
 const PROTO_ID = '{{id}}';
 const SHARE_TOKEN = '{{shareToken}}';
 const PAGE_SIZE = 25;
@@ -359,7 +362,7 @@ async function loadComments(page) {
   commentsPage = page;
   try {
     const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/comments', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+      method: 'POST', headers: {'Content-Type':'application/json', 'x-csrf-token': CSRF},
       body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE, sortingKey: 'created_at', sortingOrder: 'desc', filterValues: commentType ? {type: commentType} : {} })
     });
     if (!resp.ok) { window.location.href = '/admin/login'; return; }
@@ -423,7 +426,7 @@ let logPage = 1;
 async function loadLog(page) {
   logPage = page;
   const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/access-log', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: {'Content-Type':'application/json', 'x-csrf-token': CSRF},
     body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE })
   });
   const {data, totalCount} = await resp.json();
@@ -455,7 +458,7 @@ async function loadAllowlistCount() {
 
 async function deleteProto() {
   if (!confirm('Delete this prototype and all its data? This cannot be undone.')) return;
-  await fetch('/admin/prototypes/{{id}}', { method: 'DELETE' });
+  await fetch('/admin/prototypes/{{id}}', { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
   location.href = '/admin/prototypes';
 }
 
@@ -550,7 +553,7 @@ async function deleteComment(commentId) {
     'Delete comment?',
     'This comment will be permanently removed and cannot be recovered.',
     async () => {
-      await fetch('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId, { method: 'DELETE' });
+      await fetch('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId, { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
       (document.getElementById('comment-row-' + commentId) || document.getElementById('reply-row-' + commentId))?.remove();
       const count = parseInt(document.getElementById('stat-comments').textContent, 10);
       if (!isNaN(count)) document.getElementById('stat-comments').textContent = count - 1;
@@ -563,7 +566,7 @@ async function clearAllComments() {
     'Clear all comments?',
     'Every comment on this prototype will be permanently deleted. This cannot be undone.',
     async () => {
-      await fetch('/admin/prototypes/' + PROTO_ID + '/comments', { method: 'DELETE' });
+      await fetch('/admin/prototypes/' + PROTO_ID + '/comments', { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
       loadComments(1);
     }
   );
@@ -666,7 +669,7 @@ async function saveExplanationEdit(id) {
   const body = document.getElementById('exp-edit-ta-' + id).value.trim();
   if (!body) return;
   const resp = await fetch('/api/explanations/' + id, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-csrf-token': CSRF },
     body: JSON.stringify({ body }),
   });
   if (!resp.ok) {
@@ -685,7 +688,7 @@ function deleteExplanation(id) {
     'Delete explanation?',
     `The explanation for "${selector}" will be permanently removed.`,
     async () => {
-      await fetch('/api/explanations/' + id, { method: 'DELETE' });
+      await fetch('/api/explanations/' + id, { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
       adminExplanations = adminExplanations.filter(e => e.id !== id);
       renderExplanations();
     }

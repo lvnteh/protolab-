@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Postgres service container the test suite connects to. The app's initDb()
+    # needs a real session connection (advisory locks), which a plain container
+    # provides. Port 5432 is mapped straight through.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Node 20 (active LTS). package.json declares no `engines` constraint, so
+      # 20 is a safe, stable target for CI even though the app runs on newer Node.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Lint is its own step and allowed to fail for now: the existing codebase
+      # has pre-existing unused-var warnings. It is kept visible (not silenced)
+      # but non-blocking so tests remain the real gate. Flip continue-on-error to
+      # false once the tree is warning-clean.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      # Serial run for deterministic CI. Per-file DB cleanup (tests/setup.js's
+      # afterAll -> cleanDb) now makes PARALLEL workers safe too, but serial keeps
+      # ordering-sensitive assertions and log output stable in CI. Switch to
+      # `npm test` (parallel) if/when speed matters more than determinism.
+      - name: Test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          PGSSLMODE: disable
+          SESSION_SECRET: ci-dummy-session-secret
+        run: npm run test:serial

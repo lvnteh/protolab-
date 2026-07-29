@@ -105,6 +105,7 @@ textarea.input{resize:vertical;line-height:1.5}
     <button class="tab" data-tab="settings">Settings</button>
     <button class="tab" data-tab="funnels">Funnels</button>
     <button class="tab" data-tab="explanations">Explanations</button>
+    <button class="tab" data-tab="versions">Versions</button>
   </div>
   <div class="tab-body">
 
@@ -258,6 +259,25 @@ textarea.input{resize:vertical;line-height:1.5}
       </div>
     </div>
 
+    <!-- Versions tab -->
+    <div class="tab-panel" id="tab-versions">
+      <div class="tbl-wrap">
+        <table class="tbl" id="versions-table">
+          <thead>
+            <tr>
+              <th>Version</th>
+              <th>Status</th>
+              <th>Note</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="versions-body">
+            <tr><td colspan="4" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div><!-- tab-body -->
 </div>
 
@@ -290,6 +310,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'funnels') loadFunnels();
     if (btn.dataset.tab === 'explanations') loadExplanations();
+    if (btn.dataset.tab === 'versions') loadVersions();
   });
 });
 
@@ -678,6 +699,40 @@ function toggleReplies(parentId) {
   while (el && el.classList.contains('reply-row')) {
     el.style.display = el.style.display === 'none' ? '' : 'none';
     el = el.nextElementSibling;
+  }
+}
+
+// Versions tab
+let versionsLoaded = false;
+async function loadVersions() {
+  if (versionsLoaded) return;
+  try {
+    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/versions');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const rows = await resp.json();
+    const tbody = document.getElementById('versions-body');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">No versions yet.</td></tr>`;
+      versionsLoaded = true;
+      return;
+    }
+    tbody.innerHTML = rows.map(v => {
+      const badge = v.isPublished
+        ? '<span class="badge badge-general">published (live)</span>'
+        : v.isDraft
+          ? '<span class="badge badge-element">draft</span>'
+          : `<span class="badge badge-other">${esc(v.status)}</span>`;
+      return `<tr>
+        <td><strong>v${v.version}</strong></td>
+        <td>${badge}</td>
+        <td class="comment-text">${esc(v.note || '—')}</td>
+        <td class="ts">${fmtDate(v.createdAt)}</td>
+      </tr>`;
+    }).join('');
+    versionsLoaded = true;
+  } catch (e) {
+    document.getElementById('versions-body').innerHTML =
+      `<tr><td colspan="4" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Failed to load versions.</td></tr>`;
   }
 }
 </script>

@@ -138,6 +138,27 @@ async function signUp(app) {
     });
   });
 
+  describe('v1 version on upload', () => {
+    test('uploading a prototype immediately creates a published v1 version', async () => {
+      const { agent } = await signUp(app);
+      const up = await agent
+        .post('/admin/prototypes')
+        .set('Accept', 'application/json')
+        .field('name', 'V1 Check')
+        .attach('file', Buffer.from('<html>orig</html>'), 'p.html');
+      expect(up.status).toBe(200);
+      const protoId = up.body.id;
+
+      const { rows } = await getDb().query(
+        'SELECT version, status FROM prototype_versions WHERE prototype_id = $1', [protoId]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ version: 1, status: 'published' });
+      const { rows: p } = await getDb().query(
+        'SELECT published_version_id FROM prototypes WHERE id = $1', [protoId]);
+      expect(p[0].published_version_id).toBeTruthy();
+    });
+  });
+
   describe('cross-tenant isolation', () => {
     test('user B cannot see, open, or delete user A\'s prototype', async () => {
       // A uploads a prototype

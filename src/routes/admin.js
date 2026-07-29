@@ -134,12 +134,31 @@ router.post('/prototypes', adminAuth, upload.single('file'), async (req, res) =>
   const id = nanoid(12);
   const shareToken = nanoid(12);
   const filename = `${id}.html`;
+  const versionId = nanoid(12);
   await storage.putPrototype(filename, req.file.buffer);
 
-  await getDb().query(
-    'INSERT INTO prototypes (id, name, filename, share_token, created_at, owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
-    [id, req.body.name || 'Untitled', filename, shareToken, new Date().toISOString(), req.session.userId]
-  );
+  const client = await getDb().connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, req.body.name || 'Untitled', filename, shareToken, new Date().toISOString(), req.session.userId]
+    );
+    // v1 is the original, published from birth — keeps the linear-history
+    // invariant that the /api/v1 surface and backfill both assume.
+    await client.query(
+      `INSERT INTO prototype_versions (id, prototype_id, version, filename, status, created_at)
+       VALUES ($1,$2,1,$3,'published',$4)`,
+      [versionId, id, filename, new Date().toISOString()]
+    );
+    await client.query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [versionId, id]);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 
   const emails = (req.body.allowlist || '').split(/\r?\n/).map(e => e.trim().toLowerCase()).filter(Boolean);
   for (const email of emails) {

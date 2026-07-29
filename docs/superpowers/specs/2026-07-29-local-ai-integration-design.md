@@ -1,7 +1,7 @@
 # Local-AI ↔ Deployed-Prototype Integration
 
 **Date:** 2026-07-29
-**Status:** Approved
+**Status:** Approved — Phase 1 (REST + versioning), Phase 2 (MCP + manifest), and Phase 3 (comment resolution + token/version UI) all shipped.
 
 ---
 

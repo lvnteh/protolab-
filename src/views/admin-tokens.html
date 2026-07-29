@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>API Tokens — Engagement Cloud ProtoLab (Beta!)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh}
+a{color:hsl(252,83%,57%);text-decoration:none}
+.topbar{background:hsl(252,83%,57%);height:52px;display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.topbar__back{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.85);font-size:13px;cursor:pointer;background:none;border:none;padding:4px 8px;border-radius:8px;text-decoration:none}
+.topbar__back:hover{background:rgba(255,255,255,.15);color:#fff}
+.topbar__title{font-weight:700;font-size:15px;color:#fff}
+.page{max-width:860px;margin:0 auto;padding:32px 24px}
+.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.page-title{font-size:22px;font-weight:700;letter-spacing:-.3px}
+.page-sub{color:hsl(220,9%,46%);font-size:13px;margin-bottom:24px;line-height:1.6}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+.btn-primary{background:hsl(252,83%,57%);color:#fff}.btn-primary:hover{background:hsl(252,83%,48%)}
+.btn-danger{background:none;color:#c0392b;border:1px solid #e0c0bd;padding:5px 10px;font-size:12px;border-radius:8px}.btn-danger:hover{background:#fdf2f2}
+.card{background:#fff;border-radius:12px;border:1px solid hsl(220,13%,91%);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:12px;font-weight:600;color:hsl(220,9%,46%);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px;border-bottom:2px solid hsl(220,13%,91%);white-space:nowrap}
+.tbl td{padding:14px 16px;border-bottom:1px solid hsl(220,14%,96%);vertical-align:middle;font-size:13px}
+.tbl tr:last-child td{border-bottom:none}
+.tbl-empty{text-align:center;padding:48px;color:hsl(220,9%,46%)}
+.ts{color:hsl(220,9%,46%);font-size:12px}
+.mono{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:12px}
+.gen-row{display:flex;gap:10px;align-items:center;margin-bottom:20px}
+.input{padding:9px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff}
+.input:focus{border-color:hsl(252,83%,57%);box-shadow:0 0 0 3px hsl(252,83%,90%)}
+.token-reveal{background:#f0fdf4;border:1px solid #b3e8cf;border-radius:10px;padding:16px;margin-bottom:20px;display:none}
+.token-reveal__label{font-size:12px;font-weight:700;color:#1a7f4b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.token-reveal__value{display:flex;gap:8px;align-items:center}
+.token-reveal code{flex:1;background:#fff;border:1px solid #b3e8cf;border-radius:6px;padding:8px 10px;font-size:12px;word-break:break-all;font-family:'SF Mono',Monaco,Consolas,monospace}
+.token-reveal__warn{font-size:12px;color:hsl(38,92%,30%);margin-top:8px}
+.copy-btn{background:#fff;border:1px solid #b3e8cf;cursor:pointer;color:#1a7f4b;font-size:12px;padding:8px 12px;border-radius:6px;font-weight:600;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a href="/admin/prototypes" class="topbar__back">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"/></svg>
+    All Prototypes
+  </a>
+  <span class="topbar__title">API Tokens</span>
+</div>
+
+<div class="page">
+  <div class="page-head"><h1 class="page-title">API Tokens</h1></div>
+  <p class="page-sub">Tokens let the local-AI MCP client (and other machine callers) pull feedback and push versioned updates through the <code class="mono">/api/v1</code> API. A token carries your account's access to all your prototypes. The secret is shown only once at creation — store it in your <code class="mono">.env</code> as <code class="mono">PROTOSHARE_TOKEN</code>.</p>
+
+  <div class="token-reveal" id="reveal">
+    <div class="token-reveal__label">New token — copy it now</div>
+    <div class="token-reveal__value">
+      <code id="reveal-value"></code>
+      <button class="copy-btn" onclick="copyToken()">Copy</button>
+    </div>
+    <div class="token-reveal__warn">⚠ This is the only time the full token is shown. It cannot be retrieved later.</div>
+  </div>
+
+  <div class="gen-row">
+    <input class="input" id="token-name" type="text" placeholder="Token name (e.g. laptop-dev)" style="flex:1">
+    <button class="btn btn-primary" onclick="generateToken()">Generate Token</button>
+  </div>
+
+  <div class="card">
+    <table class="tbl">
+      <thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="4" class="tbl-empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtDate(iso){return iso?new Date(iso).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';}
+
+async function loadTokens(){
+  const resp = await fetch('/admin/tokens');
+  if(!resp.ok){ location.href='/admin/login'; return; }
+  const rows = await resp.json();
+  const tbody = document.getElementById('tbody');
+  if(!rows.length){ tbody.innerHTML = '<tr><td colspan="4" class="tbl-empty">No tokens yet. Generate one above.</td></tr>'; return; }
+  tbody.innerHTML = rows.map(t => `
+    <tr id="tok-${esc(t.id)}">
+      <td><strong>${esc(t.name)}</strong> <span class="mono ts">${esc(t.id)}</span></td>
+      <td class="ts">${fmtDate(t.created_at)}</td>
+      <td class="ts">${fmtDate(t.last_used_at)}</td>
+      <td style="text-align:right"><button class="btn btn-danger" onclick="revoke('${esc(t.id)}','${esc(t.name)}')">Revoke</button></td>
+    </tr>`).join('');
+}
+
+async function generateToken(){
+  const nameEl = document.getElementById('token-name');
+  const name = nameEl.value.trim() || 'token';
+  const resp = await fetch('/admin/tokens', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'name='+encodeURIComponent(name) });
+  if(!resp.ok){ alert('Failed to generate token.'); return; }
+  const { token } = await resp.json();
+  document.getElementById('reveal-value').textContent = token;
+  document.getElementById('reveal').style.display = 'block';
+  nameEl.value = '';
+  loadTokens();
+}
+
+function copyToken(){
+  navigator.clipboard.writeText(document.getElementById('reveal-value').textContent);
+  event.target.textContent = 'Copied!';
+  setTimeout(()=>event.target.textContent='Copy',1600);
+}
+
+async function revoke(id, name){
+  if(!confirm(`Revoke token "${name}"? Any client using it will stop working immediately.`)) return;
+  await fetch('/admin/tokens/'+encodeURIComponent(id), { method:'DELETE' });
+  document.getElementById('tok-'+id)?.remove();
+  loadTokens();
+}
+
+loadTokens();
+</script>
+</body>
+</html>

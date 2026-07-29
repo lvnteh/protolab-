@@ -10,6 +10,7 @@ const adminAuth = require('../middleware/adminAuth');
 const config = require('../config');
 const { injectPreview } = require('../services/inject');
 const storage = require('../services/storage');
+const apiTokens = require('../services/tokens');
 
 const router = express.Router();
 
@@ -309,6 +310,25 @@ router.get('/prototypes/:id/preview', adminAuth, async (req, res) => {
   const html = injectPreview(raw, proto.id, highlightId, JSON.stringify(comments));
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
+});
+
+// --- API token management (machine access for local-AI integration) ---
+router.post('/tokens', adminAuth, async (req, res) => {
+  const { id, raw } = await apiTokens.createToken(req.session.userId, (req.body.name || 'token').slice(0, 60));
+  // The raw secret is returned exactly once and never stored in plaintext.
+  res.status(201).json({ id, token: raw });
+});
+
+router.get('/tokens', adminAuth, async (req, res) => {
+  res.json(await apiTokens.listTokens(req.session.userId));
+});
+
+// Idempotent by design: revokeToken is a user-scoped no-op DELETE, so revoking
+// an already-gone or never-existed token still returns { ok: true }. (Differs
+// from DELETE /prototypes/:id, which 404s — tokens don't need existence feedback.)
+router.delete('/tokens/:tokenId', adminAuth, async (req, res) => {
+  await apiTokens.revokeToken(req.params.tokenId, req.session.userId);
+  res.json({ ok: true });
 });
 
 router.get('/prototypes/:id/funnels', adminAuth, async (req, res) => {

@@ -207,34 +207,167 @@ async function initDb() {
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS resolved_at TEXT`);
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS resolved_in_version INTEGER`);
 
+  // K. schema_migrations marker table. Lets us skip the expensive backfill scan on
+  //    normal boots once it has run and no legacy (unversioned) prototypes remain.
+  await _pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      name       TEXT PRIMARY KEY,
+      applied_at TEXT
+    )
+  `);
+
+  // L. Deletion FKs. These columns already exist from earlier phases but were
+  //    created WITHOUT the ON DELETE behavior that makes `DELETE FROM prototypes`
+  //    work in one shot. We add them idempotently via DROP IF EXISTS + ADD.
+  //
+  //    Cascade vs SET NULL, per column, and WHY:
+  //      * comments.prototype_id  -> CASCADE:  a comment belongs to a prototype; if the
+  //        prototype is gone the comment is meaningless, so it should be removed. (This
+  //        column previously had NO FK at all, so orphaned comment rows could block or
+  //        outlive a delete.)
+  //      * comments.version_id    -> SET NULL: a comment should SURVIVE its version being
+  //        pruned. version_id is nullable and NULL is already treated as "legacy/v1" by
+  //        apiV1.js, so nulling it degrades gracefully instead of deleting feedback.
+  //      * prototypes.published_version_id / draft_version_id -> SET NULL: these are
+  //        pointers back into prototype_versions. Without ON DELETE they BLOCK deleting a
+  //        prototype (deleting its versions violates the pointer FK). SET NULL lets the
+  //        version cascade-delete fire and nulls the now-dangling pointer. The
+  //        prototypes<->prototype_versions cycle is safe for SET NULL: when a prototype is
+  //        deleted its versions cascade-delete, which fires SET NULL on the very rows being
+  //        removed — Postgres handles concurrent set-null-on-deleting-row fine.
+  //      * access_log.prototype_id / nav_events.prototype_id -> CASCADE: telemetry rows are
+  //        only meaningful with their prototype; they had NO FK before, so they neither
+  //        cascaded nor blocked, just leaked. CASCADE cleans them up on delete.
+  //
+  //    Each ADD CONSTRAINT would FAIL if existing data violates it, so we first NULL out
+  //    (SET NULL cols) or delete (CASCADE cols) any dangling references before adding.
+  await _pool.query(`
+    DO $$ BEGIN
+      -- Clean dangling refs so the constraints can be added on a dirty DB.
+      DELETE FROM comments  c WHERE NOT EXISTS (SELECT 1 FROM prototypes p WHERE p.id = c.prototype_id);
+      UPDATE comments SET version_id = NULL
+        WHERE version_id IS NOT NULL
+          AND version_id NOT IN (SELECT id FROM prototype_versions);
+      UPDATE prototypes SET published_version_id = NULL
+        WHERE published_version_id IS NOT NULL
+          AND published_version_id NOT IN (SELECT id FROM prototype_versions);
+      UPDATE prototypes SET draft_version_id = NULL
+        WHERE draft_version_id IS NOT NULL
+          AND draft_version_id NOT IN (SELECT id FROM prototype_versions);
+      DELETE FROM access_log a WHERE NOT EXISTS (SELECT 1 FROM prototypes p WHERE p.id = a.prototype_id);
+      DELETE FROM nav_events  n WHERE NOT EXISTS (SELECT 1 FROM prototypes p WHERE p.id = n.prototype_id);
+
+      ALTER TABLE comments   DROP CONSTRAINT IF EXISTS comments_prototype_fk;
+      ALTER TABLE comments   ADD  CONSTRAINT comments_prototype_fk
+        FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE;
+
+      -- Drop the auto-generated FK from the original "ADD COLUMN ... REFERENCES"
+      -- (default NO ACTION) as well as our named one, then re-add with SET NULL.
+      ALTER TABLE comments   DROP CONSTRAINT IF EXISTS comments_version_id_fkey;
+      ALTER TABLE comments   DROP CONSTRAINT IF EXISTS comments_version_fk;
+      ALTER TABLE comments   ADD  CONSTRAINT comments_version_fk
+        FOREIGN KEY (version_id) REFERENCES prototype_versions(id) ON DELETE SET NULL;
+
+      ALTER TABLE prototypes DROP CONSTRAINT IF EXISTS prototypes_published_version_id_fkey;
+      ALTER TABLE prototypes DROP CONSTRAINT IF EXISTS prototypes_pub_ver_fk;
+      ALTER TABLE prototypes ADD  CONSTRAINT prototypes_pub_ver_fk
+        FOREIGN KEY (published_version_id) REFERENCES prototype_versions(id) ON DELETE SET NULL;
+
+      ALTER TABLE prototypes DROP CONSTRAINT IF EXISTS prototypes_draft_version_id_fkey;
+      ALTER TABLE prototypes DROP CONSTRAINT IF EXISTS prototypes_draft_ver_fk;
+      ALTER TABLE prototypes ADD  CONSTRAINT prototypes_draft_ver_fk
+        FOREIGN KEY (draft_version_id) REFERENCES prototype_versions(id) ON DELETE SET NULL;
+
+      ALTER TABLE access_log DROP CONSTRAINT IF EXISTS access_log_prototype_fk;
+      ALTER TABLE access_log ADD  CONSTRAINT access_log_prototype_fk
+        FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE;
+
+      ALTER TABLE nav_events DROP CONSTRAINT IF EXISTS nav_events_prototype_fk;
+      ALTER TABLE nav_events ADD  CONSTRAINT nav_events_prototype_fk
+        FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE;
+    END $$
+  `);
+
   // I. Backfill: every prototype with no versions becomes "v1, published" pointing
   //    at its existing filename. Idempotent — only fires for unversioned prototypes.
-  const { rows: unversioned } = await _pool.query(`
-    SELECT p.id, p.filename FROM prototypes p
-    WHERE NOT EXISTS (SELECT 1 FROM prototype_versions v WHERE v.prototype_id = p.id)
-  `);
-  for (const p of unversioned) {
-    const vId = nanoid(12);
-    const client = await _pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(
-        `INSERT INTO prototype_versions (id, prototype_id, version, filename, status, created_at)
-         VALUES ($1, $2, 1, $3, 'published', $4)`,
-        [vId, p.id, p.filename, new Date().toISOString()]
+  //
+  //    CONCURRENCY / DEPLOY SAFETY. This loop runs on EVERY boot. Under multi-instance
+  //    startup or parallel Jest workers, two connections could both SELECT the same
+  //    unversioned prototype and both INSERT "v1" -> UNIQUE(prototype_id, version)
+  //    violation, crashing startup. We defend with BOTH layers:
+  //      (a) a Postgres ADVISORY LOCK on a fixed key so only one connection runs the
+  //          backfill section at a time. We take/release it on a DEDICATED client so the
+  //          lock and unlock are guaranteed to be the same connection, released in finally.
+  //      (b) ON CONFLICT (prototype_id, version) DO NOTHING on the INSERT so that even if
+  //          a race slipped through, a lost insert is a no-op rather than a crash. When the
+  //          insert did nothing we re-SELECT the existing v1 id so the pointer/version_id
+  //          updates still target the correct row.
+  //    Marker optimization: once 'v1-version-backfill' is recorded AND no unversioned
+  //    prototypes remain, we skip the per-row work. The WHERE-NOT-EXISTS guard still runs
+  //    (cheap) so a newly-appearing legacy prototype is never missed; the marker only lets
+  //    us avoid the loop body when there is nothing to do.
+  const BACKFILL_LOCK_KEY = 91537;
+  const lockClient = await _pool.connect();
+  try {
+    await lockClient.query('SELECT pg_advisory_lock($1)', [BACKFILL_LOCK_KEY]);
+
+    const { rows: markerRows } = await lockClient.query(
+      'SELECT 1 FROM schema_migrations WHERE name = $1', ['v1-version-backfill']);
+    const markerPresent = markerRows.length > 0;
+
+    const { rows: unversioned } = await lockClient.query(`
+      SELECT p.id, p.filename FROM prototypes p
+      WHERE NOT EXISTS (SELECT 1 FROM prototype_versions v WHERE v.prototype_id = p.id)
+    `);
+
+    // Skip the expensive path only when the marker exists AND there is genuinely
+    // nothing to backfill. Otherwise fall through and process the rows.
+    if (!(markerPresent && unversioned.length === 0)) {
+      for (const p of unversioned) {
+        const client = await _pool.connect();
+        try {
+          await client.query('BEGIN');
+          const vId = nanoid(12);
+          const ins = await client.query(
+            `INSERT INTO prototype_versions (id, prototype_id, version, filename, status, created_at)
+             VALUES ($1, $2, 1, $3, 'published', $4)
+             ON CONFLICT (prototype_id, version) DO NOTHING
+             RETURNING id`,
+            [vId, p.id, p.filename, new Date().toISOString()]
+          );
+          // If a concurrent worker beat us to it, the insert did nothing — re-select the
+          // existing v1 id so the pointer/version_id updates target the right row.
+          let effectiveVId = ins.rows[0] ? ins.rows[0].id : null;
+          if (!effectiveVId) {
+            const { rows } = await client.query(
+              'SELECT id FROM prototype_versions WHERE prototype_id = $1 AND version = 1', [p.id]);
+            effectiveVId = rows[0] ? rows[0].id : vId;
+          }
+          await client.query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [effectiveVId, p.id]);
+          await client.query(
+            'UPDATE comments SET version_id = $1 WHERE prototype_id = $2 AND version_id IS NULL',
+            [effectiveVId, p.id]
+          );
+          await client.query('COMMIT');
+        } catch (e) {
+          await client.query('ROLLBACK');
+          throw e;
+        } finally {
+          client.release();
+        }
+      }
+
+      // Record the marker (idempotent) now that the backfill has run to completion.
+      await lockClient.query(
+        `INSERT INTO schema_migrations (name, applied_at) VALUES ($1, $2)
+         ON CONFLICT (name) DO NOTHING`,
+        ['v1-version-backfill', new Date().toISOString()]
       );
-      await client.query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [vId, p.id]);
-      await client.query(
-        'UPDATE comments SET version_id = $1 WHERE prototype_id = $2 AND version_id IS NULL',
-        [vId, p.id]
-      );
-      await client.query('COMMIT');
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
     }
+  } finally {
+    // Always release the advisory lock on the same connection that took it.
+    await lockClient.query('SELECT pg_advisory_unlock($1)', [BACKFILL_LOCK_KEY]);
+    lockClient.release();
   }
 
   return _pool;
@@ -252,4 +385,18 @@ async function closeDb() {
   }
 }
 
-module.exports = { initDb, getDb, closeDb };
+// Test-isolation helper: wipe all DATA tables (not schema_migrations, which is
+// migration bookkeeping) in one FK-safe TRUNCATE. RESTART IDENTITY resets the
+// SERIAL sequences on access_log/nav_events; CASCADE lets the single statement
+// truncate the whole FK graph regardless of ordering. No-ops if there is no pool
+// so callers don't need to guard on initialization order.
+async function cleanDb() {
+  if (!_pool) return;
+  await _pool.query(`
+    TRUNCATE TABLE comments, prototype_versions, prototypes, allowlist,
+                   access_log, nav_events, explanations, api_tokens, users
+    RESTART IDENTITY CASCADE
+  `);
+}
+
+module.exports = { initDb, getDb, closeDb, cleanDb };

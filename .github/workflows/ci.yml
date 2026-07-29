@@ -32,12 +32,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Node 20 (active LTS). package.json declares no `engines` constraint, so
-      # 20 is a safe, stable target for CI even though the app runs on newer Node.
+      # Node 22 (active LTS). Required by @supabase/supabase-js v2, which needs a
+      # native global WebSocket (Node 21+); matches the Dockerfile base image and
+      # the package.json `engines` constraint so CI runs the same runtime as prod.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies

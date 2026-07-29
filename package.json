@@ -15,6 +15,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@acpr/rate-limit-postgresql": "1.4.1",
     "@supabase/supabase-js": "2.110.2",

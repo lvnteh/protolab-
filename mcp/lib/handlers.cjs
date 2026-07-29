@@ -37,10 +37,16 @@ async function pull(ctx, { file_or_id }) {
   lines.push(`Explanations (${fb.explanations.length}):`);
   for (const e of fb.explanations) lines.push(`  • ${e.elementSelector}: ${e.body}`);
 
-  // Record that we've now seen up to the published version.
-  if (fb.prototype.publishedVersion != null) {
-    manifestLib.recordPull(ctx.manifest, file_or_id, fb.prototype.publishedVersion, ctx.manifestPath);
-    if (ctx.saveManifest) ctx.saveManifest(ctx.manifest); // test seam (recordPull already saved on real disk)
+  // Record the highest version we've now observed (published OR an existing
+  // draft). The server's conflict guard compares baseVersion against
+  // latestVersion = MAX(version) incl. drafts, so recording only the published
+  // number would make a fresh client send a stale base whenever an unpublished
+  // draft exists (e.g. authored elsewhere) → false-positive 409. Recording the
+  // max keeps the client's base aligned with the server's basis.
+  const seen = Math.max(fb.prototype.publishedVersion || 0, fb.prototype.draftVersion || 0);
+  if (seen > 0) {
+    manifestLib.recordPull(ctx.manifest, file_or_id, seen);
+    if (ctx.saveManifest) ctx.saveManifest(ctx.manifest);
   }
   return lines.join('\n');
 }
@@ -69,7 +75,7 @@ async function push(ctx, { file, note }) {
   }
   try {
     const res = await ctx.client.pushVersion(id, { buffer, filename: file, note, baseVersion: base });
-    manifestLib.recordPush(ctx.manifest, file, res.version, ctx.manifestPath);
+    manifestLib.recordPush(ctx.manifest, file, res.version);
     if (ctx.saveManifest) ctx.saveManifest(ctx.manifest);
     return `Pushed ${file} as draft v${res.version}. Publish it with protoshare_publish to make it live.`;
   } catch (e) {

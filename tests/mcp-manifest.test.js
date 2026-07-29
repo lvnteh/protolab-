@@ -49,20 +49,20 @@ test('baseVersion returns max(lastPulled,lastPushed) for a file, or undefined wh
   expect(manifest.baseVersion(m, 'ID_A')).toBe(3); // resolves via id too
 });
 
-test('recordPull/recordPush persist version numbers to disk keyed by file', () => {
+test('recordPull/recordPush mutate the manifest; save persists to disk keyed by file', () => {
   const p = tmpManifest(JSON.stringify({ remote: 'r', prototypes: { 'a.html': { id: 'ID_A' } } }));
   let m = manifest.load(p);
-  manifest.recordPull(m, 'a.html', 2, p);
-  manifest.recordPush(m, 'a.html', 3, p);
+  manifest.recordPull(m, 'a.html', 2);
+  manifest.recordPush(m, 'a.html', 3);
+  manifest.save(m, p);
   const reloaded = manifest.load(p);
   expect(reloaded.prototypes['a.html'].lastPulled).toBe(2);
   expect(reloaded.prototypes['a.html'].lastPushed).toBe(3);
 });
 
-test('recordPull is a no-op-safe when the target is an id not present as a file key', () => {
-  const p = tmpManifest(JSON.stringify({ remote: 'r', prototypes: { 'a.html': { id: 'ID_A' } } }));
-  const m = manifest.load(p);
-  // Passing the id (not the file) should still update the a.html entry via reverse lookup.
-  manifest.recordPull(m, 'ID_A', 7, p);
-  expect(manifest.load(p).prototypes['a.html'].lastPulled).toBe(7);
+test('recordPull resolves an id (not just a file key) via reverse lookup', () => {
+  const m = { remote: 'r', prototypes: { 'a.html': { id: 'ID_A' } } };
+  // Passing the id (not the file) should still update the a.html entry.
+  manifest.recordPull(m, 'ID_A', 7);
+  expect(m.prototypes['a.html'].lastPulled).toBe(7);
 });

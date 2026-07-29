@@ -112,9 +112,66 @@ test('resolve marks a comment addressed in a version', async () => {
   expect(text).toMatch(/c1/);
 });
 
-test('resolve surfaces a 404 as a clear message', async () => {
-  const { ctx } = makeCtx({});
-  ctx.client.resolveComment = async () => { const e = new Error('x'); e.status = 404; throw e; };
-  const text = await handlers.resolve(ctx, { file_or_id: 'checkout.html', comment_id: 'nope' });
-  expect(text).toMatch(/not found/i);
+test('pull records max(published, draft) so an existing draft does not cause a stale base', async () => {
+  // Server has published v2 and an unpublished draft v3 (authored elsewhere).
+  // A fresh client pulling must record 3, not 2, so its next push sends
+  // baseVersion=3 and matches the server's MAX-based conflict guard.
+  const { ctx, saved } = makeCtx({
+    manifest: { remote: 'https://r', prototypes: { 'checkout.html': { id: 'ID_C' } } },
+    feedback: { prototype: { id: 'ID_C', name: 'Checkout', publishedVersion: 2, draftVersion: 3 },
+      comments: [], explanations: [] },
+  });
+  await handlers.pull(ctx, { file_or_id: 'checkout.html' });
+  expect(saved[0].prototypes['checkout.html'].lastPulled).toBe(3);
+});
+
+test('pull formats element selectors and nested replies', async () => {
+  const { ctx } = makeCtx({
+    feedback: { prototype: { id: 'ID_C', name: 'Checkout', publishedVersion: 1, draftVersion: null },
+      comments: [{ id: 'c1', tag: 'bug', comment: 'broken', madeAgainstVersion: 1, resolved: false,
+        element: { selector: '#btn' }, replies: [{ comment: 'agreed', email: 'a@b.c' }] }],
+      explanations: [] },
+  });
+  const text = await handlers.pull(ctx, { file_or_id: 'checkout.html' });
+  expect(text).toMatch(/@ #btn/);
+  expect(text).toMatch(/↳ agreed/);
+});
+
+test('list reports when there are no prototypes', async () => {
+  const { ctx } = makeCtx({ list: [] });
+  expect(await handlers.list(ctx, {})).toMatch(/No prototypes found/i);
+});
+
+test('source returns HTML inline when the argument is a bare id (no local file mapping)', async () => {
+  const { ctx, files } = makeCtx({ source: '<html>inline</html>' });
+  const text = await handlers.source(ctx, { file_or_id: 'UNKNOWN_ID' });
+  expect(text).toBe('<html>inline</html>');
+  expect(Object.keys(files)).not.toContain('UNKNOWN_ID'); // nothing written
+});
+
+test('status falls back to the id when the file is unknown', async () => {
+  const { ctx } = makeCtx({ versions: [{ version: 1, status: 'published' }] });
+  const text = await handlers.status(ctx, { file_or_id: 'ID_ONLY' });
+  expect(text).toMatch(/Status for ID_ONLY/);
+  expect(text).toMatch(/lastPulled v—/);
+});
+
+test('push surfaces 404 and 401 with clear messages', async () => {
+  const mk = () => makeCtx({ files: { 'checkout.html': 'x' } });
+  const c1 = mk(); c1.ctx.client.pushVersion = async () => { const e = new Error('x'); e.status = 404; throw e; };
+  expect(await handlers.push(c1.ctx, { file: 'checkout.html' })).toMatch(/not found/i);
+  const c2 = mk(); c2.ctx.client.pushVersion = async () => { const e = new Error('x'); e.status = 401; throw e; };
+  expect(await handlers.push(c2.ctx, { file: 'checkout.html' })).toMatch(/unauthorized/i);
+});
+
+test('push reports when the local file is missing', async () => {
+  const { ctx } = makeCtx({}); // no files
+  expect(await handlers.push(ctx, { file: 'missing.html' })).toMatch(/not found/i);
+});
+
+test('publish surfaces 404 and rethrows unexpected errors', async () => {
+  const a = makeCtx({}); a.ctx.client.publish = async () => { const e = new Error('x'); e.status = 404; throw e; };
+  expect(await handlers.publish(a.ctx, { file_or_id: 'checkout.html' })).toMatch(/not found/i);
+  const b = makeCtx({}); b.ctx.client.publish = async () => { throw new Error('boom'); };
+  await expect(handlers.publish(b.ctx, { file_or_id: 'checkout.html' })).rejects.toThrow('boom');
 });

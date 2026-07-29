@@ -3,7 +3,9 @@
 // file to its deployed prototype id and records the last-pulled / last-pushed
 // version numbers (the baseVersion source for conflict detection). The token is
 // NEVER stored here — it lives in the environment. This module is pure I/O over
-// the manifest file; it holds no network or business logic.
+// the manifest file; it holds no network or business logic. `recordPull`/
+// `recordPush` mutate the in-memory manifest only — callers persist via `save()`
+// (injected as ctx.saveManifest in the handlers) so there is one write path.
 const fs = require('fs');
 
 // Load and validate the manifest at `filePath`. Throws with a clear, actionable
@@ -74,16 +76,14 @@ function ensureEntry(m, fileOrId) {
   return fileOrId;
 }
 
-function recordPull(m, fileOrId, version, filePath) {
+function recordPull(m, fileOrId, version) {
   const key = ensureEntry(m, fileOrId);
   m.prototypes[key].lastPulled = version;
-  save(m, filePath);
 }
 
-function recordPush(m, fileOrId, version, filePath) {
+function recordPush(m, fileOrId, version) {
   const key = ensureEntry(m, fileOrId);
   m.prototypes[key].lastPushed = version;
-  save(m, filePath);
 }
 
 module.exports = { load, save, resolveId, fileKeyFor, baseVersion, recordPull, recordPush };

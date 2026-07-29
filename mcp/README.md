@@ -17,13 +17,19 @@ prototype — without leaving your editor. It is a thin client over the deployed
    to `.protoshare.json` and fill in `remote` and each prototype `id`
    (from `protoshare_list` or the admin URL). The manifest is safe to commit —
    the token is NOT stored in it.
-4. **Register with Claude Code** (in your prototype repo):
+4. **Register with Claude Code** (in your prototype repo). Export the token
+   first so it does not land in your shell history or the process list:
    ```bash
+   read -rs PROTOSHARE_TOKEN && export PROTOSHARE_TOKEN   # paste token, not echoed
+
    claude mcp add protoshare -- env \
-     PROTOSHARE_TOKEN=<your-token> \
+     PROTOSHARE_TOKEN=$PROTOSHARE_TOKEN \
      PROTOSHARE_MANIFEST=$PWD/.protoshare.json \
      node /absolute/path/to/proto-share/mcp/server.mjs
    ```
+   > Don't paste the token literally on the `claude mcp add` line — it would be
+   > saved to your shell history and be visible via `ps`. Export it first (as
+   > above) or keep it in a git-ignored `.env` you source.
 
 ## Tools
 

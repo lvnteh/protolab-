@@ -41,6 +41,9 @@ const ctx = {
   manifestPath,
   readFile: (p) => fs.readFileSync(p, 'utf8'),
   writeFile: (p, data) => fs.writeFileSync(p, data),
+  // Single manifest-persistence path. recordPull/recordPush mutate the in-memory
+  // manifest; handlers call this to write it once.
+  saveManifest: (m) => manifestLib.save(m, manifestPath),
 };
 
 // Wrap a handler so a thrown error becomes an MCP error result rather than
@@ -74,9 +77,9 @@ server.tool('protoshare_push', 'Upload the local HTML file as a new DRAFT versio
     note: z.string().optional().describe('Optional note describing the change') },
   tool(handlers.push));
 
-server.tool('protoshare_publish', 'Promote a draft to live. The share link starts serving it. Defaults to the latest draft.',
+server.tool('protoshare_publish', 'Promote a version to live. The share link starts serving it. Defaults to the highest-numbered version (errors if it is already published).',
   { file_or_id: z.string().describe('Local HTML file or prototype id'),
-    version: z.number().int().optional().describe('Version to publish (defaults to latest draft)') },
+    version: z.number().int().optional().describe('Version to publish (defaults to the highest version number; errors if that version is already published)') },
   tool(handlers.publish));
 
 server.tool('protoshare_status', 'Show the local (manifest) vs remote version summary for a prototype.',

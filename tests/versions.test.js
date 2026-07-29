@@ -74,3 +74,48 @@ const { nanoid } = require('nanoid');
     expect(crow[0].version_id).toBe(vrow[0].id);
   });
 });
+
+(hasDb ? describe : describe.skip)('version service', () => {
+  // These tests share protoId and run in order: createDraft (v2) → publish → latestVersion.
+  const versions = require('../src/services/versions');
+  let protoId, userId;
+
+  beforeAll(async () => {
+    await initDb();
+    userId = nanoid(12);
+    await getDb().query('INSERT INTO users (id,email,password_hash,created_at) VALUES ($1,$2,$3,$4)',
+      [userId, `ver-${userId}@sap.com`, 'x', new Date().toISOString()]);
+    protoId = nanoid(12);
+    await getDb().query(
+      'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [protoId, 'Ver', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId]);
+    await initDb(); // second call re-runs the idempotent backfill so this prototype gets its v1
+  });
+  afterAll(async () => { await closeDb(); });
+
+  test('createDraft allocates the next version number as a draft', async () => {
+    const v = await versions.createDraft(protoId, `${protoId}-v2.html`, 'my note');
+    expect(v.version).toBe(2);
+    expect(v.status).toBe('draft');
+    const { rows } = await getDb().query('SELECT draft_version_id FROM prototypes WHERE id = $1', [protoId]);
+    expect(rows[0].draft_version_id).toBe(v.id);
+  });
+
+  test('resolvePublishedFile returns the v1 filename before any publish', async () => {
+    const file = await versions.resolvePublishedFile(protoId);
+    expect(file).toBe(`${protoId}.html`);
+  });
+
+  test('publish promotes the draft and moves the published pointer', async () => {
+    await versions.publish(protoId, 2);
+    const file = await versions.resolvePublishedFile(protoId);
+    expect(file).toBe(`${protoId}-v2.html`);
+    const { rows } = await getDb().query(
+      'SELECT status FROM prototype_versions WHERE prototype_id = $1 AND version = 2', [protoId]);
+    expect(rows[0].status).toBe('published');
+  });
+
+  test('latestVersion returns the highest version number', async () => {
+    expect(await versions.latestVersion(protoId)).toBe(2);
+  });
+});

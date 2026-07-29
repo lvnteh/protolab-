@@ -13,6 +13,8 @@ const request = require('supertest');
 const express = require('express');
 const session = require('express-session');
 const deliveryRouter = require('../src/routes/delivery');
+const versions = require('../src/services/versions');
+const storage = require('../src/services/storage');
 
 let app, protoId, shareToken;
 
@@ -52,5 +54,23 @@ let app, protoId, shareToken;
   test('GET /p/:token with unknown token responds 404', async () => {
     const res = await request(app).get('/p/unknowntoken123');
     expect(res.status).toBe(404);
+  });
+
+  test('GET /p/:token/view serves the published version file, not prototypes.filename', async () => {
+    await initDb(); // no-op for backfill (beforeAll already ran it); kept as a guard in case this test runs standalone
+
+    // Publish a v2 with distinct content via the real (fs-fallback) storage.
+    const v2file = `${protoId}-v2.html`;
+    await storage.putPrototype(v2file, '<!DOCTYPE html><html><head></head><body>PUBLISHED-V2</body></html>');
+    const v = await versions.createDraft(protoId, v2file, 'v2');
+    await versions.publish(protoId, v.version);
+
+    // Establish an authorized reviewer session, then fetch the view.
+    const agent = request.agent(app);
+    await agent.post(`/p/${shareToken}/enter`).send('email=allowed@example.com');
+    const res = await agent.get(`/p/${shareToken}/view`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('PUBLISHED-V2');
   });
 });

@@ -2,6 +2,7 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
 const { getDb } = require('../db');
+const versions = require('../services/versions');
 
 const router = express.Router();
 const VALID_TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
@@ -34,11 +35,13 @@ router.post('/comments', async (req, res) => {
 
     if (!['general', 'element'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
 
+    const versionId = await versions.publishedVersionId(prototypeId);
+
     await getDb().query(
       `INSERT INTO comments
         (id, prototype_id, email, type, element_selector, element_label, element_tag,
-         breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+         breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct, version_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         id, prototypeId, commentEmail, type,
         element?.selector || null,
@@ -51,6 +54,7 @@ router.post('/comments', async (req, res) => {
         VALID_TAGS.includes(tag) ? tag : null,
         typeof xPct === 'number' ? xPct : null,
         typeof yPct === 'number' ? yPct : null,
+        versionId,
       ]
     );
     res.status(201).json({ ok: true, id });

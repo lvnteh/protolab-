@@ -7,6 +7,7 @@ const { injectSdk } = require('../services/inject');
 const customerAuth = require('../middleware/customerAuth');
 const config = require('../config');
 const storage = require('../services/storage');
+const versions = require('../services/versions');
 
 const router = express.Router();
 
@@ -61,7 +62,10 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
   if (!proto) return res.status(404).send('Prototype not found.');
   if (req.session.prototypeId !== proto.id) return res.status(403).send('Access denied.');
 
-  const raw = await storage.getPrototype(proto.filename);
+  // Serve the published version's file (falls back to the legacy filename for
+  // any prototype not yet backfilled — defensive; backfill should cover all).
+  const publishedFile = await versions.resolvePublishedFile(proto.id);
+  const raw = await storage.getPrototype(publishedFile || proto.filename);
   if (raw === null) return res.status(404).send('Prototype file not found.');
 
   const injected = injectSdk(raw, proto.id, req.session.customerEmail);

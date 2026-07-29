@@ -361,6 +361,30 @@ router.delete('/tokens/:tokenId', adminAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Account-level API-token management page. Distinct path from GET /tokens
+// (which returns JSON, consumed by this page's client-side fetch).
+router.get('/tokens/page', adminAuth, (_req, res) => {
+  res.send(readView('admin-tokens.html'));
+});
+
+// Owner-scoped version history for a prototype (consumed by the detail view's
+// Versions tab). Flags which row is the live-published one and which is the draft.
+router.get('/prototypes/:id/versions', adminAuth, async (req, res) => {
+  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+  const { rows } = await getDb().query(
+    `SELECT v.version, v.status, v.note, v.created_at,
+            (v.id = p.published_version_id) AS is_published,
+            (v.id = p.draft_version_id)     AS is_draft
+     FROM prototype_versions v
+     JOIN prototypes p ON p.id = v.prototype_id
+     WHERE v.prototype_id = $1 ORDER BY v.version DESC`,
+    [req.params.id]);
+  res.json(rows.map(r => ({
+    version: r.version, status: r.status, note: r.note, createdAt: r.created_at,
+    isPublished: r.is_published, isDraft: r.is_draft,
+  })));
+});
+
 router.get('/prototypes/:id/funnels', adminAuth, async (req, res) => {
   const protoId = req.params.id;
   if (!await getOwnedPrototype(protoId, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });

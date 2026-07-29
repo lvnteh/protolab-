@@ -25,9 +25,14 @@ let app, protoId;
     app = express();
     app.use(express.json());
     app.use(session({ secret: 'test', resave: false, saveUninitialized: false }));
+    // Simulate a reviewer's share-link session. delivery.js binds the session to
+    // exactly one prototype on /enter; the /api routes now authorize against
+    // that binding. Tests that exercise a *different* prototype set the
+    // `x-test-proto` header so the stub session is bound to the right one —
+    // mirroring a reviewer who entered via that prototype's link.
     app.use((req, _res, next) => {
       req.session.customerEmail = 'user@example.com';
-      req.session.prototypeId = protoId;
+      req.session.prototypeId = req.get('x-test-proto') || protoId;
       next();
     });
     app.use('/api', apiRouter);
@@ -137,7 +142,7 @@ let app, protoId;
       [pid, 'NestTest', 'nest.html', 'tok-' + Date.now(), new Date().toISOString()]
     );
 
-    const p = await request(app).post('/api/comments').send({
+    const p = await request(app).post('/api/comments').set('x-test-proto', pid).send({
       prototypeId: pid,
       type: 'element',
       element: { selector: '#a', label: 'A', tagName: 'DIV' },
@@ -145,13 +150,13 @@ let app, protoId;
       pageUrl: '/p/x/view',
     });
 
-    await request(app).post('/api/comments').send({
+    await request(app).post('/api/comments').set('x-test-proto', pid).send({
       prototypeId: pid,
       parentId: p.body.id,
       comment: 'A reply text',
     });
 
-    const get = await request(app).get('/api/comments/' + pid);
+    const get = await request(app).get('/api/comments/' + pid).set('x-test-proto', pid);
     expect(get.status).toBe(200);
     const pins = get.body;
     expect(pins.length).toBe(1);
@@ -179,12 +184,131 @@ let app, protoId;
       [otherProtoId, 'Other Proto', 'other.html', 'tok-' + otherProtoId, new Date().toISOString()]
     );
 
-    // Attempt to reply using the wrong prototypeId
-    const res = await request(app).post('/api/comments').send({
+    // Attempt to reply using the wrong prototypeId. The reviewer is bound to
+    // otherProtoId (via header), so authorization passes for that prototype —
+    // but the parent pin lives on protoId, so the parent lookup (scoped to
+    // otherProtoId) misses and we get 404. This proves parents can't be
+    // borrowed across prototypes even by an authorized reviewer.
+    const res = await request(app).post('/api/comments').set('x-test-proto', otherProtoId).send({
       prototypeId: otherProtoId,
       parentId: parent.body.id,
       comment: 'Cross-proto reply',
     });
     expect(res.status).toBe(404);
+  });
+
+  // ── Cross-prototype / cross-tenant isolation regression tests ──────────────
+  // Before the P0 fix, /api mutation + read routes scoped only by the resource's
+  // own id (e.g. WHERE id = $1), so a reviewer viewing prototype A could read,
+  // edit, or delete comments/explanations belonging to prototype B (and thus a
+  // different tenant) by guessing the 12-char id. These prove the hole is shut.
+  describe('cross-prototype isolation', () => {
+    let victimProto, victimCommentId, victimExplanationId;
+
+    beforeAll(async () => {
+      victimProto = 'victim-' + Date.now();
+      await getDb().query(
+        'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
+        [victimProto, 'Victim', 'victim.html', 'tok-' + victimProto, new Date().toISOString()]
+      );
+      // Seed a comment + explanation owned by the victim prototype.
+      const c = await request(app).post('/api/comments').set('x-test-proto', victimProto).send({
+        prototypeId: victimProto,
+        type: 'general',
+        comment: 'Victim secret comment',
+        pageUrl: '/p/v/view',
+      });
+      victimCommentId = c.body.id;
+      const e = await request(app).post('/api/explanations').set('x-test-proto', victimProto).send({
+        prototypeId: victimProto,
+        elementSelector: '#secret',
+        body: 'Victim secret explanation',
+      });
+      victimExplanationId = e.body.id;
+    });
+
+    // The attacker's session is bound to the DEFAULT protoId (not victimProto).
+    test('cannot READ another prototype\'s comments', async () => {
+      const res = await request(app).get('/api/comments/' + victimProto); // session → protoId
+      expect(res.status).toBe(403);
+    });
+
+    test('cannot READ another prototype\'s explanations', async () => {
+      const res = await request(app).get('/api/explanations/' + victimProto);
+      expect(res.status).toBe(403);
+    });
+
+    test('cannot EDIT another prototype\'s comment by id', async () => {
+      const res = await request(app).patch('/api/comments/' + victimCommentId).send({ comment: 'hacked' });
+      expect(res.status).toBe(403);
+      const { rows } = await getDb().query('SELECT comment FROM comments WHERE id = $1', [victimCommentId]);
+      expect(rows[0].comment).toBe('Victim secret comment'); // unchanged
+    });
+
+    test('cannot DELETE another prototype\'s comment by id', async () => {
+      const res = await request(app).delete('/api/comments/' + victimCommentId);
+      expect(res.status).toBe(403);
+      const { rows } = await getDb().query('SELECT 1 FROM comments WHERE id = $1', [victimCommentId]);
+      expect(rows.length).toBe(1); // still there
+    });
+
+    test('cannot EDIT another prototype\'s explanation by id', async () => {
+      const res = await request(app).patch('/api/explanations/' + victimExplanationId).send({ body: 'hacked' });
+      expect(res.status).toBe(403);
+      const { rows } = await getDb().query('SELECT body FROM explanations WHERE id = $1', [victimExplanationId]);
+      expect(rows[0].body).toBe('Victim secret explanation');
+    });
+
+    test('cannot DELETE another prototype\'s explanation by id', async () => {
+      const res = await request(app).delete('/api/explanations/' + victimExplanationId);
+      expect(res.status).toBe(403);
+      const { rows } = await getDb().query('SELECT 1 FROM explanations WHERE id = $1', [victimExplanationId]);
+      expect(rows.length).toBe(1);
+    });
+
+    test('cannot POST a comment into another prototype', async () => {
+      const res = await request(app).post('/api/comments').send({ // session → protoId
+        prototypeId: victimProto,
+        type: 'general',
+        comment: 'injected',
+        pageUrl: '/p/v/view',
+      });
+      expect(res.status).toBe(403);
+    });
+
+    test('the OWNING reviewer can still edit/delete their own comment', async () => {
+      const own = await request(app).post('/api/comments').set('x-test-proto', victimProto).send({
+        prototypeId: victimProto, type: 'general', comment: 'mine', pageUrl: '/p/v/view',
+      });
+      const patch = await request(app).patch('/api/comments/' + own.body.id)
+        .set('x-test-proto', victimProto).send({ comment: 'mine edited' });
+      expect(patch.status).toBe(200);
+      const del = await request(app).delete('/api/comments/' + own.body.id).set('x-test-proto', victimProto);
+      expect(del.status).toBe(200);
+    });
+  });
+
+  // Requests with no reviewer session and no admin session must be rejected —
+  // authorizedForPrototype() returns false when neither credential is present.
+  describe('unauthenticated access', () => {
+    let noAuthApp;
+    beforeAll(() => {
+      noAuthApp = express();
+      noAuthApp.use(express.json());
+      noAuthApp.use(session({ secret: 'test2', resave: false, saveUninitialized: false }));
+      noAuthApp.use('/api', apiRouter); // no session-populating middleware
+    });
+
+    test('GET comments without a session is 403', async () => {
+      const res = await request(noAuthApp).get('/api/comments/' + protoId);
+      expect(res.status).toBe(403);
+    });
+
+    test('POST comment without a session is 403', async () => {
+      const res = await request(noAuthApp).post('/api/comments').send({
+        prototypeId: protoId, type: 'general', comment: 'anon', pageUrl: '/p/x/view',
+      });
+      expect(res.status).toBe(403);
+    });
   });
 });

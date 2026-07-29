@@ -12,6 +12,7 @@ function makeCtx(overrides = {}) {
     versions: async (id) => (calls.push(['versions', id]), overrides.versions || [{ version: 1, status: 'published' }]),
     pushVersion: async (id, opts) => (calls.push(['pushVersion', id, opts]), overrides.push || { version: 2, status: 'draft' }),
     publish: async (id, v) => (calls.push(['publish', id, v]), overrides.publish || { version: 2, status: 'published' }),
+    resolveComment: async (id, commentId, v) => (calls.push(['resolveComment', id, commentId, v]), overrides.resolve || { ok: true }),
   };
   const manifest = overrides.manifest || { remote: 'https://r', prototypes: { 'checkout.html': { id: 'ID_C', lastPulled: 1 } } };
   const saved = [];
@@ -101,4 +102,19 @@ test('status compares manifest versions against the remote', async () => {
   expect(text).toMatch(/local/i);
   expect(text).toMatch(/remote/i);
   expect(text).toMatch(/3/); // remote latest
+});
+
+test('resolve marks a comment addressed in a version', async () => {
+  const { ctx, calls } = makeCtx({});
+  const text = await handlers.resolve(ctx, { file_or_id: 'checkout.html', comment_id: 'c1', version: 3 });
+  expect(calls.find(c => c[0] === 'resolveComment')).toEqual(['resolveComment', 'ID_C', 'c1', 3]);
+  expect(text).toMatch(/resolved/i);
+  expect(text).toMatch(/c1/);
+});
+
+test('resolve surfaces a 404 as a clear message', async () => {
+  const { ctx } = makeCtx({});
+  ctx.client.resolveComment = async () => { const e = new Error('x'); e.status = 404; throw e; };
+  const text = await handlers.resolve(ctx, { file_or_id: 'checkout.html', comment_id: 'nope' });
+  expect(text).toMatch(/not found/i);
 });

@@ -109,4 +109,15 @@ async function status(ctx, { file_or_id }) {
   ].join('\n');
 }
 
-module.exports = { list, pull, source, push, publish, status };
+async function resolve(ctx, { file_or_id, comment_id, version }) {
+  const id = manifestLib.resolveId(ctx.manifest, file_or_id);
+  try {
+    await ctx.client.resolveComment(id, comment_id, version);
+    return `Marked comment ${comment_id} resolved${version != null ? ` in v${version}` : ''}.`;
+  } catch (e) {
+    if (e.status === 404) return `Comment ${comment_id} not found on this prototype (or not owned by this token).`;
+    throw e;
+  }
+}
+
+module.exports = { list, pull, source, push, publish, status, resolve };

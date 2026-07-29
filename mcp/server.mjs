@@ -83,6 +83,12 @@ server.tool('protoshare_status', 'Show the local (manifest) vs remote version su
   { file_or_id: z.string().describe('Local HTML file or prototype id') },
   tool(handlers.status));
 
+server.tool('protoshare_resolve', 'Mark a comment as addressed (resolved) in a given version. Run after pushing a fix so future pulls surface only open feedback.',
+  { file_or_id: z.string().describe('Local HTML file or prototype id'),
+    comment_id: z.string().describe('The comment id from protoshare_pull'),
+    version: z.number().int().optional().describe('The version that addressed it (defaults to none)') },
+  tool(handlers.resolve));
+
 try {
   const transport = new StdioServerTransport();
   await server.connect(transport);

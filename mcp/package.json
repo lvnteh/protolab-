@@ -1,0 +1,15 @@
+{
+  "name": "protoshare-mcp",
+  "version": "1.0.0",
+  "description": "Local stdio MCP server for the proto-share local-AI integration. Thin client over the deployed /api/v1 REST surface.",
+  "type": "module",
+  "private": true,
+  "bin": { "protoshare-mcp": "server.mjs" },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.0"
+  }
+}

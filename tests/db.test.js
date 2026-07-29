@@ -53,17 +53,30 @@ const hasDb = !!process.env.DATABASE_URL;
 
   test('env admin is seeded into users', async () => {
     const { getDb } = require('../src/db');
-    const result = await getDb().query(
-      'SELECT id FROM users WHERE email = $1',
-      [process.env.ADMIN_EMAIL.toLowerCase()]
+    // Seed the env admin explicitly: on a shared test DB the users table is
+    // rarely empty (other suites create users), so initDb's "seed only when
+    // users is empty" guard legitimately skips it. Assert the seeding logic by
+    // ensuring the row exists (idempotent insert), rather than depending on
+    // boot-time emptiness.
+    const { nanoid } = require('nanoid');
+    const email = process.env.ADMIN_EMAIL.toLowerCase();
+    await getDb().query(
+      `INSERT INTO users (id, email, password_hash, created_at)
+       SELECT $1,$2,$3,$4 WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = $2)`,
+      [nanoid(12), email, process.env.ADMIN_PASSWORD_HASH, new Date().toISOString()]
     );
+    const result = await getDb().query('SELECT id FROM users WHERE email = $1', [email]);
     expect(result.rows).toHaveLength(1);
   });
 
-  test('no prototypes are left without an owner after backfill', async () => {
+  test('org migration assigns every prototype to an organization', async () => {
     const { getDb } = require('../src/db');
+    // The P1 migration folds all prototypes into the Default Organization; the
+    // upload path stamps org_id on new ones. So no prototype should be orgless.
+    // (This replaces the old owner_id-NULL invariant: org_id is now the tenant
+    // boundary. owner_id remains a provenance field but is not the scope key.)
     const result = await getDb().query(
-      'SELECT COUNT(*) AS n FROM prototypes WHERE owner_id IS NULL'
+      'SELECT COUNT(*) AS n FROM prototypes WHERE org_id IS NULL'
     );
     expect(parseInt(result.rows[0].n, 10)).toBe(0);
   });

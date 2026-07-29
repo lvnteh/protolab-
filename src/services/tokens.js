@@ -9,22 +9,22 @@ const bcrypt = require('bcryptjs');
 const { nanoid } = require('nanoid');
 const { getDb } = require('../db');
 
-// Create a token for a user. Returns { id, raw } — raw is "<id>.<secret>",
-// never re-derivable (only the secret's bcrypt hash is stored).
-async function createToken(userId, name) {
+// Create a token for a user, scoped to an org. Returns { id, raw } — raw is
+// "<id>.<secret>", never re-derivable (only the secret's bcrypt hash is stored).
+async function createToken(userId, name, orgId) {
   const id = nanoid(12);
   const secret = crypto.randomBytes(24).toString('base64url'); // 32-char url-safe secret
   const tokenHash = bcrypt.hashSync(secret, 10);
   await getDb().query(
-    'INSERT INTO api_tokens (id, user_id, token_hash, name, created_at) VALUES ($1,$2,$3,$4,$5)',
-    [id, userId, tokenHash, name || 'token', new Date().toISOString()]
+    'INSERT INTO api_tokens (id, user_id, token_hash, name, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, userId, tokenHash, name || 'token', new Date().toISOString(), orgId || null]
   );
   return { id, raw: `${id}.${secret}` };
 }
 
-// Resolve a presented raw token ("<id>.<secret>") to { userId, tokenId }, or
-// null if the id is unknown or the secret doesn't match. Single indexed lookup
-// + one async bcrypt compare. Bumps last_used_at on success.
+// Resolve a presented raw token ("<id>.<secret>") to { userId, tokenId, orgId },
+// or null if the id is unknown or the secret doesn't match. Single indexed
+// lookup + one async bcrypt compare. Bumps last_used_at on success.
 async function resolveToken(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const dot = raw.indexOf('.');
@@ -32,27 +32,28 @@ async function resolveToken(raw) {
   const id = raw.slice(0, dot);
   const secret = raw.slice(dot + 1);
   if (!secret) return null;
-  const { rows } = await getDb().query('SELECT user_id, token_hash FROM api_tokens WHERE id = $1', [id]);
+  const { rows } = await getDb().query('SELECT user_id, token_hash, org_id FROM api_tokens WHERE id = $1', [id]);
   if (!rows[0]) return null;
   const ok = await bcrypt.compare(secret, rows[0].token_hash);
   if (!ok) return null;
   await getDb().query('UPDATE api_tokens SET last_used_at = $1 WHERE id = $2',
     [new Date().toISOString(), id]);
-  return { userId: rows[0].user_id, tokenId: id };
+  return { userId: rows[0].user_id, tokenId: id, orgId: rows[0].org_id };
 }
 
-// List a user's tokens (never returns the hash or raw secret).
-async function listTokens(userId) {
+// List an org's tokens (never returns the hash or raw secret).
+async function listTokens(orgId) {
   const { rows } = await getDb().query(
-    'SELECT id, name, created_at, last_used_at FROM api_tokens WHERE user_id = $1 ORDER BY created_at DESC',
-    [userId]
+    'SELECT id, name, created_at, last_used_at FROM api_tokens WHERE org_id = $1 ORDER BY created_at DESC',
+    [orgId]
   );
   return rows;
 }
 
-// Revoke = delete. Scoped by user so one user can't revoke another's token.
-async function revokeToken(tokenId, userId) {
-  await getDb().query('DELETE FROM api_tokens WHERE id = $1 AND user_id = $2', [tokenId, userId]);
+// Revoke = delete. Scoped by org so a token can only be revoked from within the
+// org that owns it.
+async function revokeToken(tokenId, orgId) {
+  await getDb().query('DELETE FROM api_tokens WHERE id = $1 AND org_id = $2', [tokenId, orgId]);
 }
 
 module.exports = { createToken, resolveToken, listTokens, revokeToken };

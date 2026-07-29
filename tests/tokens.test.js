@@ -9,6 +9,16 @@ const { nanoid } = require('nanoid');
 const tokens = require('../src/services/tokens');
 
 let userId;
+let orgId;
+
+async function createOrg() {
+  const id = nanoid(12);
+  await getDb().query(
+    'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+    [id, `org-${id}`, new Date().toISOString()]
+  );
+  return id;
+}
 
 (hasDb ? describe : describe.skip)('token service', () => {
   beforeAll(async () => {
@@ -18,11 +28,12 @@ let userId;
       'INSERT INTO users (id, email, password_hash, created_at) VALUES ($1,$2,$3,$4)',
       [userId, `tok-${userId}@sap.com`, 'x', new Date().toISOString()]
     );
+    orgId = await createOrg();
   });
   afterAll(async () => { await closeDb(); });
 
   test('createToken returns a raw secret and stores only a hash', async () => {
-    const { raw, id } = await tokens.createToken(userId, 'laptop');
+    const { raw, id } = await tokens.createToken(userId, 'laptop', orgId);
     expect(typeof raw).toBe('string');
     expect(raw.length).toBeGreaterThanOrEqual(32);
     const { rows } = await getDb().query('SELECT token_hash FROM api_tokens WHERE id = $1', [id]);
@@ -30,7 +41,7 @@ let userId;
   });
 
   test('resolveToken returns the owning user for a valid raw token', async () => {
-    const { raw } = await tokens.createToken(userId, 'second');
+    const { raw } = await tokens.createToken(userId, 'second', orgId);
     const resolved = await tokens.resolveToken(raw);
     expect(resolved).toMatchObject({ userId });
   });
@@ -40,20 +51,21 @@ let userId;
   });
 
   test('revokeToken makes the token stop resolving', async () => {
-    const { raw, id } = await tokens.createToken(userId, 'third');
-    await tokens.revokeToken(id, userId);
+    const { raw, id } = await tokens.createToken(userId, 'third', orgId);
+    await tokens.revokeToken(id, orgId);
     expect(await tokens.resolveToken(raw)).toBeNull();
   });
 
-  test('listTokens returns the user\'s tokens without the hash', async () => {
+  test('listTokens returns the org\'s tokens without the hash', async () => {
     const fresh = nanoid(12);
     await getDb().query(
       'INSERT INTO users (id, email, password_hash, created_at) VALUES ($1,$2,$3,$4)',
       [fresh, `list-${fresh}@sap.com`, 'x', new Date().toISOString()]
     );
-    await tokens.createToken(fresh, 'alpha');
-    await tokens.createToken(fresh, 'beta');
-    const list = await tokens.listTokens(fresh);
+    const freshOrgId = await createOrg();
+    await tokens.createToken(fresh, 'alpha', freshOrgId);
+    await tokens.createToken(fresh, 'beta', freshOrgId);
+    const list = await tokens.listTokens(freshOrgId);
     expect(list).toHaveLength(2);
     expect(list.map(t => t.name).sort()).toEqual(['alpha', 'beta']);
     expect(list[0]).not.toHaveProperty('token_hash');
@@ -63,7 +75,7 @@ let userId;
     const express = require('express');
     const request = require('supertest');
     const apiTokenAuth = require('../src/middleware/apiTokenAuth');
-    const { raw, id } = await tokens.createToken(userId, 'mw');
+    const { raw, id } = await tokens.createToken(userId, 'mw', orgId);
     const app = express();
     app.get('/whoami', apiTokenAuth, (req, res) => res.json({ userId: req.userId, tokenId: req.tokenId }));
     const res = await request(app).get('/whoami').set('Authorization', `Bearer ${raw}`);

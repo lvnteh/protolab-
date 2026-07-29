@@ -22,7 +22,14 @@ const express = require('express');
 const apiV1Router = require('../src/routes/apiV1');
 const tokens = require('../src/services/tokens');
 
-let app, userId, otherUserId, protoId, rawToken, otherToken, v1Id, commentId;
+let app, userId, otherUserId, orgA, orgB, protoId, rawToken, otherToken, v1Id, commentId;
+
+async function createOrg(name) {
+  const id = nanoid(12);
+  await getDb().query('INSERT INTO organizations (id,name,created_at) VALUES ($1,$2,$3)',
+    [id, name, new Date().toISOString()]);
+  return id;
+}
 
 (hasDb ? describe : describe.skip)('comment resolution', () => {
   beforeAll(async () => {
@@ -36,13 +43,14 @@ let app, userId, otherUserId, protoId, rawToken, otherToken, v1Id, commentId;
       [userId, `res-${userId}@sap.com`, 'x', new Date().toISOString()]);
     await getDb().query('INSERT INTO users (id,email,password_hash,created_at) VALUES ($1,$2,$3,$4)',
       [otherUserId, `res-${otherUserId}@sap.com`, 'x', new Date().toISOString()]);
-    ({ raw: rawToken } = await tokens.createToken(userId, 't'));
-    ({ raw: otherToken } = await tokens.createToken(otherUserId, 't'));
+    orgA = await createOrg('orgA'); orgB = await createOrg('orgB');
+    ({ raw: rawToken } = await tokens.createToken(userId, 't', orgA));
+    ({ raw: otherToken } = await tokens.createToken(otherUserId, 't', orgB));
 
     protoId = nanoid(12);
     await getDb().query(
-      'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [protoId, 'Res', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId]);
+      'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id,org_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [protoId, 'Res', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId, orgA]);
     await initDb(); // backfill v1
     ({ rows: [{ id: v1Id }] } = await getDb().query(
       'SELECT id FROM prototype_versions WHERE prototype_id = $1', [protoId]));

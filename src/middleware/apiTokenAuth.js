@@ -13,6 +13,7 @@ async function apiTokenAuth(req, res, next) {
     if (!resolved) return res.status(401).json({ error: 'Invalid or revoked token.' });
     req.userId = resolved.userId;
     req.tokenId = resolved.tokenId;
+    req.orgId = resolved.orgId;
     next();
   } catch (err) {
     // NEVER log the raw bearer token (match[1]). If token context is ever

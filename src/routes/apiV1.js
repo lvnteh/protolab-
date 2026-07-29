@@ -1,6 +1,7 @@
 // src/routes/apiV1.js
-// Machine-facing REST surface. Bearer-authenticated (apiTokenAuth sets req.userId),
-// owner-scoped like the admin routes (a prototype that isn't yours → 404).
+// Machine-facing REST surface. Bearer-authenticated (apiTokenAuth sets req.userId
+// and req.orgId), org-scoped like the admin routes (a prototype in another org
+// → 404). The token carries its org; all access is decided against that org.
 const express = require('express');
 const { getDb } = require('../db');
 const apiTokenAuth = require('../middleware/apiTokenAuth');
@@ -18,14 +19,16 @@ const upload = multer({
 const router = express.Router();
 router.use(apiTokenAuth);
 
-// Fetch a prototype only if owned by the caller — mirrors admin getOwnedPrototype.
-async function getOwned(id, ownerId, columns = '*') {
+// Fetch a prototype only if it belongs to the caller's org — mirrors the admin
+// getOrgPrototype. The org comes from the token (req.orgId).
+async function getOwned(id, orgId, columns = '*') {
+  if (!orgId) return null;
   const { rows } = await getDb().query(
-    `SELECT ${columns} FROM prototypes WHERE id = $1 AND owner_id = $2`, [id, ownerId]);
+    `SELECT ${columns} FROM prototypes WHERE id = $1 AND org_id = $2`, [id, orgId]);
   return rows[0] || null;
 }
 
-// GET /api/v1/prototypes — list the caller's prototypes with version pointers.
+// GET /api/v1/prototypes — list the caller's org's prototypes with version pointers.
 router.get('/prototypes', async (req, res) => {
   try {
     const { rows } = await getDb().query(`
@@ -35,7 +38,7 @@ router.get('/prototypes', async (req, res) => {
       FROM prototypes p
       LEFT JOIN prototype_versions pub ON pub.id = p.published_version_id
       LEFT JOIN prototype_versions dr  ON dr.id  = p.draft_version_id
-      WHERE p.owner_id = $1 ORDER BY p.created_at DESC`, [req.userId]);
+      WHERE p.org_id = $1 ORDER BY p.created_at DESC`, [req.orgId]);
     res.json(rows.map(r => ({
       id: r.id, name: r.name,
       shareLink: `${config.baseUrl}/p/${r.share_token}`,
@@ -51,7 +54,7 @@ router.get('/prototypes', async (req, res) => {
 // GET /api/v1/prototypes/:id/feedback — comments (+replies) + explanations.
 router.get('/prototypes/:id/feedback', async (req, res) => {
   try {
-    const proto = await getOwned(req.params.id, req.userId, 'id, name, published_version_id, draft_version_id');
+    const proto = await getOwned(req.params.id, req.orgId, 'id, name, published_version_id, draft_version_id');
     if (!proto) return res.status(404).json({ error: 'Not found.' });
 
     const { rows: vNums } = await getDb().query(
@@ -99,7 +102,7 @@ router.get('/prototypes/:id/feedback', async (req, res) => {
 // GET /prototypes/:id/versions — history newest-first.
 router.get('/prototypes/:id/versions', async (req, res) => {
   try {
-    if (!await getOwned(req.params.id, req.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+    if (!await getOwned(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
     const { rows } = await getDb().query(
       `SELECT version, status, note, created_at FROM prototype_versions
        WHERE prototype_id = $1 ORDER BY version DESC`, [req.params.id]);
@@ -113,7 +116,7 @@ router.get('/prototypes/:id/versions', async (req, res) => {
 // GET /prototypes/:id/source — published HTML, or ?version=N for a specific one.
 router.get('/prototypes/:id/source', async (req, res) => {
   try {
-    if (!await getOwned(req.params.id, req.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+    if (!await getOwned(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
     let filename;
     if (req.query.version) {
       const v = parseInt(req.query.version, 10);
@@ -139,7 +142,7 @@ router.get('/prototypes/:id/source', async (req, res) => {
 // POST /prototypes/:id/versions — upload HTML as a DRAFT. Conflict-guarded.
 router.post('/prototypes/:id/versions', upload.single('file'), async (req, res) => {
   try {
-    if (!await getOwned(req.params.id, req.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+    if (!await getOwned(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
     if (!req.file) return res.status(400).json({ error: 'Only .html files are accepted.' });
 
     const latest = await versions.latestVersion(req.params.id);
@@ -171,7 +174,7 @@ router.post('/prototypes/:id/versions', upload.single('file'), async (req, res) 
 // POST /prototypes/:id/publish — promote a draft (defaults to latest).
 router.post('/prototypes/:id/publish', async (req, res) => {
   try {
-    if (!await getOwned(req.params.id, req.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+    if (!await getOwned(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
     const version = req.body.version != null ? parseInt(req.body.version, 10) : await versions.latestVersion(req.params.id);
     const result = await versions.publish(req.params.id, version);
     res.json(result);
@@ -189,7 +192,7 @@ router.post('/prototypes/:id/publish', async (req, res) => {
 // you own (or doesn't exist) → 404.
 router.post('/prototypes/:id/comments/:commentId/resolve', async (req, res) => {
   try {
-    if (!await getOwned(req.params.id, req.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+    if (!await getOwned(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
     const version = req.body && req.body.version != null ? parseInt(req.body.version, 10) : null;
     if (version != null && Number.isNaN(version)) return res.status(400).json({ error: 'version must be an integer.' });
     const { rowCount } = await getDb().query(

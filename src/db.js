@@ -216,6 +216,45 @@ async function initDb() {
     )
   `);
 
+  // --- Organizations (P1 multi-tenancy) ---
+  // The tenant boundary moves from the individual user (owner_id) to an org.
+  // Users belong to N orgs via org_memberships; a prototype belongs to an org;
+  // access is decided by the caller's role in that org. See
+  // docs/superpowers/specs/2026-07-29-org-multitenancy-design.md.
+
+  await _pool.query(`
+    CREATE TABLE IF NOT EXISTS organizations (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      created_at  TEXT NOT NULL
+    )
+  `);
+
+  await _pool.query(`
+    CREATE TABLE IF NOT EXISTS org_memberships (
+      id          TEXT PRIMARY KEY,
+      org_id      TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      user_id     TEXT NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
+      role        TEXT NOT NULL CONSTRAINT org_memberships_role_check CHECK (role IN ('admin','viewer')),
+      created_at  TEXT NOT NULL,
+      UNIQUE (org_id, user_id)
+    )
+  `);
+  await _pool.query(`CREATE INDEX IF NOT EXISTS idx_memberships_user ON org_memberships(user_id)`);
+  await _pool.query(`CREATE INDEX IF NOT EXISTS idx_memberships_org  ON org_memberships(org_id)`);
+
+  // org_id is the tenant boundary on prototypes. Nullable at first (existing
+  // rows), backfilled by the migration below, enforced in code (mirrors owner_id).
+  await _pool.query(`ALTER TABLE prototypes ADD COLUMN IF NOT EXISTS org_id TEXT REFERENCES organizations(id)`);
+  await _pool.query(`ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS org_id TEXT REFERENCES organizations(id)`);
+
+  // Scale indexes. owner_id and these prototype_id FKs were unindexed — every
+  // admin list / comment fetch / analytics query was a full table scan.
+  await _pool.query(`CREATE INDEX IF NOT EXISTS idx_prototypes_org      ON prototypes(org_id, created_at)`);
+  await _pool.query(`CREATE INDEX IF NOT EXISTS idx_prototypes_owner    ON prototypes(owner_id)`);
+  await _pool.query(`CREATE INDEX IF NOT EXISTS idx_comments_prototype  ON comments(prototype_id)`);
+  await _pool.query(`CREATE INDEX IF NOT EXISTS idx_access_log_proto    ON access_log(prototype_id)`);
+
   // L. Deletion FKs. These columns already exist from earlier phases but were
   //    created WITHOUT the ON DELETE behavior that makes `DELETE FROM prototypes`
   //    work in one shot. We add them idempotently via DROP IF EXISTS + ADD.
@@ -364,6 +403,44 @@ async function initDb() {
         ['v1-version-backfill', new Date().toISOString()]
       );
     }
+
+    // --- Org multi-tenancy migration (P1) ---
+    // Marker-guarded so it runs once. Under the same advisory lock as the v1
+    // backfill, so concurrent/multi-instance boots can't double-create the org.
+    // Strategy: fold ALL existing data into ONE shared "Default Organization";
+    // every existing user becomes an admin of it. See the design spec.
+    const { rows: orgMarker } = await lockClient.query(
+      'SELECT 1 FROM schema_migrations WHERE name = $1', ['org-multitenancy-v1']);
+    const { rows: unassigned } = await lockClient.query(
+      'SELECT 1 FROM prototypes WHERE org_id IS NULL LIMIT 1');
+
+    if (orgMarker.length === 0 || unassigned.length > 0) {
+      const nowIso = new Date().toISOString();
+      // Reuse an existing default org if one is already present (idempotent even
+      // if the marker was lost); otherwise create it.
+      let { rows: defOrg } = await lockClient.query(
+        "SELECT id FROM organizations WHERE name = $1", ['Default Organization']);
+      let defaultOrgId = defOrg[0] && defOrg[0].id;
+      if (!defaultOrgId) {
+        defaultOrgId = nanoid(12);
+        await lockClient.query(
+          'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+          [defaultOrgId, 'Default Organization', nowIso]);
+      }
+      // Every existing user becomes an admin of the default org.
+      await lockClient.query(
+        `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+         SELECT $1 || u.id, $2, u.id, 'admin', $3 FROM users u
+         ON CONFLICT (org_id, user_id) DO NOTHING`,
+        ['m_', defaultOrgId, nowIso]);
+      // Assign all unowned prototypes + tokens to the default org.
+      await lockClient.query('UPDATE prototypes SET org_id = $1 WHERE org_id IS NULL', [defaultOrgId]);
+      await lockClient.query('UPDATE api_tokens SET org_id = $1 WHERE org_id IS NULL', [defaultOrgId]);
+      await lockClient.query(
+        `INSERT INTO schema_migrations (name, applied_at) VALUES ($1, $2)
+         ON CONFLICT (name) DO NOTHING`,
+        ['org-multitenancy-v1', nowIso]);
+    }
   } finally {
     // Always release the advisory lock on the same connection that took it.
     await lockClient.query('SELECT pg_advisory_unlock($1)', [BACKFILL_LOCK_KEY]);
@@ -394,7 +471,8 @@ async function cleanDb() {
   if (!_pool) return;
   await _pool.query(`
     TRUNCATE TABLE comments, prototype_versions, prototypes, allowlist,
-                   access_log, nav_events, explanations, api_tokens, users
+                   access_log, nav_events, explanations, api_tokens,
+                   org_memberships, organizations, users
     RESTART IDENTITY CASCADE
   `);
 }

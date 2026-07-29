@@ -13,16 +13,21 @@ const VALID_TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
 // two — callers are legitimate:
 //   1. A reviewer whose share-link session is bound to EXACTLY this prototype
 //      (req.session.prototypeId set by delivery.js on /enter).
-//   2. An authenticated admin who OWNS this prototype (req.session.userId).
-// Everyone else — including a reviewer bound to a *different* prototype — is
-// denied. This is what closes the cross-prototype / cross-tenant hole: without
-// it, any caller could read or edit any comment/explanation by guessing its id.
+//   2. An authenticated user who is a MEMBER of the prototype's organization
+//      (req.session.userId + org_memberships) — the P1 tenant boundary.
+// Everyone else — including a reviewer bound to a *different* prototype, or a
+// user in a different org — is denied. This closes the cross-prototype /
+// cross-tenant hole: without it, any caller could read or edit any
+// comment/explanation by guessing its id.
 async function authorizedForPrototype(req, prototypeId) {
   if (!prototypeId || !req.session) return false;
   if (req.session.prototypeId === prototypeId) return true;
   if (req.session.userId) {
+    // Member of the prototype's org? Join prototype → membership for this user.
     const { rows } = await getDb().query(
-      'SELECT 1 FROM prototypes WHERE id = $1 AND owner_id = $2',
+      `SELECT 1 FROM prototypes p
+         JOIN org_memberships m ON m.org_id = p.org_id
+        WHERE p.id = $1 AND m.user_id = $2`,
       [prototypeId, req.session.userId]
     );
     return rows.length > 0;

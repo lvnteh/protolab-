@@ -46,12 +46,34 @@ function makeApp() {
 }
 
 // Sign up a fresh user with a unique allowed-domain email and return a
-// logged-in agent plus the email used.
+// logged-in agent plus the email used. NOTE: under the P1 org model a fresh
+// signup joins the Default Organization as a *viewer* (read+comment only).
 async function signUp(app) {
   const email = `user-${nanoid(8)}@sap.com`.toLowerCase();
   const agent = request.agent(app);
   const res = await agent.post('/admin/signup').send(`email=${email}&password=password123&confirm=password123`);
   return { agent, email, res };
+}
+
+// Sign up a user, then provision them as ADMIN of their OWN fresh organization
+// (org creation is admin-provisioned in this phase, so we seed it directly),
+// and log them back in so the session's activeOrgId points at that org. This is
+// the fixture for "an org admin who can create/manage prototypes", and — because
+// each call makes a *separate* org — for cross-tenant isolation between orgs.
+async function signUpAsOrgAdmin(app) {
+  const { email } = await signUp(app);
+  const { rows: u } = await getDb().query('SELECT id FROM users WHERE email = $1', [email]);
+  const userId = u[0].id;
+  const orgId = nanoid(12);
+  await getDb().query('INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+    [orgId, `Org ${orgId}`, new Date().toISOString()]);
+  await getDb().query(
+    `INSERT INTO org_memberships (id, org_id, user_id, role, created_at) VALUES ($1,$2,$3,'admin',$4)`,
+    [nanoid(12), orgId, userId, new Date().toISOString()]);
+  // Re-login so activeOrgId = most-recently-created membership = this admin org.
+  const agent = request.agent(app);
+  await agent.post('/admin/login').send(`email=${email}&password=password123`);
+  return { agent, email, userId, orgId };
 }
 
 (hasDb ? describe : describe.skip)('multi-tenancy', () => {
@@ -124,7 +146,7 @@ async function signUp(app) {
 
   describe('ownership on upload', () => {
     test('a new prototype is owned by the uploading user', async () => {
-      const { agent, email } = await signUp(app);
+      const { agent, email } = await signUpAsOrgAdmin(app);
       const res = await agent
         .post('/admin/prototypes')
         .set('Accept', 'application/json')
@@ -136,11 +158,27 @@ async function signUp(app) {
       const { rows: protoRows } = await getDb().query('SELECT owner_id FROM prototypes WHERE id = $1', [id]);
       expect(protoRows[0].owner_id).toBe(userRows[0].id);
     });
+
+    test('a viewer (fresh signup) cannot upload a prototype', async () => {
+      // Ensure a Default Organization exists so the signup enrols as a viewer.
+      await getDb().query(
+        `INSERT INTO organizations (id, name, created_at)
+         SELECT $1,'Default Organization',$2
+         WHERE NOT EXISTS (SELECT 1 FROM organizations WHERE name = 'Default Organization')`,
+        [nanoid(12), new Date().toISOString()]);
+      const { agent } = await signUp(app);
+      const res = await agent
+        .post('/admin/prototypes')
+        .set('Accept', 'application/json')
+        .field('name', 'Viewer Upload')
+        .attach('file', tmpHtml);
+      expect(res.status).toBe(403);
+    });
   });
 
   describe('v1 version on upload', () => {
     test('uploading a prototype immediately creates a published v1 version', async () => {
-      const { agent } = await signUp(app);
+      const { agent } = await signUpAsOrgAdmin(app);
       const up = await agent
         .post('/admin/prototypes')
         .set('Accept', 'application/json')
@@ -162,7 +200,7 @@ async function signUp(app) {
   describe('cross-tenant isolation', () => {
     test('user B cannot see, open, or delete user A\'s prototype', async () => {
       // A uploads a prototype
-      const { agent: agentA } = await signUp(app);
+      const { agent: agentA } = await signUpAsOrgAdmin(app);
       const upload = await agentA
         .post('/admin/prototypes')
         .set('Accept', 'application/json')
@@ -171,7 +209,7 @@ async function signUp(app) {
       const protoIdA = upload.body.id;
 
       // B signs up separately
-      const { agent: agentB } = await signUp(app);
+      const { agent: agentB } = await signUpAsOrgAdmin(app);
 
       // B cannot open A's prototype detail -> 404
       const detail = await agentB.get(`/admin/prototypes/${protoIdA}`);
@@ -194,7 +232,7 @@ async function signUp(app) {
     });
 
     test('scoped sub-resources (funnels, access-log, comments) 404 across tenants', async () => {
-      const { agent: agentA } = await signUp(app);
+      const { agent: agentA } = await signUpAsOrgAdmin(app);
       const upload = await agentA
         .post('/admin/prototypes')
         .set('Accept', 'application/json')
@@ -202,7 +240,7 @@ async function signUp(app) {
         .attach('file', tmpHtml);
       const protoIdA = upload.body.id;
 
-      const { agent: agentB } = await signUp(app);
+      const { agent: agentB } = await signUpAsOrgAdmin(app);
       expect((await agentB.get(`/admin/prototypes/${protoIdA}/funnels`)).status).toBe(404);
       expect((await agentB.get(`/admin/prototypes/${protoIdA}/allowlist-count`)).status).toBe(404);
       expect((await agentB.post(`/admin/prototypes/${protoIdA}/access-log`).send({})).status).toBe(404);
@@ -214,7 +252,7 @@ async function signUp(app) {
     test('deleting a prototype removes ALL its version files from storage', async () => {
       const storage = require('../src/services/storage');
       const versions = require('../src/services/versions');
-      const { agent } = await signUp(app);
+      const { agent } = await signUpAsOrgAdmin(app);
 
       // Upload → creates prototype + published v1 file
       const up = await agent

@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const { nanoid } = require('nanoid');
 const { getDb } = require('../db');
-const adminAuth = require('../middleware/adminAuth');
+const orgs = require('../services/orgs');
 const config = require('../config');
 const { injectPreview } = require('../services/inject');
 const storage = require('../services/storage');
@@ -49,16 +49,12 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-// Fetch a prototype only if it belongs to the given owner. Returns null on
-// miss OR cross-tenant access, so the existing `if (!proto) 404` branches turn
-// another user's prototype into a 404 automatically. `columns` is always a
-// fixed internal string (never user input), so interpolation here is safe.
-async function getOwnedPrototype(id, ownerId, columns = '*') {
-  const { rows } = await getDb().query(
-    `SELECT ${columns} FROM prototypes WHERE id = $1 AND owner_id = $2`,
-    [id, ownerId]
-  );
-  return rows[0] || null;
+// Fetch a prototype scoped to an ORG (the tenant boundary since P1). Returns
+// null on miss OR cross-org access, so the existing `if (!proto) 404` branches
+// turn another org's prototype into a 404 automatically. Thin wrapper over the
+// orgs service so call sites read the same as before.
+async function getOrgPrototype(id, orgId, columns = '*') {
+  return orgs.getOrgPrototype(id, orgId, columns);
 }
 
 router.get('/', (_req, res) => res.redirect('/admin/login'));
@@ -79,6 +75,7 @@ router.post('/login', async (req, res) => {
   const valid = await bcrypt.compare(req.body.password || '', user.password_hash);
   if (!valid) return res.status(401).send(renderView('admin-login.html', { error: errorHtml, csrfToken: res.locals.csrfToken || '' }));
   req.session.userId = user.id;
+  req.session.activeOrgId = await orgs.defaultOrgId(user.id);
   res.redirect('/admin/prototypes');
 });
 
@@ -121,26 +118,45 @@ router.post('/signup', async (req, res) => {
     if (e.code === '23505') return err('An account with that email already exists.', 409);
     throw e;
   }
+
+  // Org provisioning is admin-driven in this phase (not self-serve — that's a
+  // future plan). A brand-new signup with no membership would be locked out of
+  // every org-scoped page, so we auto-enrol them into the Default Organization
+  // as a VIEWER: they can see and comment but not create/manage prototypes until
+  // an admin promotes them. If no default org exists yet, they simply have no
+  // active org and land on an empty prototype list.
+  const { rows: defOrg } = await getDb().query(
+    "SELECT id FROM organizations WHERE name = $1 ORDER BY created_at ASC LIMIT 1",
+    ['Default Organization']
+  );
+  if (defOrg[0]) {
+    await getDb().query(
+      `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+       VALUES ($1,$2,$3,'viewer',$4) ON CONFLICT (org_id, user_id) DO NOTHING`,
+      [nanoid(12), defOrg[0].id, id, new Date().toISOString()]
+    );
+    req.session.activeOrgId = defOrg[0].id;
+  }
   req.session.userId = id;
   res.redirect('/admin/prototypes');
 });
 
-router.get('/prototypes', adminAuth, async (req, res) => {
+router.get('/prototypes', orgs.requireOrg, async (req, res) => {
   const { rows } = await getDb().query(`
     SELECT p.id, p.name, p.share_token, p.created_at,
       (SELECT COUNT(*) FROM allowlist  WHERE prototype_id = p.id) AS allowlist_count,
       (SELECT COUNT(*) FROM access_log WHERE prototype_id = p.id) AS view_count,
       (SELECT COUNT(*) FROM comments   WHERE prototype_id = p.id) AS comment_count
-    FROM prototypes p WHERE p.owner_id = $1 ORDER BY p.created_at DESC
-  `, [req.session.userId]);
-  res.send(renderView('admin-prototypes.html', { prototypesJson: JSON.stringify(rows).replace(/</g, '\\u003c'), csrfToken: res.locals.csrfToken || '' }));
+    FROM prototypes p WHERE p.org_id = $1 ORDER BY p.created_at DESC
+  `, [req.orgId]);
+  res.send(renderView('admin-prototypes.html', { prototypesJson: JSON.stringify(rows).replace(/</g, '\\u003c'), csrfToken: res.locals.csrfToken || '', orgRole: req.orgRole }));
 });
 
-router.get('/upload', adminAuth, (_req, res) => {
+router.get('/upload', orgs.requireAdmin, (_req, res) => {
   res.send(renderView('admin-upload.html', { success: '' }));
 });
 
-router.post('/prototypes', adminAuth, upload.single('file'), async (req, res) => {
+router.post('/prototypes', orgs.requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).send('Only .html files are accepted.');
   const id = nanoid(12);
   const shareToken = nanoid(12);
@@ -152,8 +168,8 @@ router.post('/prototypes', adminAuth, upload.single('file'), async (req, res) =>
   try {
     await client.query('BEGIN');
     await client.query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at, owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [id, req.body.name || 'Untitled', filename, shareToken, new Date().toISOString(), req.session.userId]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, owner_id, org_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [id, req.body.name || 'Untitled', filename, shareToken, new Date().toISOString(), req.session.userId, req.orgId]
     );
     // v1 is the original, published from birth — keeps the linear-history
     // invariant that the /api/v1 surface and backfill both assume.
@@ -188,16 +204,16 @@ router.post('/prototypes', adminAuth, upload.single('file'), async (req, res) =>
   res.send(renderView('admin-upload.html', { success: successBanner }));
 });
 
-router.get('/prototypes/:id', adminAuth, async (req, res) => {
-  const proto = await getOwnedPrototype(req.params.id, req.session.userId);
+router.get('/prototypes/:id', orgs.requireOrg, async (req, res) => {
+  const proto = await getOrgPrototype(req.params.id, req.orgId);
   if (!proto) return res.status(404).send('Not found.');
   const { rows: allowRows } = await getDb().query('SELECT email FROM allowlist WHERE prototype_id = $1', [proto.id]);
   const allowlist = allowRows.map(r => r.email).join('\n');
-  res.send(renderView('admin-prototype-detail.html', { id: proto.id, name: escapeHtml(proto.name), allowlist: escapeHtml(allowlist), shareToken: proto.share_token, csrfToken: res.locals.csrfToken || '' }));
+  res.send(renderView('admin-prototype-detail.html', { id: proto.id, name: escapeHtml(proto.name), allowlist: escapeHtml(allowlist), shareToken: proto.share_token, csrfToken: res.locals.csrfToken || '', orgRole: req.orgRole }));
 });
 
-router.post('/prototypes/:id/settings', adminAuth, async (req, res) => {
-  const proto = await getOwnedPrototype(req.params.id, req.session.userId, 'id');
+router.post('/prototypes/:id/settings', orgs.requireAdmin, async (req, res) => {
+  const proto = await getOrgPrototype(req.params.id, req.orgId, 'id');
   if (!proto) return res.status(404).send('Not found.');
   await getDb().query('UPDATE prototypes SET name = $1 WHERE id = $2', [req.body.name || 'Untitled', proto.id]);
   await getDb().query('DELETE FROM allowlist WHERE prototype_id = $1', [proto.id]);
@@ -211,15 +227,15 @@ router.post('/prototypes/:id/settings', adminAuth, async (req, res) => {
   res.redirect(`/admin/prototypes/${proto.id}?saved=1`);
 });
 
-router.get('/prototypes/:id/allowlist-count', adminAuth, async (req, res) => {
-  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+router.get('/prototypes/:id/allowlist-count', orgs.requireOrg, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { rows } = await getDb().query('SELECT COUNT(*) AS n FROM allowlist WHERE prototype_id = $1', [req.params.id]);
   const count = parseInt(rows[0]?.n ?? 0, 10);
   res.json({ count });
 });
 
-router.delete('/prototypes/:id', adminAuth, async (req, res) => {
-  const proto = await getOwnedPrototype(req.params.id, req.session.userId);
+router.delete('/prototypes/:id', orgs.requireAdmin, async (req, res) => {
+  const proto = await getOrgPrototype(req.params.id, req.orgId);
   if (!proto) return res.status(404).json({ error: 'Not found.' });
 
   // Collect every stored file for this prototype: all version files plus the
@@ -237,8 +253,8 @@ router.delete('/prototypes/:id', adminAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-router.post('/prototypes/:id/comments', adminAuth, async (req, res) => {
-  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+router.post('/prototypes/:id/comments', orgs.requireOrg, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { pageSize = 25, offset = 0, sortingKey, sortingOrder = 'asc', filterValues = {} } = req.body || {};
   const allowedSort = ['email', 'type', 'created_at'];
   const orderBy = allowedSort.includes(sortingKey) ? sortingKey : 'created_at';
@@ -296,22 +312,22 @@ router.post('/prototypes/:id/comments', adminAuth, async (req, res) => {
   res.json({ data: rowsWithReplies, totalCount: total });
 });
 
-router.delete('/prototypes/:id/comments', adminAuth, async (req, res) => {
-  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+router.delete('/prototypes/:id/comments', orgs.requireAdmin, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
   await getDb().query('DELETE FROM comments WHERE prototype_id = $1', [req.params.id]);
   res.json({ ok: true });
 });
 
-router.delete('/prototypes/:id/comments/:commentId', adminAuth, async (req, res) => {
-  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+router.delete('/prototypes/:id/comments/:commentId', orgs.requireAdmin, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { rows } = await getDb().query('SELECT id FROM comments WHERE id = $1 AND prototype_id = $2', [req.params.commentId, req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Not found.' });
   await getDb().query('DELETE FROM comments WHERE id = $1', [req.params.commentId]);
   res.json({ ok: true });
 });
 
-router.post('/prototypes/:id/access-log', adminAuth, async (req, res) => {
-  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+router.post('/prototypes/:id/access-log', orgs.requireOrg, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { pageSize = 25, offset = 0 } = req.body || {};
   const totalResult = await getDb().query('SELECT COUNT(*) AS n FROM access_log WHERE prototype_id = $1', [req.params.id]);
   const total = parseInt(totalResult.rows[0].n, 10);
@@ -322,8 +338,8 @@ router.post('/prototypes/:id/access-log', adminAuth, async (req, res) => {
   res.json({ data: rows, totalCount: total });
 });
 
-router.get('/prototypes/:id/preview', adminAuth, async (req, res) => {
-  const proto = await getOwnedPrototype(req.params.id, req.session.userId);
+router.get('/prototypes/:id/preview', orgs.requireOrg, async (req, res) => {
+  const proto = await getOrgPrototype(req.params.id, req.orgId);
   if (!proto) return res.status(404).send('Prototype not found.');
 
   if (path.basename(proto.filename) !== proto.filename) return res.status(400).send('Invalid prototype filename.');
@@ -354,34 +370,36 @@ router.get('/prototypes/:id/preview', adminAuth, async (req, res) => {
 });
 
 // --- API token management (machine access for local-AI integration) ---
-router.post('/tokens', adminAuth, async (req, res) => {
-  const { id, raw } = await apiTokens.createToken(req.session.userId, (req.body.name || 'token').slice(0, 60));
+// Tokens are org-scoped: minted for the admin's active org, and act with full
+// (admin-equivalent) authority within that org. Admin-only.
+router.post('/tokens', orgs.requireAdmin, async (req, res) => {
+  const { id, raw } = await apiTokens.createToken(req.session.userId, (req.body.name || 'token').slice(0, 60), req.orgId);
   // The raw secret is returned exactly once and never stored in plaintext.
   res.status(201).json({ id, token: raw });
 });
 
-router.get('/tokens', adminAuth, async (req, res) => {
-  res.json(await apiTokens.listTokens(req.session.userId));
+router.get('/tokens', orgs.requireAdmin, async (req, res) => {
+  res.json(await apiTokens.listTokens(req.orgId));
 });
 
-// Idempotent by design: revokeToken is a user-scoped no-op DELETE, so revoking
+// Idempotent by design: revokeToken is an org-scoped no-op DELETE, so revoking
 // an already-gone or never-existed token still returns { ok: true }. (Differs
 // from DELETE /prototypes/:id, which 404s — tokens don't need existence feedback.)
-router.delete('/tokens/:tokenId', adminAuth, async (req, res) => {
-  await apiTokens.revokeToken(req.params.tokenId, req.session.userId);
+router.delete('/tokens/:tokenId', orgs.requireAdmin, async (req, res) => {
+  await apiTokens.revokeToken(req.params.tokenId, req.orgId);
   res.json({ ok: true });
 });
 
 // Account-level API-token management page. Distinct path from GET /tokens
 // (which returns JSON, consumed by this page's client-side fetch).
-router.get('/tokens/page', adminAuth, (_req, res) => {
+router.get('/tokens/page', orgs.requireAdmin, (_req, res) => {
   renderAdmin(res, 'admin-tokens.html');
 });
 
-// Owner-scoped version history for a prototype (consumed by the detail view's
+// Org-scoped version history for a prototype (consumed by the detail view's
 // Versions tab). Flags which row is the live-published one and which is the draft.
-router.get('/prototypes/:id/versions', adminAuth, async (req, res) => {
-  if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+router.get('/prototypes/:id/versions', orgs.requireOrg, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { rows } = await getDb().query(
     `SELECT v.version, v.status, v.note, v.created_at,
             COALESCE(v.id = p.published_version_id, false) AS is_published,
@@ -396,9 +414,9 @@ router.get('/prototypes/:id/versions', adminAuth, async (req, res) => {
   })));
 });
 
-router.get('/prototypes/:id/funnels', adminAuth, async (req, res) => {
+router.get('/prototypes/:id/funnels', orgs.requireOrg, async (req, res) => {
   const protoId = req.params.id;
-  if (!await getOwnedPrototype(protoId, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+  if (!await getOrgPrototype(protoId, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
 
   // 1. Load all nav events for this prototype, ordered for stitching
   const { rows: events } = await getDb().query(

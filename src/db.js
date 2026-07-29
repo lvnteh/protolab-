@@ -441,6 +441,29 @@ async function initDb() {
          ON CONFLICT (name) DO NOTHING`,
         ['org-multitenancy-v1', nowIso]);
     }
+
+    // --- Self-heal: env admin must always have a Default-Org membership ---
+    // The migration block above only enrols users WHILE it runs, and is skipped
+    // once the marker exists and no prototypes are unassigned. An env admin
+    // seeded AFTER that point (step C, e.g. ADMIN_EMAIL set on a later deploy)
+    // would then have zero memberships and be locked out of every admin route by
+    // requireOrg. This runs on every boot, is idempotent (ON CONFLICT DO
+    // NOTHING), and is scoped to the single configured admin — so it guarantees
+    // the operator can always log in without broadly auto-enrolling other users.
+    if (config.adminEmail) {
+      const adminEmail = config.adminEmail.trim().toLowerCase();
+      const { rows: defOrg } = await lockClient.query(
+        "SELECT id FROM organizations WHERE name = $1", ['Default Organization']);
+      if (defOrg[0]) {
+        await lockClient.query(
+          `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+           SELECT 'm_' || u.id, $1, u.id, 'admin', $2
+             FROM users u
+            WHERE u.email = $3
+           ON CONFLICT (org_id, user_id) DO NOTHING`,
+          [defOrg[0].id, new Date().toISOString(), adminEmail]);
+      }
+    }
   } finally {
     // Always release the advisory lock on the same connection that took it.
     await lockClient.query('SELECT pg_advisory_unlock($1)', [BACKFILL_LOCK_KEY]);

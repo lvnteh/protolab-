@@ -110,6 +110,40 @@ async function mkPrototype(orgId, ownerId, name = 'P') {
       const { rows } = await getDb().query("SELECT COUNT(*)::int AS n FROM organizations WHERE name = 'Default Organization'");
       expect(rows[0].n).toBe(1);
     });
+
+    // Regression: the configured env/seed admin must ALWAYS end up a member of
+    // the Default Organization, even when seeded AFTER the one-time migration
+    // marker was recorded. The migration block only enrols users while it runs
+    // and is skipped once the marker is set + no prototypes are unassigned, so
+    // without a dedicated self-heal step a late-seeded admin has zero
+    // memberships and is locked out by requireOrg (the exact prod state we hit).
+    test('self-heals: enrols the env/seed admin into the Default Org as admin', async () => {
+      await cleanDb();
+      const config = require('../src/config');
+      // Simulate a fully-migrated DB: Default Org + marker present, and the env
+      // admin user already seeded but with NO membership yet.
+      const defId = await mkOrg('Default Organization');
+      await getDb().query(
+        `INSERT INTO schema_migrations (name, applied_at) VALUES ($1,$2) ON CONFLICT (name) DO NOTHING`,
+        ['org-multitenancy-v1', new Date().toISOString()]);
+      const email = `seed-${nanoid(6)}@sap.com`;
+      const adminId = await mkUser(email);
+      const before = await getDb().query('SELECT 1 FROM org_memberships WHERE user_id = $1', [adminId]);
+      expect(before.rows).toHaveLength(0);
+
+      // Point config at this admin (db.js reads config.adminEmail at initDb-time).
+      const prev = config.adminEmail;
+      config.adminEmail = email;
+      try {
+        await initDb(); // self-heal must enrol the seed admin
+        const { rows: mem } = await getDb().query(
+          'SELECT role FROM org_memberships WHERE org_id = $1 AND user_id = $2', [defId, adminId]);
+        expect(mem).toHaveLength(1);
+        expect(mem[0].role).toBe('admin');
+      } finally {
+        config.adminEmail = prev;
+      }
+    });
   });
 
   describe('roles', () => {

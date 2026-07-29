@@ -202,6 +202,11 @@ async function initDb() {
   // H. version_id stamp on comments (which version the feedback was made against)
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS version_id TEXT REFERENCES prototype_versions(id)`);
 
+  // J. Comment resolution (Phase 3): when the agent addresses feedback it stamps
+  //    resolved_at + the version that fixed it, so pulls can surface only open items.
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS resolved_at TEXT`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS resolved_in_version INTEGER`);
+
   // I. Backfill: every prototype with no versions becomes "v1, published" pointing
   //    at its existing filename. Idempotent — only fires for unversioned prototypes.
   const { rows: unversioned } = await _pool.query(`

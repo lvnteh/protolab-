@@ -210,7 +210,18 @@ router.get('/prototypes/:id/allowlist-count', adminAuth, async (req, res) => {
 router.delete('/prototypes/:id', adminAuth, async (req, res) => {
   const proto = await getOwnedPrototype(req.params.id, req.session.userId);
   if (!proto) return res.status(404).json({ error: 'Not found.' });
-  await storage.deletePrototype(proto.filename);
+
+  // Collect every stored file for this prototype: all version files plus the
+  // legacy top-level filename. Dedupe, then best-effort delete each (a missing
+  // object is not an error). The DB rows go via ON DELETE CASCADE below.
+  const { rows: verRows } = await getDb().query(
+    'SELECT filename FROM prototype_versions WHERE prototype_id = $1', [proto.id]);
+  const files = new Set(verRows.map(r => r.filename));
+  files.add(proto.filename);
+  for (const filename of files) {
+    await storage.deletePrototype(filename);
+  }
+
   await getDb().query('DELETE FROM prototypes WHERE id = $1', [proto.id]);
   res.json({ ok: true });
 });

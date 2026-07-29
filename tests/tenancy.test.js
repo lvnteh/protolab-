@@ -209,4 +209,43 @@ async function signUp(app) {
       expect((await agentB.post(`/admin/prototypes/${protoIdA}/comments`).send({})).status).toBe(404);
     });
   });
+
+  describe('storage cleanup on delete', () => {
+    test('deleting a prototype removes ALL its version files from storage', async () => {
+      const storage = require('../src/services/storage');
+      const versions = require('../src/services/versions');
+      const { agent } = await signUp(app);
+
+      // Upload → creates prototype + published v1 file
+      const up = await agent
+        .post('/admin/prototypes')
+        .set('Accept', 'application/json')
+        .field('name', 'DelTest')
+        .attach('file', Buffer.from('<html>v1</html>'), 'p.html');
+      expect(up.status).toBe(200);
+      const protoId = up.body.id;
+
+      const { rows: v1rows } = await getDb().query(
+        'SELECT filename FROM prototype_versions WHERE prototype_id = $1', [protoId]);
+      const v1file = v1rows[0].filename;
+
+      // Push a v2 draft: store a second file and insert a version row
+      const v2file = `${protoId}-v2.html`;
+      await storage.putPrototype(v2file, '<html>v2</html>');
+      await versions.createDraft(protoId, v2file, 'v2');
+
+      // Sanity: both files present in the mock store
+      expect(await storage.getPrototype(v1file)).not.toBeNull();
+      expect(await storage.getPrototype(v2file)).not.toBeNull();
+
+      // Delete the prototype
+      const del = await agent.delete(`/admin/prototypes/${protoId}`);
+      expect(del.status).toBe(200);
+      expect(del.body).toEqual({ ok: true });
+
+      // Both version files must be gone from storage
+      expect(await storage.getPrototype(v1file)).toBeNull();
+      expect(await storage.getPrototype(v2file)).toBeNull();
+    });
+  });
 });

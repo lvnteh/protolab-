@@ -92,6 +92,22 @@ test('a non-2xx response throws an Error with .status and parsed .body', async (
   });
 });
 
+test('resolveComment POSTs JSON to the resolve endpoint with the version', async () => {
+  const f = fakeFetch({ json: { ok: true } });
+  const c = makeClient(f);
+  await c.resolveComment('p1', 'c1', 3);
+  expect(f.calls[0].url).toBe('https://host.example.com/api/v1/prototypes/p1/comments/c1/resolve');
+  expect(f.calls[0].opts.method).toBe('POST');
+  expect(f.calls[0].opts.headers['Content-Type']).toBe('application/json');
+  expect(JSON.parse(f.calls[0].opts.body)).toEqual({ version: 3 });
+});
+
+test('resolveComment omits version when not given', async () => {
+  const f = fakeFetch({ json: { ok: true } });
+  await makeClient(f).resolveComment('p1', 'c1');
+  expect(JSON.parse(f.calls[0].opts.body)).toEqual({});
+});
+
 test('constructor throws when token is missing', () => {
   expect(() => new ProtoshareClient({ baseUrl: 'x', token: '' })).toThrow(/token/i);
 });

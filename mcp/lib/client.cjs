@@ -64,6 +64,15 @@ class ProtoshareClient {
       body: JSON.stringify(payload),
     })).json();
   }
+
+  async resolveComment(id, commentId, version) {
+    const payload = version != null ? { version } : {};
+    return (await this._request(`/api/v1/prototypes/${id}/comments/${commentId}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })).json();
+  }
 }
 
 module.exports = { ProtoshareClient };

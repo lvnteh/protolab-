@@ -62,7 +62,8 @@ router.get('/prototypes/:id/feedback', async (req, res) => {
 
     const { rows } = await getDb().query(
       `SELECT id, email, type, element_selector, element_label, comment, page_url,
-              created_at, tag, x_pct, y_pct, parent_id, version_id
+              created_at, tag, x_pct, y_pct, parent_id, version_id,
+              resolved_at, resolved_in_version
        FROM comments WHERE prototype_id = $1 ORDER BY created_at ASC`, [proto.id]);
 
     const replyMap = {};
@@ -75,7 +76,8 @@ router.get('/prototypes/:id/feedback', async (req, res) => {
       element: r.element_selector ? { selector: r.element_selector, label: r.element_label } : null,
       pageUrl: r.page_url, createdAt: r.created_at,
       madeAgainstVersion: versionOf[r.version_id] || 1, // null version_id = legacy/backfilled comment → treat as v1
-      resolved: false, // Phase 3 fills this
+      resolved: !!r.resolved_at,
+      resolvedInVersion: r.resolved_in_version ?? null,
       replies: replyMap[r.id] || [],
     }));
 
@@ -176,6 +178,26 @@ router.post('/prototypes/:id/publish', async (req, res) => {
   } catch (err) {
     if (err.code === 'CONFLICT') return res.status(409).json({ error: err.message });
     console.error('POST /api/v1/prototypes/:id/publish error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// POST /prototypes/:id/comments/:commentId/resolve — mark a comment addressed.
+// Idempotent: re-resolving updates the version stamp. Owner-scoped; a comment
+// that isn't on a prototype you own (or doesn't exist) → 404.
+router.post('/prototypes/:id/comments/:commentId/resolve', async (req, res) => {
+  try {
+    if (!await getOwned(req.params.id, req.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
+    const version = req.body && req.body.version != null ? parseInt(req.body.version, 10) : null;
+    if (version != null && Number.isNaN(version)) return res.status(400).json({ error: 'version must be an integer.' });
+    const { rowCount } = await getDb().query(
+      `UPDATE comments SET resolved_at = $1, resolved_in_version = $2
+       WHERE id = $3 AND prototype_id = $4`,
+      [new Date().toISOString(), version, req.params.commentId, req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'Comment not found.' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/v1/prototypes/:id/comments/:commentId/resolve error:', err);
     res.status(500).json({ error: 'Internal server error.' });
   }
 });

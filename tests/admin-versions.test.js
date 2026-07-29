@@ -53,7 +53,7 @@ const password = 'password123';
     const res = await agent.get(`/admin/prototypes/${protoId}/versions`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body[0]).toMatchObject({ version: 1, status: 'published' });
+    expect(res.body[0]).toMatchObject({ version: 1, status: 'published', isPublished: true, isDraft: false });
   });
 
   test('another user gets 404 (owner-scoped)', async () => {

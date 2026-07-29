@@ -1,6 +1,6 @@
 // mcp/server.mjs
 // Local stdio MCP server for the proto-share local-AI integration. Thin ESM
-// wrapper: it wires six tools to the (CommonJS, unit-tested) handlers. All
+// wrapper: it wires seven tools to the (CommonJS, unit-tested) handlers. All
 // rules live in the deployed /api/v1 REST layer — this process only translates
 // tool calls into HTTP requests. Run locally and registered with Claude Code.
 //

@@ -88,6 +88,19 @@ let app, userId, otherUserId, protoId, rawToken, otherToken, v1Id, commentId;
     expect(r.status).toBe(200);
   });
 
+  test('re-resolving without a version preserves the previously-recorded version', async () => {
+    // The comment was resolved in v2 above. A later resolve with no version
+    // (the MCP tool's version arg is optional) must NOT clear resolved_in_version.
+    const r = await request(app).post(`/api/v1/prototypes/${protoId}/comments/${commentId}/resolve`)
+      .set('Authorization', `Bearer ${rawToken}`).send({});
+    expect(r.status).toBe(200);
+    const res = await request(app).get(`/api/v1/prototypes/${protoId}/feedback`)
+      .set('Authorization', `Bearer ${rawToken}`);
+    const c = res.body.comments.find(c => c.id === commentId);
+    expect(c.resolved).toBe(true);
+    expect(c.resolvedInVersion).toBe(2); // preserved, not nulled
+  });
+
   test('cross-tenant resolve returns 404', async () => {
     const r = await request(app).post(`/api/v1/prototypes/${protoId}/comments/${commentId}/resolve`)
       .set('Authorization', `Bearer ${otherToken}`).send({ version: 2 });

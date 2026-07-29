@@ -41,6 +41,7 @@ prototype — without leaving your editor. It is a thin client over the deployed
 | `protoshare_push` | Upload the local file as a draft |
 | `protoshare_publish` | Promote a draft to live |
 | `protoshare_status` | Local vs remote version summary |
+| `protoshare_resolve` | Mark a comment resolved in a version so future pulls surface only open feedback |
 
 ## Environment
 

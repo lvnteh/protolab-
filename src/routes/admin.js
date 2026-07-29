@@ -373,8 +373,8 @@ router.get('/prototypes/:id/versions', adminAuth, async (req, res) => {
   if (!await getOwnedPrototype(req.params.id, req.session.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
   const { rows } = await getDb().query(
     `SELECT v.version, v.status, v.note, v.created_at,
-            (v.id = p.published_version_id) AS is_published,
-            (v.id = p.draft_version_id)     AS is_draft
+            COALESCE(v.id = p.published_version_id, false) AS is_published,
+            COALESCE(v.id = p.draft_version_id, false)     AS is_draft
      FROM prototype_versions v
      JOIN prototypes p ON p.id = v.prototype_id
      WHERE v.prototype_id = $1 ORDER BY v.version DESC`,

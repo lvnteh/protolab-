@@ -183,15 +183,17 @@ router.post('/prototypes/:id/publish', async (req, res) => {
 });
 
 // POST /prototypes/:id/comments/:commentId/resolve — mark a comment addressed.
-// Idempotent: re-resolving updates the version stamp. Owner-scoped; a comment
-// that isn't on a prototype you own (or doesn't exist) → 404.
+// Idempotent: re-resolving refreshes resolved_at; a version, once recorded, is
+// preserved when a later resolve omits one (COALESCE), so the stamp is never
+// lost by a version-less call. Owner-scoped; a comment that isn't on a prototype
+// you own (or doesn't exist) → 404.
 router.post('/prototypes/:id/comments/:commentId/resolve', async (req, res) => {
   try {
     if (!await getOwned(req.params.id, req.userId, 'id')) return res.status(404).json({ error: 'Not found.' });
     const version = req.body && req.body.version != null ? parseInt(req.body.version, 10) : null;
     if (version != null && Number.isNaN(version)) return res.status(400).json({ error: 'version must be an integer.' });
     const { rowCount } = await getDb().query(
-      `UPDATE comments SET resolved_at = $1, resolved_in_version = $2
+      `UPDATE comments SET resolved_at = $1, resolved_in_version = COALESCE($2, resolved_in_version)
        WHERE id = $3 AND prototype_id = $4`,
       [new Date().toISOString(), version, req.params.commentId, req.params.id]);
     if (!rowCount) return res.status(404).json({ error: 'Comment not found.' });

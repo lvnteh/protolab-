@@ -112,6 +112,13 @@ test('resolve marks a comment addressed in a version', async () => {
   expect(text).toMatch(/c1/);
 });
 
+test('resolve surfaces a 404 as a clear message', async () => {
+  const { ctx } = makeCtx({});
+  ctx.client.resolveComment = async () => { const e = new Error('x'); e.status = 404; throw e; };
+  const text = await handlers.resolve(ctx, { file_or_id: 'checkout.html', comment_id: 'nope' });
+  expect(text).toMatch(/not found/i);
+});
+
 test('pull records max(published, draft) so an existing draft does not cause a stale base', async () => {
   // Server has published v2 and an unpublished draft v3 (authored elsewhere).
   // A fresh client pulling must record 3, not 2, so its next push sends

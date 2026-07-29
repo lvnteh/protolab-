@@ -17,6 +17,19 @@ const config = require('../config');
 // Otherwise fall back to the local filesystem so `npm start` works offline.
 const useSupabase = !!(config.supabaseUrl && config.supabaseServiceKey);
 
+// FAIL-FAST IN PRODUCTION. Local-disk storage is per-instance and ephemeral —
+// on a multi-instance or restart-heavy deploy a prototype uploaded to instance
+// A is invisible to instance B (and lost on redeploy). Silently falling back to
+// it in production is a data-loss footgun, so refuse to start instead. In dev/
+// test the fallback is intentional (offline development), so only guard prod.
+if (config.isProduction && !useSupabase) {
+  throw new Error(
+    'Supabase Storage is required in production: set SUPABASE_URL and '
+    + 'SUPABASE_SERVICE_ROLE_KEY. Refusing to start with per-instance local-disk '
+    + 'storage (uploads would be lost on redeploy and invisible across instances).'
+  );
+}
+
 let _client = null;
 
 function client() {

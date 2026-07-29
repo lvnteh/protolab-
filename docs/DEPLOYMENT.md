@@ -16,8 +16,49 @@ factual — every env var below is read by `src/config.js` or the code paths not
 | `PORT` | No | Listen port. Defaults to `3000`. |
 | `ADMIN_USER` / `ADMIN_EMAIL` / `ADMIN_PASSWORD_HASH` | Recommended | Seed admin account. On first boot, if the `users` table is empty and email+hash are set, the admin is inserted and any unowned prototypes are backfilled to it. `ADMIN_PASSWORD_HASH` is a bcrypt hash. |
 | `CSRF_ENABLED` | No | Set to `'1'` to enforce CSRF in non-production. CSRF is **auto-enabled** whenever `NODE_ENV=production`, so you rarely set this explicitly outside dev. |
-| `NODE_ENV` | Recommended | Set to `production` in prod. Enables secure cookies (HTTPS-only), CSRF enforcement, and requires `SESSION_SECRET`. |
+| `NODE_ENV` | Recommended | Set to `production` in prod. Enables secure cookies (HTTPS-only), CSRF enforcement, requires `SESSION_SECRET`, requires Supabase Storage (see below), and switches sessions + rate limiting to shared Postgres stores. |
 | `PGSSLMODE` | No | Set to `disable` for a local/non-SSL Postgres. For localhost/127.0.0.1 the app already disables SSL automatically; managed Postgres uses SSL with `rejectUnauthorized: false`. |
+| `SESSION_STORE` | No | Force the Postgres session store outside production with `pg` (it is automatic when `NODE_ENV=production`). |
+| `RATE_LIMIT_STORE` | No | Force the shared Postgres rate-limit store outside production with `pg` (automatic when `NODE_ENV=production`). |
+
+## Multi-instance / horizontal scaling
+
+The app is safe to run as **multiple instances** behind a load balancer, but the
+shared state must live in Postgres, not process memory. This is automatic when
+`NODE_ENV=production`:
+
+- **Sessions** — persisted via `connect-pg-simple` in a `session` table
+  (auto-created on first write). Survives redeploys and is shared across
+  instances, so a user isn't logged out when the balancer routes them to a
+  different instance. In dev/test the in-process MemoryStore is used (no extra
+  DB handles; single process needs no sharing).
+- **Rate limiting** — backed by a shared Postgres store
+  (`@acpr/rate-limit-postgresql`), so login/signup/comment limits are enforced
+  globally across instances rather than per-instance. In dev/test the
+  synchronous in-memory store is used.
+- **File storage** — MUST be Supabase in production (see below); local disk is
+  per-instance and would make uploads invisible across instances.
+- **DB migrations** — `initDb()` is advisory-locked, so whichever instance wins
+  the lock runs the one-time backfills; the others wait and find nothing to do.
+
+No sticky sessions / session affinity are required once the above are in place.
+
+## Storage — Supabase required in production
+
+Uploaded prototype `.html` files are stored in Supabase Storage (a private
+bucket). **In `NODE_ENV=production` the app refuses to start** if `SUPABASE_URL`
+or `SUPABASE_SERVICE_ROLE_KEY` is missing — it will not silently fall back to
+local disk, because per-instance local disk loses uploads on redeploy and hides
+them from other instances. Outside production the local-disk fallback
+(`UPLOADS_PATH`) is intentional so the app runs fully offline for development.
+
+## Health check
+
+`GET /health` verifies Postgres connectivity (`SELECT 1`) and returns
+`200 {status:"ok"}` when reachable, `503` otherwise — so a load balancer pulls a
+broken instance out of rotation instead of routing to it. `railway.toml` uses
+`/health` as its `healthcheckPath`. (`GET /` serves a static landing page and is
+not a readiness signal.)
 
 `config.js` also allows uploads via `UPLOADS_PATH` (default `./uploads`) — only
 used as the local-storage fallback when Supabase creds are absent.

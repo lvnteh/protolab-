@@ -12,6 +12,19 @@ function resolveSessionSecret() {
   return 'dev-only-insecure-secret';
 }
 
+// SSL rules for managed Postgres mirror db.js: off for localhost or when
+// PGSSLMODE=disable, otherwise on with relaxed cert checking. Exposed as a
+// reusable pg-client config so the session store and rate-limit store connect
+// the same way the main pool does.
+function pgConnectionConfig() {
+  const url = process.env.DATABASE_URL || '';
+  const isLocal = /@(localhost|127\.0\.0\.1)[:/]/.test(url) || process.env.PGSSLMODE === 'disable';
+  return {
+    connectionString: url,
+    ssl: isLocal ? false : { rejectUnauthorized: false },
+  };
+}
+
 module.exports = {
   port: parseInt(process.env.PORT || '3000', 10),
   sessionSecret: resolveSessionSecret(),
@@ -25,4 +38,6 @@ module.exports = {
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   storageBucket: process.env.SUPABASE_STORAGE_BUCKET || 'prototypes',
+  isProduction: process.env.NODE_ENV === 'production',
+  pgConnectionConfig,
 };

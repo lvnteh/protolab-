@@ -40,19 +40,22 @@ async function publish(prototypeId, version) {
   if (!rows[0]) { const e = new Error('Version not found.'); e.code = 'CONFLICT'; throw e; }
   if (rows[0].status === 'published') { const e = new Error('Already published.'); e.code = 'CONFLICT'; throw e; }
   const vId = rows[0].id;
+  const client = await getDb().connect();
   try {
-    await getDb().query('BEGIN');
-    await getDb().query(`UPDATE prototype_versions SET status = 'published' WHERE id = $1`, [vId]);
-    await getDb().query(
+    await client.query('BEGIN');
+    await client.query(`UPDATE prototype_versions SET status = 'published' WHERE id = $1`, [vId]);
+    await client.query(
       `UPDATE prototypes SET published_version_id = $1,
          draft_version_id = CASE WHEN draft_version_id = $1 THEN NULL ELSE draft_version_id END
        WHERE id = $2`,
       [vId, prototypeId]
     );
-    await getDb().query('COMMIT');
+    await client.query('COMMIT');
   } catch (e) {
-    await getDb().query('ROLLBACK');
+    await client.query('ROLLBACK');
     throw e;
+  } finally {
+    client.release();
   }
   return { version, status: 'published' };
 }

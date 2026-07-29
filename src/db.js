@@ -210,22 +210,25 @@ async function initDb() {
   `);
   for (const p of unversioned) {
     const vId = nanoid(12);
+    const client = await _pool.connect();
     try {
-      await _pool.query('BEGIN');
-      await _pool.query(
+      await client.query('BEGIN');
+      await client.query(
         `INSERT INTO prototype_versions (id, prototype_id, version, filename, status, created_at)
          VALUES ($1, $2, 1, $3, 'published', $4)`,
         [vId, p.id, p.filename, new Date().toISOString()]
       );
-      await _pool.query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [vId, p.id]);
-      await _pool.query(
+      await client.query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [vId, p.id]);
+      await client.query(
         'UPDATE comments SET version_id = $1 WHERE prototype_id = $2 AND version_id IS NULL',
         [vId, p.id]
       );
-      await _pool.query('COMMIT');
+      await client.query('COMMIT');
     } catch (e) {
-      await _pool.query('ROLLBACK');
+      await client.query('ROLLBACK');
       throw e;
+    } finally {
+      client.release();
     }
   }
 

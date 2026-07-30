@@ -91,6 +91,13 @@ textarea.input{resize:vertical;line-height:1.5}
   </a>
   <span class="topbar__sep">/</span>
   <span class="topbar__title">{{name}}</span>
+  <form method="post" action="/admin/logout" style="margin:0 0 0 auto">
+    <input type="hidden" name="_csrf" value="{{csrfToken}}">
+    <button type="submit" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,.85);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:8px" onmouseover="this.style.background='rgba(255,255,255,.15)'" onmouseout="this.style.background='none'">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h5a1 1 0 100-2H4V5h4a1 1 0 000-2H3zm10.293 3.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L14.586 11H7a1 1 0 110-2h7.586l-1.293-1.293a1 1 0 010-1.414z"/></svg>
+      Log out
+    </button>
+  </form>
 </div>
 
 <div class="page">

@@ -79,6 +79,19 @@ router.post('/login', async (req, res) => {
   res.redirect('/admin/prototypes');
 });
 
+// POST (not GET) so it can't be triggered by a cross-site <img>/link, and it
+// flows through the CSRF guard like every other unsafe admin request. Destroys
+// the server-side session (removes the Postgres session row in prod) and clears
+// the cookie so a stale sid can't be replayed, then sends the user to login.
+router.post('/logout', (req, res) => {
+  const finish = () => {
+    res.clearCookie('connect.sid');
+    res.redirect('/admin/login');
+  };
+  if (req.session) return req.session.destroy(finish);
+  return finish();
+});
+
 router.get('/signup', (_req, res) => {
   renderAdmin(res, 'admin-signup.html', { error: '' });
 });
@@ -153,7 +166,7 @@ router.get('/prototypes', orgs.requireOrg, async (req, res) => {
 });
 
 router.get('/upload', orgs.requireAdmin, (_req, res) => {
-  res.send(renderView('admin-upload.html', { success: '' }));
+  res.send(renderView('admin-upload.html', { success: '', csrfToken: res.locals.csrfToken || '' }));
 });
 
 router.post('/prototypes', orgs.requireAdmin, upload.single('file'), async (req, res) => {
@@ -201,7 +214,7 @@ router.post('/prototypes', orgs.requireAdmin, upload.single('file'), async (req,
     return res.json({ id, shareToken, shareLink, name: req.body.name || 'Untitled' });
   }
   const successBanner = `<div class="alert alert-success">Prototype uploaded. Share link: <a href="${shareLink}">${shareLink}</a></div>`;
-  res.send(renderView('admin-upload.html', { success: successBanner }));
+  res.send(renderView('admin-upload.html', { success: successBanner, csrfToken: res.locals.csrfToken || '' }));
 });
 
 router.get('/prototypes/:id', orgs.requireOrg, async (req, res) => {

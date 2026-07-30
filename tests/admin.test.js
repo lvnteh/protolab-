@@ -64,4 +64,20 @@ const testPassword = 'password123';
     const res = await agent.get('/admin/prototypes');
     expect(res.status).toBe(200);
   });
+
+  test('POST /admin/logout destroys the session and redirects to login', async () => {
+    const agent = request.agent(app);
+    await agent.post('/admin/login').send(`email=${testEmail}&password=${testPassword}`);
+    // Sanity: the session is authenticated before logout.
+    expect((await agent.get('/admin/prototypes')).status).toBe(200);
+
+    const out = await agent.post('/admin/logout');
+    expect(out.status).toBe(302);
+    expect(out.headers.location).toContain('login');
+
+    // After logout the same agent (same cookie jar) is no longer authenticated.
+    const after = await agent.get('/admin/prototypes');
+    expect(after.status).toBe(302);
+    expect(after.headers.location).toContain('login');
+  });
 });

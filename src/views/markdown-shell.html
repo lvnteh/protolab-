@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Document</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:hsl(220,14%,96%);color:hsl(222,47%,11%);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    line-height:1.65;font-size:16px}
+  .md-doc{max-width:760px;margin:0 auto;padding:56px 32px 120px;background:#fff;
+    min-height:100vh;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .md-doc h1,.md-doc h2,.md-doc h3,.md-doc h4{line-height:1.25;margin:1.6em 0 .6em;font-weight:700}
+  .md-doc h1{font-size:2em;margin-top:0}
+  .md-doc h2{font-size:1.5em;border-bottom:1px solid hsl(220,13%,91%);padding-bottom:.2em}
+  .md-doc h3{font-size:1.25em}
+  .md-doc p{margin:0 0 1em}
+  .md-doc a{color:hsl(252,83%,57%)}
+  .md-doc ul,.md-doc ol{margin:0 0 1em;padding-left:1.6em}
+  .md-doc li{margin:.25em 0}
+  .md-doc blockquote{margin:0 0 1em;padding:.4em 1em;border-left:4px solid hsl(252,83%,80%);
+    background:hsl(252,83%,98%);color:hsl(222,25%,30%)}
+  .md-doc code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;
+    background:hsl(220,14%,93%);padding:.15em .4em;border-radius:4px}
+  .md-doc pre{background:hsl(222,47%,11%);color:#f8f8f2;padding:16px;border-radius:10px;
+    overflow:auto;margin:0 0 1em}
+  .md-doc pre code{background:none;padding:0;color:inherit}
+  .md-doc table{border-collapse:collapse;width:100%;margin:0 0 1em;font-size:.95em}
+  .md-doc th,.md-doc td{border:1px solid hsl(220,13%,88%);padding:8px 12px;text-align:left}
+  .md-doc th{background:hsl(220,14%,96%);font-weight:600}
+  .md-doc img{max-width:100%;height:auto}
+  .md-doc hr{border:none;border-top:1px solid hsl(220,13%,88%);margin:2em 0}
+  .md-doc input[type=checkbox]{margin-right:.5em}
+</style>
+</head>
+<body>
+<article class="md-doc">
+{{content}}
+</article>
+</body>
+</html>

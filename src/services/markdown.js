@@ -2,7 +2,8 @@
 // Render Markdown → safe HTML fragment. Two layers of defense:
 //   1. markdown-it with html:false — raw HTML in the source is escaped, not parsed.
 //   2. sanitize-html on the output — strips anything unexpected (scripts, event
-//      handlers, javascript: URLs) even if it slipped through.
+//      handlers) even if it slipped through; allowedSchemes enforces that no
+//      javascript: href survives in link or image attributes.
 // Pure function, no DB, no I/O — trivially testable.
 const MarkdownIt = require('markdown-it');
 const sanitizeHtml = require('sanitize-html');
@@ -33,11 +34,6 @@ const SANITIZE_OPTIONS = {
     td: ['align'],
   },
   allowedSchemes: ['http', 'https', 'mailto'],
-  // Strip javascript: pseudo-protocol from text nodes. markdown-it 14 already
-  // refuses to render javascript: as an <a> href, but when it does so it emits
-  // the raw markdown source as plain text, leaving the literal string in the
-  // output. textFilter ensures it never appears anywhere in the final HTML.
-  textFilter: (text) => text.replace(/javascript:/gi, ''),
   transformTags: {
     input: (tagName, attribs) => ({
       tagName,

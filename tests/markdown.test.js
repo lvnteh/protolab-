@@ -19,10 +19,21 @@ test('ignores raw HTML in the markdown (html:false)', () => {
   expect(html).not.toContain('<div onclick');
 });
 
-test('sanitizes dangerous output (script/js-url stripped)', () => {
-  const { html } = render('[click](javascript:alert(1))\n\n<script>alert(2)</script>');
+test('strips script tags from output', () => {
+  const { html } = render('# Doc\n\n<script>alert(2)</script>');
   expect(html).not.toContain('<script');
-  expect(html.toLowerCase()).not.toContain('javascript:');
+});
+
+test('does not emit executable javascript: URLs in link hrefs', () => {
+  const { html } = render('[click](javascript:alert(1))');
+  expect(html.toLowerCase()).not.toContain('href="javascript:');
+  expect(html.toLowerCase()).not.toContain("href='javascript:");
+});
+
+test('preserves the literal text "javascript:" when it appears in prose', () => {
+  // A docs-sharing app must not corrupt content that merely mentions the scheme.
+  const { html } = render('Never put `javascript:` in an href.');
+  expect(html).toContain('javascript:');
 });
 
 test('empty input yields empty-ish html string', () => {

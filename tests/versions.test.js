@@ -119,4 +119,16 @@ const { nanoid } = require('nanoid');
   test('latestVersion returns the highest version number', async () => {
     expect(await versions.latestVersion(protoId)).toBe(2);
   });
+
+  test('createDraft records content_type', async () => {
+    const v = await versions.createDraft(protoId, `${nanoid(12)}.md`, 'md draft', 'markdown');
+    const { rows } = await getDb().query('SELECT content_type FROM prototype_versions WHERE id = $1', [v.id]);
+    expect(rows[0].content_type).toBe('markdown');
+  });
+
+  test('resolvePublished returns filename + content_type', async () => {
+    const info = await versions.resolvePublished(protoId);
+    expect(info).toHaveProperty('filename');
+    expect(info).toHaveProperty('contentType');
+  });
 });

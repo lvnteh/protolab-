@@ -15,13 +15,15 @@ async function latestVersion(prototypeId) {
 }
 
 // Create a new draft version with the next number. Sets prototypes.draft_version_id.
-async function createDraft(prototypeId, filename, note) {
+// contentType ('html' | 'markdown') records how this version's file must render;
+// defaults to 'html' so existing callers are unaffected.
+async function createDraft(prototypeId, filename, note, contentType = 'html') {
   const version = (await latestVersion(prototypeId)) + 1;
   const id = nanoid(12);
   await getDb().query(
-    `INSERT INTO prototype_versions (id, prototype_id, version, filename, status, note, created_at)
-     VALUES ($1,$2,$3,$4,'draft',$5,$6)`,
-    [id, prototypeId, version, filename, note || null, new Date().toISOString()]
+    `INSERT INTO prototype_versions (id, prototype_id, version, filename, status, note, created_at, content_type)
+     VALUES ($1,$2,$3,$4,'draft',$5,$6,$7)`,
+    [id, prototypeId, version, filename, note || null, new Date().toISOString(), contentType]
   );
   await getDb().query('UPDATE prototypes SET draft_version_id = $1 WHERE id = $2', [id, prototypeId]);
   return { id, version, status: 'draft' };
@@ -71,10 +73,22 @@ async function resolvePublishedFile(prototypeId) {
   return rows[0] ? rows[0].filename : null;
 }
 
+// Like resolvePublishedFile but also returns how the file should render.
+// Returns null when there is no published version.
+async function resolvePublished(prototypeId) {
+  const { rows } = await getDb().query(
+    `SELECT v.filename, v.content_type FROM prototypes p
+     JOIN prototype_versions v ON v.id = p.published_version_id
+     WHERE p.id = $1`,
+    [prototypeId]
+  );
+  return rows[0] ? { filename: rows[0].filename, contentType: rows[0].content_type || 'html' } : null;
+}
+
 // The version id a comment made "now" should be stamped with = published version.
 async function publishedVersionId(prototypeId) {
   const { rows } = await getDb().query('SELECT published_version_id FROM prototypes WHERE id = $1', [prototypeId]);
   return rows[0] ? rows[0].published_version_id : null;
 }
 
-module.exports = { latestVersion, createDraft, publish, resolvePublishedFile, publishedVersionId };
+module.exports = { latestVersion, createDraft, publish, resolvePublishedFile, resolvePublished, publishedVersionId };

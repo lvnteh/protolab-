@@ -8,6 +8,7 @@ const customerAuth = require('../middleware/customerAuth');
 const config = require('../config');
 const storage = require('../services/storage');
 const versions = require('../services/versions');
+const markdown = require('../services/markdown');
 
 const router = express.Router();
 
@@ -62,13 +63,24 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
   if (!proto) return res.status(404).send('Prototype not found.');
   if (req.session.prototypeId !== proto.id) return res.status(403).send('Access denied.');
 
-  // Serve the published version's file (falls back to the legacy filename for
-  // any prototype not yet backfilled — defensive; backfill should cover all).
-  const publishedFile = await versions.resolvePublishedFile(proto.id);
-  const raw = await storage.getPrototype(publishedFile || proto.filename);
+  // Serve the published version's file. Markdown versions are rendered to a
+  // sanitized HTML document first; HTML versions are served as-is. Either way
+  // the SDK is injected into the final HTML.
+  const published = await versions.resolvePublished(proto.id);
+  const filename = published ? published.filename : proto.filename;
+  const contentType = published ? published.contentType : 'html';
+  const raw = await storage.getPrototype(filename);
   if (raw === null) return res.status(404).send('Prototype file not found.');
 
-  const injected = injectSdk(raw, proto.id, req.session.customerEmail);
+  let documentHtml;
+  if (contentType === 'markdown') {
+    const { html } = markdown.render(raw);
+    documentHtml = readView('markdown-shell.html').split('{{content}}').join(html);
+  } else {
+    documentHtml = raw;
+  }
+
+  const injected = injectSdk(documentHtml, proto.id, req.session.customerEmail);
 
   await getDb().query(
     'INSERT INTO access_log (prototype_id, email, opened_at, user_agent) VALUES ($1,$2,$3,$4)',

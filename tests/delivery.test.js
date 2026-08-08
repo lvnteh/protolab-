@@ -73,4 +73,21 @@ let app, protoId, shareToken;
     expect(res.status).toBe(200);
     expect(res.text).toContain('PUBLISHED-V2');
   });
+
+  test('GET /p/:token/view renders a Markdown version to sanitized, SDK-injected HTML', async () => {
+    const mdFile = `${protoId}-md.md`;
+    await storage.putPrototype(mdFile, '# Hello MD\n\nSome **bold** text.', 'text/markdown; charset=utf-8');
+    const v = await versions.createDraft(protoId, mdFile, 'md', 'markdown');
+    await versions.publish(protoId, v.version);
+
+    const agent = request.agent(app);
+    await agent.post(`/p/${shareToken}/enter`).send('email=allowed@example.com');
+    const res = await agent.get(`/p/${shareToken}/view`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.text).toContain('<h1>Hello MD</h1>');
+    expect(res.text).toContain('<strong>bold</strong>');
+    expect(res.text).toContain('/sdk/feedback.js');
+  });
 });

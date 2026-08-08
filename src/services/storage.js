@@ -46,8 +46,9 @@ function localPath(filename) {
 }
 
 // Store a prototype file. `body` may be a Buffer (from multer memoryStorage)
-// or a string. `upsert: true` so re-uploading the same filename overwrites.
-async function putPrototype(filename, body) {
+// or a string. `contentType` sets the stored MIME (defaults to HTML for callers
+// that predate markdown support). `upsert: true` so re-uploading overwrites.
+async function putPrototype(filename, body, contentType = 'text/html') {
   if (!useSupabase) {
     await fs.promises.mkdir(config.uploadsPath, { recursive: true });
     await fs.promises.writeFile(localPath(filename), body);
@@ -55,7 +56,7 @@ async function putPrototype(filename, body) {
   }
   const { error } = await client()
     .storage.from(config.storageBucket)
-    .upload(filename, body, { contentType: 'text/html', upsert: true });
+    .upload(filename, body, { contentType, upsert: true });
   if (error) throw error;
 }
 

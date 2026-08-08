@@ -66,12 +66,12 @@ async function initDb() {
     )
   `);
 
-  // Widen the type CHECK to also allow 'reply' rows (atomic drop + add)
+  // Widen the type CHECK to allow 'reply' and 'range' rows (atomic drop + add)
   await _pool.query(`
     DO $$ BEGIN
       ALTER TABLE comments DROP CONSTRAINT IF EXISTS comments_type_check;
       ALTER TABLE comments ADD CONSTRAINT comments_type_check
-        CHECK(type IN ('general', 'element', 'reply'));
+        CHECK(type IN ('general', 'element', 'reply', 'range'));
     END $$
   `);
 
@@ -206,6 +206,18 @@ async function initDb() {
   //    resolved_at + the version that fixed it, so pulls can surface only open items.
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS resolved_at TEXT`);
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS resolved_in_version INTEGER`);
+
+  // --- Markdown sharing: content_type on versions (authoritative) + prototypes (mirror) ---
+  // Existing rows default to 'html' so every current prototype keeps rendering as HTML.
+  await _pool.query(`ALTER TABLE prototype_versions ADD COLUMN IF NOT EXISTS content_type TEXT NOT NULL DEFAULT 'html'`);
+  await _pool.query(`ALTER TABLE prototypes         ADD COLUMN IF NOT EXISTS content_type TEXT NOT NULL DEFAULT 'html'`);
+
+  // Range (text-selection) comments: anchor columns. Nullable — only range rows use them.
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_quote  TEXT`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_prefix TEXT`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_suffix TEXT`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_start  INTEGER`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_end    INTEGER`);
 
   // K. schema_migrations marker table. Lets us skip the expensive backfill scan on
   //    normal boots once it has run and no legacy (unversioned) prototypes remain.

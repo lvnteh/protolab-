@@ -454,6 +454,24 @@ async function initDb() {
         ['org-multitenancy-v1', nowIso]);
     }
 
+    // --- Self-heal: the "Default Organization" must always exist ---
+    // The migration block above is marker-guarded, so once 'org-multitenancy-v1'
+    // is recorded it never recreates the org. If the org row is later missing —
+    // deleted in prod, or truncated between test files while schema_migrations
+    // (migration bookkeeping) is deliberately preserved — then /admin/signup's
+    // auto-enrol (which only fires WHEN a Default Org exists) silently stops
+    // enrolling new users, locking them out via requireOrg. This runs every boot,
+    // is idempotent, and recreates the org if and only if it's gone.
+    {
+      const { rows: defOrg } = await lockClient.query(
+        "SELECT 1 FROM organizations WHERE name = $1", ['Default Organization']);
+      if (defOrg.length === 0) {
+        await lockClient.query(
+          'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+          [nanoid(12), 'Default Organization', new Date().toISOString()]);
+      }
+    }
+
     // --- Self-heal: env admin must always have a Default-Org membership ---
     // The migration block above only enrols users WHILE it runs, and is skipped
     // once the marker exists and no prototypes are unassigned. An env admin

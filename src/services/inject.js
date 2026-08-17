@@ -4,11 +4,13 @@ function escAttr(s) {
 }
 
 function sdkScript(protoId, email) {
-  return `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"></script>`;
+  return `<script src="/sdk/anchor.js"></script>\n`
+    + `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"></script>`;
 }
 
 function previewScript(protoId, highlightId, commentsJson) {
-  return `<script src="/sdk/preview.js" data-proto-id="${escAttr(protoId)}" data-highlight-comment="${escAttr(highlightId)}" data-comments="${escAttr(commentsJson)}"></script>`;
+  return `<script src="/sdk/anchor.js"></script>\n`
+    + `<script src="/sdk/preview.js" data-proto-id="${escAttr(protoId)}" data-highlight-comment="${escAttr(highlightId)}" data-comments="${escAttr(commentsJson)}"></script>`;
 }
 
 function matchesAt(html, pos, needle) {

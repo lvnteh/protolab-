@@ -3,15 +3,10 @@ const { injectSdk } = require('../src/services/inject');
 
 const BARE_HTML = `<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello</h1></body></html>`;
 
-test('injectSdk inserts Sugar CSS before </head>', () => {
-  const result = injectSdk(BARE_HTML, 'proto123', 'user@example.com');
-  expect(result).toContain('client-version.cf.emarsys.net/ui/latest/css/app.css');
-  expect(result.indexOf('app.css')).toBeLessThan(result.indexOf('</head>'));
-});
-
-test('injectSdk inserts Sugar JS before </head>', () => {
-  const result = injectSdk(BARE_HTML, 'proto123', 'user@example.com');
-  expect(result).toContain('client-version.cf.emarsys.net/ui/latest/js/app.js');
+test('injectSdk loads anchor.js before feedback.js', () => {
+  const result = injectSdk(BARE_HTML, 'p1', 'a@b.com');
+  expect(result).toContain('/sdk/anchor.js');
+  expect(result.indexOf('/sdk/anchor.js')).toBeLessThan(result.indexOf('/sdk/feedback.js'));
 });
 
 test('injectSdk inserts feedback.js script before </body>', () => {

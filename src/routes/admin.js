@@ -10,6 +10,7 @@ const orgs = require('../services/orgs');
 const config = require('../config');
 const { injectPreview } = require('../services/inject');
 const storage = require('../services/storage');
+const markdown = require('../services/markdown');
 const apiTokens = require('../services/tokens');
 const filetype = require('../services/filetype');
 
@@ -362,7 +363,8 @@ router.get('/prototypes/:id/preview', orgs.requireOrg, async (req, res) => {
 
   const highlightId = req.query.comment || '';
   const { rows: allCommentRows } = await getDb().query(
-    `SELECT id, email, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id
+    `SELECT id, email, type, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id,
+            anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end
      FROM comments WHERE prototype_id = $1
      ORDER BY created_at ASC`,
     [proto.id]
@@ -373,12 +375,17 @@ router.get('/prototypes/:id/preview', orgs.requireOrg, async (req, res) => {
     if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
     replyMap[r.parent_id].push({ id: r.id, email: r.email, comment: r.comment, created_at: r.created_at });
   });
-
   const comments = allCommentRows
     .filter(r => !r.parent_id)
     .map((r, i) => ({ ...r, order: i + 1, replies: replyMap[r.id] || [] }));
 
-  const html = injectPreview(raw, proto.id, highlightId, JSON.stringify(comments));
+  let documentHtml = raw;
+  if ((proto.content_type || 'html') === 'markdown') {
+    const { html } = markdown.render(raw);
+    documentHtml = readView('markdown-shell.html').split('{{content}}').join(html);
+  }
+
+  const html = injectPreview(documentHtml, proto.id, highlightId, JSON.stringify(comments));
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });

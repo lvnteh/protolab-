@@ -168,6 +168,30 @@
 
   rafId = requestAnimationFrame(repositionPins);
 
+  // Range (text-selection) comments — read-only highlights + click-to-tooltip.
+  const rangeComments = comments.filter(c => c.type === 'range' && c.anchor_quote);
+  function renderRanges() {
+    document.querySelectorAll('mark.__fb-mark').forEach(m => {
+      const p = m.parentNode; if (!p) return;
+      while (m.firstChild) p.insertBefore(m.firstChild, m);
+      p.removeChild(m);
+    });
+    rangeComments.forEach(c => {
+      const anchor = { quote: c.anchor_quote, prefix: c.anchor_prefix, suffix: c.anchor_suffix, start: c.anchor_start, end: c.anchor_end };
+      const range = window.FBAnchor && window.FBAnchor.resolveAnchor(anchor, document.body);
+      if (!range) return;
+      try {
+        const mark = document.createElement('mark');
+        mark.className = '__fb-mark';
+        const color = pinColor(c.tag);
+        mark.style.cssText = `background:${color.replace('hsl(', 'hsla(').replace(')', ',0.28)')};border-radius:2px;cursor:pointer`;
+        range.surroundContents(mark);
+        mark.addEventListener('click', e => { e.stopPropagation(); showTooltip(c, mark); });
+      } catch (_) { /* partial-node range: skip highlight; pin list still shows it */ }
+    });
+  }
+  requestAnimationFrame(() => requestAnimationFrame(renderRanges));
+
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
     else if (!rafId) rafId = requestAnimationFrame(repositionPins);

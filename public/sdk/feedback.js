@@ -442,6 +442,12 @@
   pinContainer.id = '__fb-pins';
   document.body.appendChild(pinContainer);
 
+  /* ── range highlight / gutter marker layer ── */
+  const rangeLayer = document.createElement('div');
+  rangeLayer.id = '__fb-ranges';
+  rangeLayer.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483637';
+  document.body.appendChild(rangeLayer);
+
   /* ── explain layer ── */
   const explainContainer = document.createElement('div');
   explainContainer.id = '__fb-explains';
@@ -557,6 +563,10 @@
   let explainPositions = {};   // {id: {x,y,visible}} — computed each RAF frame
   let explainMarkerEls = {};   // {id: domElement}
   let explainDraft = null;     // {selector, xPct, yPct, existingId|null}
+  let rangeComments = [];        // [{id,email,comment,tag,anchor_quote,anchor_prefix,anchor_suffix,anchor_start,anchor_end,page_url,replies,created_at, order, __unresolved}]
+  let rangeDraft = null;         // { anchor, tagSel } pending selection comment
+  let suppressNextClick = false; // swallow the click that ends a selection mouseup
+  let openRangePopoverEl = null; // the currently-open range popover element (one at a time)
   let now = Date.now();
 
   setInterval(() => { now = Date.now(); }, 1000);
@@ -573,6 +583,7 @@
     if (m !== 'comment') closeDraft();
     if (m !== 'explain') closeExplainCard();
     renderPinLayer();
+    renderRangeLayer();
     // explain layer is driven by the RAF loop; clear it immediately when leaving explain mode
     if (m !== 'explain') { explainContainer.innerHTML = ''; explainMarkerEls = {}; }
   }
@@ -583,6 +594,7 @@
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (openRangePopoverEl) { closeRangePopover(); return; }
       if (unpinActive) { unpinActive(); unpinActive = null; return; }
       if (draft) { closeDraft(); return; }
       if (explainDraft) { closeExplainCard(); return; }
@@ -597,9 +609,12 @@
       if (resp.ok) {
         const all = await resp.json();
         pins = all.filter(c => c.element_selector);
-        generalComments = all.filter(c => !c.element_selector && !c.parent_id);
+        rangeComments = all.filter(c => c.type === 'range' && c.anchor_quote);
+        generalComments = all.filter(c => !c.element_selector && c.type !== 'range' && !c.parent_id);
+        rangeComments.forEach((c, i) => { c.order = i + 1; });
         requestAnimationFrame(() => requestAnimationFrame(() => {
           renderPinLayer();
+          renderRangeLayer();
           renderSidebar();
           if (focusId) focusPin(focusId);
         }));
@@ -631,20 +646,24 @@
     const pagePins = pins.filter(p =>
       !p.page_url || pageKeyOf(p.page_url) === currentPage
     );
-    const totalCount = pagePins.length + generalComments.length;
+    const pageRanges = rangeComments.filter(c =>
+      !c.page_url || pageKeyOf(c.page_url) === currentPage
+    );
+    const pinsTabCount = pagePins.length + pageRanges.length;
+    const totalCount = pinsTabCount + generalComments.length;
 
     const stored = (() => { try { return localStorage.getItem('__fb_sidebar_' + PROTO_ID); } catch (_) { return null; } })();
     if (stored === null) {
       setSidebarExpanded(totalCount > 0, false);
     }
 
-    document.getElementById('__fb-pins-badge').textContent = pagePins.length;
+    document.getElementById('__fb-pins-badge').textContent = pinsTabCount;
     document.getElementById('__fb-gen-badge').textContent = generalComments.length;
     document.getElementById('__fb-sidebar-badge').textContent = totalCount;
 
     const pinsList = document.getElementById('__fb-sidebar-pins-list');
     pinsList.innerHTML = '';
-    if (pagePins.length === 0) {
+    if (pinsTabCount === 0) {
       pinsList.innerHTML = '<div class="fb-sidebar-empty">No pins on this page yet.</div>';
     } else {
       pagePins.forEach(p => {
@@ -672,6 +691,36 @@
             const pinEl = pinElements[p.id];
             if (pinEl) pinEl.click();
           }, 50);
+        });
+        pinsList.appendChild(row);
+      });
+
+      pageRanges.forEach(c => {
+        const row = document.createElement('div');
+        row.className = 'fb-sidebar-pin-row';
+        const tagHtml = c.tag
+          ? `<span class="fb-sidebar-pin-tag" style="background:${TAG_COLOR[c.tag] || TAG_COLOR.other}">${TAG_LABEL[c.tag] || c.tag}</span>`
+          : '';
+        const repliesHtml = (c.replies && c.replies.length)
+          ? `<div class="fb-sidebar-pin-replies">${c.replies.length} repl${c.replies.length === 1 ? 'y' : 'ies'}</div>`
+          : '';
+        const unresolvedHtml = c.__unresolved
+          ? `<div class="fb-sidebar-pin-replies" style="font-style:italic">text no longer present</div>`
+          : '';
+        row.innerHTML = `
+          <div class="fb-sidebar-pin-row-head">
+            <div class="fb-sidebar-pin-dot" style="background:${TAG_COLOR[c.tag] || TAG_COLOR.other}">${c.order || ''}</div>
+            <span class="fb-sidebar-pin-email">${escHtml(c.email)}</span>
+            ${tagHtml}
+          </div>
+          <div class="fb-sidebar-pin-body">${escHtml(c.comment)}</div>
+          ${repliesHtml}
+          ${unresolvedHtml}
+        `;
+        row.addEventListener('click', () => {
+          if (mode === 'comment' || mode === 'explain') setMode('view');
+          const mark = document.querySelector(`mark.__fb-mark[data-range-id="${c.id}"]`);
+          if (mark) { mark.scrollIntoView({ behavior: 'smooth', block: 'center' }); openRangePopover(c, mark); }
         });
         pinsList.appendChild(row);
       });
@@ -965,6 +1014,7 @@
         });
       }
     }
+    repositionRangeMarkers();
     rafId = requestAnimationFrame(recomputePositions);
   }
 
@@ -1227,9 +1277,219 @@
     }
   }
 
-  /* ── comment mode click ── */
+  /* ── range highlight rendering ── */
+  function hslAlpha(hsl, a) { return hsl.replace('hsl(', 'hsla(').replace(')', `,${a})`); }
+
+  function renderRangeLayer() {
+    // unwrap previous marks
+    document.querySelectorAll('mark.__fb-mark').forEach(m => {
+      const parent = m.parentNode; if (!parent) return;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize && parent.normalize();
+    });
+    rangeLayer.innerHTML = '';
+    if (mode === 'review' || mode === 'explain') return;
+
+    rangeComments.forEach(c => {
+      if (c.page_url && pageKeyOf(c.page_url) !== currentPageKey()) return;
+      const anchor = { quote: c.anchor_quote, prefix: c.anchor_prefix, suffix: c.anchor_suffix, start: c.anchor_start, end: c.anchor_end };
+      const range = window.FBAnchor && window.FBAnchor.resolveAnchor(anchor, document.body);
+      if (!range) { c.__unresolved = true; return; }
+      c.__unresolved = false;
+      const color = TAG_COLOR[c.tag] || TAG_COLOR.other;
+      let rect = null;
+      try {
+        const mark = document.createElement('mark');
+        mark.className = '__fb-mark';
+        mark.style.cssText = `background:${hslAlpha(color, 0.28)};color:inherit;border-radius:2px;cursor:pointer`;
+        mark.dataset.rangeId = c.id;
+        range.surroundContents(mark);
+        rect = mark.getBoundingClientRect();
+        mark.addEventListener('click', ev => { ev.stopPropagation(); openRangePopover(c, mark); });
+      } catch (_) {
+        rect = range.getBoundingClientRect();
+      }
+      if (!rect) return;
+      const marker = document.createElement('div');
+      marker.className = 'fb-pin';
+      marker.textContent = c.order || '';
+      marker.style.cssText = `position:fixed;left:8px;top:${rect.top}px;background:${color};pointer-events:auto`;
+      marker.dataset.rangeMarker = c.id;
+      marker.addEventListener('click', ev => { ev.stopPropagation(); openRangePopover(c, marker); });
+      rangeLayer.appendChild(marker);
+    });
+  }
+
+  function repositionRangeMarkers() {
+    rangeComments.forEach(c => {
+      if (c.__unresolved) return;
+      if (c.page_url && pageKeyOf(c.page_url) !== currentPageKey()) return;
+      const mark = document.querySelector(`mark.__fb-mark[data-range-id="${c.id}"]`);
+      const marker = rangeLayer.querySelector(`[data-range-marker="${c.id}"]`);
+      if (mark && marker) { const r = mark.getBoundingClientRect(); marker.style.top = r.top + 'px'; }
+    });
+  }
+
+  // The currently-open range popover element (only one open at a time).
+  function closeRangePopover() {
+    if (openRangePopoverEl) { openRangePopoverEl.remove(); openRangePopoverEl = null; }
+  }
+
+  function openRangePopover(c, anchorEl) {
+    closeRangePopover();
+    // Close any pinned pin popover too, so only one thing is open.
+    if (unpinActive) { unpinActive(); unpinActive = null; }
+
+    const ageMs = now - new Date(c.created_at).getTime();
+    const canEdit = c.email === EMAIL && ageMs < EDIT_WINDOW_MS;
+
+    const pop = document.createElement('div');
+    pop.className = 'fb-popover';
+    pop.style.cssText = 'position:fixed;left:0;top:0';
+    openRangePopoverEl = pop;
+
+    function renderView() {
+      const tagHtml = c.tag
+        ? `<div class="fb-popover__tag" style="background:${TAG_COLOR[c.tag]}">${TAG_LABEL[c.tag]}</div>`
+        : '';
+      const timeStr = new Date(c.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+
+      const actionsHtml = canEdit ? `
+        <div class="fb-popover__actions">
+          <span class="fb-popover__timer">${formatRemaining(EDIT_WINDOW_MS - ageMs)} left to edit</span>
+          <div class="fb-popover__btns">
+            <button class="fb-icon-btn" id="__rpop-edit" title="Edit">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="fb-icon-btn fb-icon-btn--danger" id="__rpop-del" title="Delete">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            </button>
+          </div>
+        </div>` : '';
+
+      const repliesHtml = (c.replies || []).map(r => {
+        const rDate = new Date(r.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+        return `<div class="fb-popover__reply">
+          <span class="fb-popover__reply-email">${escHtml(r.email)}</span>
+          <span class="fb-popover__reply-body">${escHtml(r.comment)}</span>
+          <span class="fb-popover__reply-date">· ${rDate}</span>
+        </div>`;
+      }).join('');
+      const repliesBlock = (c.replies && c.replies.length)
+        ? `<div class="fb-popover__replies">${repliesHtml}</div>`
+        : '';
+
+      const quoteBlock = c.anchor_quote
+        ? `<div class="fb-popover__meta" style="font-style:italic;margin-top:0;margin-bottom:6px;color:hsl(220,9%,46%)">“${escHtml(String(c.anchor_quote).slice(0, 80))}${String(c.anchor_quote).length > 80 ? '…' : ''}”</div>`
+        : '';
+
+      pop.innerHTML = `${tagHtml}
+        ${quoteBlock}
+        <div class="fb-popover__body">${escHtml(c.comment)}</div>
+        <div class="fb-popover__meta">${escHtml(c.email)} · ${timeStr}</div>
+        ${actionsHtml}
+        ${repliesBlock}
+        <div class="fb-reply-form">
+          <textarea class="fb-reply-input" rows="1" placeholder="Reply…"></textarea>
+          <button class="fb-reply-btn" disabled>Reply</button>
+        </div>`;
+
+      if (canEdit) {
+        pop.querySelector('#__rpop-edit').onclick = ev => { ev.stopPropagation(); renderEdit(); position(); };
+        pop.querySelector('#__rpop-del').onclick = async ev => {
+          ev.stopPropagation();
+          closeRangePopover();
+          await deleteComment(c.id);
+        };
+      }
+
+      const replyInput = pop.querySelector('.fb-reply-input');
+      const replyBtn = pop.querySelector('.fb-reply-btn');
+      replyInput.addEventListener('input', () => { replyBtn.disabled = !replyInput.value.trim(); });
+      replyBtn.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        const text = replyInput.value.trim();
+        if (!text) return;
+        replyBtn.disabled = true;
+        replyBtn.textContent = 'Posting…';
+        try {
+          await postComment({ type: 'reply', comment: text, parentId: c.id });
+          showToast('Reply posted.');
+          closeRangePopover();
+          await loadPins();
+        } catch (_) {
+          showToast('Failed to post reply.', true);
+          replyBtn.disabled = false;
+          replyBtn.textContent = 'Reply';
+        }
+      });
+    }
+
+    function renderEdit() {
+      const tagHtml = c.tag
+        ? `<div class="fb-popover__tag" style="background:${TAG_COLOR[c.tag]}">${TAG_LABEL[c.tag]}</div>`
+        : '';
+      pop.innerHTML = `${tagHtml}
+        <textarea rows="3">${escHtml(c.comment)}</textarea>
+        <div class="fb-popover__save">
+          <button class="fb-btn-sm fb-btn-ghost" id="__rpop-cancel">Cancel</button>
+          <button class="fb-btn-sm fb-btn-primary" id="__rpop-save">Save</button>
+        </div>`;
+      pop.querySelector('#__rpop-cancel').onclick = ev => { ev.stopPropagation(); renderView(); position(); };
+      const saveBtn = pop.querySelector('#__rpop-save');
+      const ta = pop.querySelector('textarea');
+      saveBtn.onclick = async ev => {
+        ev.stopPropagation();
+        const newBody = ta.value.trim();
+        if (!newBody) return;
+        closeRangePopover();
+        await updateComment(c.id, newBody);
+      };
+    }
+
+    function position() {
+      const r = anchorEl.getBoundingClientRect();
+      const sidebarW = sidebarExpanded ? 260 : 32;
+      pop.style.left = (r.right + 8) + 'px';
+      pop.style.top = Math.max(48, r.top) + 'px';
+      const pr = pop.getBoundingClientRect();
+      if (pr.right > window.innerWidth - sidebarW - 8) {
+        pop.style.left = Math.max(8, r.left - pr.width - 8) + 'px';
+      }
+      if (pr.bottom > window.innerHeight - 8) {
+        pop.style.top = Math.max(48, window.innerHeight - pr.height - 8) + 'px';
+      }
+    }
+
+    pop.addEventListener('click', ev => ev.stopPropagation());
+    renderView();
+    rangeLayer.appendChild(pop);
+    position();
+  }
+
+
+  /* ── text-selection → range comment ── */
+  document.addEventListener('mouseup', () => {
+    if (mode !== 'comment') return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const anc = range.commonAncestorContainer;
+    const ancEl = anc.nodeType === 1 ? anc : anc.parentElement;
+    if (ancEl && ancEl.closest && ancEl.closest('#__fb-toolbar,#__fb-draft-card,#__fb-sidebar,#__fb-ranges,#__fb-pins')) return;
+    const anchor = window.FBAnchor && window.FBAnchor.serializeSelection(range, document.body);
+    if (!anchor) return;
+    rangeDraft = { anchor, tagSel: null };
+    draft = null;
+    suppressNextClick = true;
+    openDraftCard('“' + anchor.quote.slice(0, 60) + (anchor.quote.length > 60 ? '…' : '') + '”');
+    sel.removeAllRanges();
+  });
+
   document.addEventListener('click', e => {
     if (mode !== 'comment') return;
+    if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
     if (e.target.closest('#__fb-draft-card') || e.target.closest('.fb-pin') || e.target.closest('.fb-cluster') || e.target.closest('#__fb-toolbar')) return;
     e.preventDefault(); e.stopPropagation();
 
@@ -1240,6 +1500,7 @@
     const yPct = rect.height ? Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)) : 0.5;
 
     draft = { selector, xPct, yPct, tag: null };
+    rangeDraft = null;
     openDraftCard(selector);
   }, true);
 
@@ -1270,6 +1531,7 @@
     // reset tags
     document.querySelectorAll('.fb-tag-pill').forEach(p => { p.classList.remove('active'); p.style.background = 'none'; p.style.color = TAG_COLOR[p.dataset.tag]; });
     if (draft) draft.tag = null;
+    if (rangeDraft) rangeDraft.tagSel = null;
     draftCard.classList.add('visible');
     document.getElementById('__fb-draft-textarea').focus();
   }
@@ -1282,7 +1544,7 @@
 
   document.getElementById('__fb-tag-row').addEventListener('click', e => {
     const pill = e.target.closest('.fb-tag-pill');
-    if (!pill || !draft) return;
+    if (!pill || (!draft && !rangeDraft)) return;
     const t = pill.dataset.tag;
     const isActive = pill.classList.contains('active');
     document.querySelectorAll('.fb-tag-pill').forEach(p => { p.classList.remove('active'); p.style.background = 'none'; p.style.color = TAG_COLOR[p.dataset.tag]; });
@@ -1290,30 +1552,39 @@
       pill.classList.add('active');
       pill.style.background = TAG_COLOR[t];
       pill.style.color = '#fff';
-      draft.tag = t;
+      if (draft) draft.tag = t;
+      if (rangeDraft) rangeDraft.tagSel = t;
     } else {
-      draft.tag = null;
+      if (draft) draft.tag = null;
+      if (rangeDraft) rangeDraft.tagSel = null;
     }
   });
 
   document.getElementById('__fb-draft-submit').addEventListener('click', async () => {
-    if (!draft) return;
     const text = document.getElementById('__fb-draft-textarea').value.trim();
     if (!text) return;
     const btn = document.getElementById('__fb-draft-submit');
     btn.disabled = true;
     btn.textContent = 'Posting…';
     try {
-      await postComment({
-        type: 'element',
-        element: { selector: draft.selector, label: '', tagName: '' },
-        comment: text,
-        pageUrl: location.href,
-        tag: draft.tag,
-        xPct: draft.xPct,
-        yPct: draft.yPct,
-        breadcrumb: navHistory,
-      });
+      if (rangeDraft) {
+        await postComment({ type: 'range', comment: text, pageUrl: location.href, tag: rangeDraft.tagSel || null, anchor: rangeDraft.anchor, breadcrumb: navHistory });
+      } else if (draft) {
+        await postComment({
+          type: 'element',
+          element: { selector: draft.selector, label: '', tagName: '' },
+          comment: text,
+          pageUrl: location.href,
+          tag: draft.tag,
+          xPct: draft.xPct,
+          yPct: draft.yPct,
+          breadcrumb: navHistory,
+        });
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Post comment';
+        return;
+      }
       closeDraft();
       showToast('Comment posted.');
       await loadPins();
@@ -1326,6 +1597,7 @@
 
   function closeDraft() {
     draft = null;
+    rangeDraft = null;
     draftCard.classList.remove('visible');
   }
 
@@ -1407,6 +1679,9 @@
       if (unpinActive) { unpinActive(); unpinActive = null; }
       openPinId = null;
     }
+    if (openRangePopoverEl && !e.target.closest('.fb-popover') && !e.target.closest('mark.__fb-mark') && !e.target.closest('[data-range-marker]')) {
+      closeRangePopover();
+    }
   });
 
   /* ── navigation tracking ── */
@@ -1426,6 +1701,7 @@
       // Clear pins from the previous page immediately; the RAF loop will show
       // pins for the new page once the SPA has rendered its new DOM elements.
       renderPinLayer();
+      renderRangeLayer();
       renderSidebar();
     }
 

@@ -1482,15 +1482,25 @@
     if (!anchor) return;
     rangeDraft = { anchor, tagSel: null };
     draft = null;
+    // A drag-selection is normally followed by a click event we must swallow (so it
+    // doesn't also drop an element pin). But a pure drag sometimes fires no click at
+    // all — so self-expire the flag on the next tick to avoid eating an unrelated
+    // later click. The synthetic click (if any) fires before this timeout.
     suppressNextClick = true;
+    setTimeout(() => { suppressNextClick = false; }, 0);
     openDraftCard('“' + anchor.quote.slice(0, 60) + (anchor.quote.length > 60 ? '…' : '') + '”');
     sel.removeAllRanges();
   });
 
   document.addEventListener('click', e => {
     if (mode !== 'comment') return;
-    if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
+    // Never intercept clicks on our own UI (draft card Post/tags, pins, toolbar).
+    // This MUST run before the suppress guard so a selection's trailing state can
+    // never swallow a click on the draft card's Post button.
     if (e.target.closest('#__fb-draft-card') || e.target.closest('.fb-pin') || e.target.closest('.fb-cluster') || e.target.closest('#__fb-toolbar')) return;
+    // Swallow the click that ends a text-selection drag (so it doesn't also drop
+    // an element pin). Only consumed for document clicks, never the UI clicks above.
+    if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
     e.preventDefault(); e.stopPropagation();
 
     const el = e.target;

@@ -288,6 +288,54 @@ let app, protoId;
     });
   });
 
+  test('POST /api/comments stores a range comment with anchor', async () => {
+    const res = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      type: 'range',
+      comment: 'This sentence is unclear',
+      pageUrl: '/p/abc/view',
+      tag: 'copy',
+      anchor: { quote: 'unclear sentence', prefix: 'the ', suffix: ' here', start: 42, end: 58 },
+    });
+    expect(res.status).toBe(201);
+    const { rows } = await getDb().query("SELECT * FROM comments WHERE comment = 'This sentence is unclear'");
+    const row = rows[0];
+    expect(row.type).toBe('range');
+    expect(row.anchor_quote).toBe('unclear sentence');
+    expect(row.anchor_start).toBe(42);
+    expect(row.anchor_end).toBe(58);
+    expect(row.tag).toBe('copy');
+  });
+
+  test('POST /api/comments range without anchor quote returns 400', async () => {
+    const res = await request(app).post('/api/comments').send({
+      prototypeId: protoId,
+      type: 'range',
+      comment: 'no anchor',
+      anchor: { quote: '   ' },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test('GET /api/comments returns anchor fields on range comments', async () => {
+    const pid = 'range-' + Date.now();
+    await getDb().query(
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
+      [pid, 'RangeGet', `${pid}.md`, 'tok-' + pid, new Date().toISOString()]
+    );
+    await request(app).post('/api/comments').set('x-test-proto', pid).send({
+      prototypeId: pid, type: 'range', comment: 'anchored', pageUrl: '/p/x/view',
+      anchor: { quote: 'the target', prefix: 'a ', suffix: ' b', start: 1, end: 11 },
+    });
+    const get = await request(app).get('/api/comments/' + pid).set('x-test-proto', pid);
+    expect(get.status).toBe(200);
+    const c = get.body.find(x => x.comment === 'anchored');
+    expect(c).toBeTruthy();
+    expect(c.anchor_quote).toBe('the target');
+    expect(c.anchor_start).toBe(1);
+    expect(c.type).toBe('range');
+  });
+
   // Requests with no reviewer session and no admin session must be rejected —
   // authorizedForPrototype() returns false when neither credential is present.
   describe('unauthenticated access', () => {

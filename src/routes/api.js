@@ -54,7 +54,7 @@ async function authorizeResource(req, table, id) {
 
 router.post('/comments', async (req, res) => {
   try {
-    const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email, parentId } = req.body;
+    const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email, parentId, anchor } = req.body;
     const commentEmail = email || 'local@test.com';
     if (!comment || !comment.trim()) return res.status(400).json({ error: 'Comment is required.' });
     if (!prototypeId) return res.status(400).json({ error: 'prototypeId is required.' });
@@ -81,15 +81,31 @@ router.post('/comments', async (req, res) => {
       return res.status(201).json({ ok: true, id });
     }
 
-    if (!['general', 'element'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
+    if (!['general', 'element', 'range'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
+
+    // Range comments require an anchor with a non-empty quote.
+    let anchorCols = { quote: null, prefix: null, suffix: null, start: null, end: null };
+    if (type === 'range') {
+      if (!anchor || !anchor.quote || !String(anchor.quote).trim()) {
+        return res.status(400).json({ error: 'Range comment requires an anchor quote.' });
+      }
+      anchorCols = {
+        quote: String(anchor.quote),
+        prefix: anchor.prefix != null ? String(anchor.prefix) : null,
+        suffix: anchor.suffix != null ? String(anchor.suffix) : null,
+        start: Number.isInteger(anchor.start) ? anchor.start : null,
+        end: Number.isInteger(anchor.end) ? anchor.end : null,
+      };
+    }
 
     const versionId = await versions.publishedVersionId(prototypeId);
 
     await getDb().query(
       `INSERT INTO comments
         (id, prototype_id, email, type, element_selector, element_label, element_tag,
-         breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct, version_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+         breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct, version_id,
+         anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
       [
         id, prototypeId, commentEmail, type,
         element?.selector || null,
@@ -103,6 +119,7 @@ router.post('/comments', async (req, res) => {
         typeof xPct === 'number' ? xPct : null,
         typeof yPct === 'number' ? yPct : null,
         versionId,
+        anchorCols.quote, anchorCols.prefix, anchorCols.suffix, anchorCols.start, anchorCols.end,
       ]
     );
     res.status(201).json({ ok: true, id });
@@ -118,7 +135,8 @@ router.get('/comments/:prototypeId', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden.' });
     }
     const { rows } = await getDb().query(
-      `SELECT id, email, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id
+      `SELECT id, email, type, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id,
+              anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end
        FROM comments
        WHERE prototype_id = $1
        ORDER BY created_at ASC`,

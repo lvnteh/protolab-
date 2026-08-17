@@ -10,10 +10,11 @@ const multer = require('multer');
 const { nanoid } = require('nanoid');
 const storage = require('../services/storage');
 const versions = require('../services/versions');
+const filetype = require('../services/filetype');
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  fileFilter: (_req, file, cb) => cb(null, file.originalname.endsWith('.html')),
+  fileFilter: (_req, file, cb) => cb(null, filetype.isAccepted(file.originalname)),
 });
 
 const router = express.Router();
@@ -117,21 +118,24 @@ router.get('/prototypes/:id/versions', async (req, res) => {
 router.get('/prototypes/:id/source', async (req, res) => {
   try {
     if (!await getOwned(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
-    let filename;
+    let filename, contentType;
     if (req.query.version) {
       const v = parseInt(req.query.version, 10);
       if (Number.isNaN(v)) return res.status(400).json({ error: 'version must be an integer.' });
       const { rows } = await getDb().query(
-        'SELECT filename FROM prototype_versions WHERE prototype_id = $1 AND version = $2',
+        'SELECT filename, content_type FROM prototype_versions WHERE prototype_id = $1 AND version = $2',
         [req.params.id, v]);
       filename = rows[0] && rows[0].filename;
+      contentType = rows[0] && rows[0].content_type;
     } else {
-      filename = await versions.resolvePublishedFile(req.params.id);
+      const pub = await versions.resolvePublished(req.params.id);
+      filename = pub && pub.filename;
+      contentType = pub && pub.contentType;
     }
     if (!filename) return res.status(404).json({ error: 'Version not found.' });
     const raw = await storage.getPrototype(filename);
     if (raw === null) return res.status(404).json({ error: 'File not found.' });
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Type', filetype.mimeForContentType(contentType || 'html'));
     res.send(raw);
   } catch (err) {
     console.error('GET /api/v1/prototypes/:id/source error:', err);
@@ -143,7 +147,7 @@ router.get('/prototypes/:id/source', async (req, res) => {
 router.post('/prototypes/:id/versions', upload.single('file'), async (req, res) => {
   try {
     if (!await getOwned(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
-    if (!req.file) return res.status(400).json({ error: 'Only .html files are accepted.' });
+    if (!req.file) return res.status(400).json({ error: 'Only .html or .md files are accepted.' });
 
     const latest = await versions.latestVersion(req.params.id);
     const base = parseInt(req.body.baseVersion, 10);
@@ -151,10 +155,11 @@ router.post('/prototypes/:id/versions', upload.single('file'), async (req, res) 
       return res.status(409).json({ error: 'Prototype changed since you pulled.', currentVersion: latest });
     }
 
-    const filename = `${nanoid(12)}.html`;
-    await storage.putPrototype(filename, req.file.buffer);
+    const contentType = filetype.contentTypeForFilename(req.file.originalname) || 'html';
+    const filename = `${nanoid(12)}.${filetype.extForContentType(contentType)}`;
+    await storage.putPrototype(filename, req.file.buffer, filetype.mimeForContentType(contentType));
     try {
-      const v = await versions.createDraft(req.params.id, filename, req.body.note);
+      const v = await versions.createDraft(req.params.id, filename, req.body.note, contentType);
       res.status(201).json(v);
     } catch (e) {
       // Concurrent push race: UNIQUE(prototype_id, version) collision. Someone

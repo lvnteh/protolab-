@@ -49,7 +49,9 @@ class ProtoshareClient {
 
   async pushVersion(id, { buffer, filename, note, baseVersion } = {}) {
     const form = new FormData();
-    form.append('file', new Blob([buffer], { type: 'text/html' }), filename || 'prototype.html');
+    const isMd = /\.(md|markdown)$/i.test(filename || '');
+    const mime = isMd ? 'text/markdown' : 'text/html';
+    form.append('file', new Blob([buffer], { type: mime }), filename || 'prototype.html');
     if (note != null && note !== '') form.append('note', String(note));
     if (baseVersion != null) form.append('baseVersion', String(baseVersion));
     // NB: do NOT set Content-Type — fetch derives the multipart boundary from FormData.

@@ -11,12 +11,13 @@ const config = require('../config');
 const { injectPreview } = require('../services/inject');
 const storage = require('../services/storage');
 const apiTokens = require('../services/tokens');
+const filetype = require('../services/filetype');
 
 const router = express.Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  fileFilter: (_req, file, cb) => cb(null, file.originalname.endsWith('.html')),
+  fileFilter: (_req, file, cb) => cb(null, filetype.isAccepted(file.originalname)),
 });
 
 function readView(name) {
@@ -170,26 +171,26 @@ router.get('/upload', orgs.requireAdmin, (_req, res) => {
 });
 
 router.post('/prototypes', orgs.requireAdmin, upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).send('Only .html files are accepted.');
+  if (!req.file) return res.status(400).send('Only .html or .md files are accepted.');
+  const contentType = filetype.contentTypeForFilename(req.file.originalname) || 'html';
   const id = nanoid(12);
   const shareToken = nanoid(12);
-  const filename = `${id}.html`;
+  const filename = `${id}.${filetype.extForContentType(contentType)}`;
   const versionId = nanoid(12);
-  await storage.putPrototype(filename, req.file.buffer);
+  await storage.putPrototype(filename, req.file.buffer, filetype.mimeForContentType(contentType));
 
   const client = await getDb().connect();
   try {
     await client.query('BEGIN');
     await client.query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at, owner_id, org_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [id, req.body.name || 'Untitled', filename, shareToken, new Date().toISOString(), req.session.userId, req.orgId]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, owner_id, org_id, content_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [id, req.body.name || 'Untitled', filename, shareToken, new Date().toISOString(), req.session.userId, req.orgId, contentType]
     );
-    // v1 is the original, published from birth — keeps the linear-history
-    // invariant that the /api/v1 surface and backfill both assume.
+    // v1 is the original, published from birth.
     await client.query(
-      `INSERT INTO prototype_versions (id, prototype_id, version, filename, status, created_at)
-       VALUES ($1,$2,1,$3,'published',$4)`,
-      [versionId, id, filename, new Date().toISOString()]
+      `INSERT INTO prototype_versions (id, prototype_id, version, filename, status, created_at, content_type)
+       VALUES ($1,$2,1,$3,'published',$4,$5)`,
+      [versionId, id, filename, new Date().toISOString(), contentType]
     );
     await client.query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [versionId, id]);
     await client.query('COMMIT');

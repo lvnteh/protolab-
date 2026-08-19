@@ -175,6 +175,7 @@
       const p = m.parentNode; if (!p) return;
       while (m.firstChild) p.insertBefore(m.firstChild, m);
       p.removeChild(m);
+      p.normalize && p.normalize(); // re-coalesce split text nodes (parity with feedback.js)
     });
     rangeComments.forEach(c => {
       const anchor = { quote: c.anchor_quote, prefix: c.anchor_prefix, suffix: c.anchor_suffix, start: c.anchor_start, end: c.anchor_end };

@@ -86,14 +86,46 @@
   function serializeSelection(range, root) {
     const { text, nodes } = textIndex(root);
     const map = new Map(nodes.map(e => [e.node, e.start]));
-    function abs(container, off) {
-      if (map.has(container)) return map.get(container) + off;
-      const walker = (root.ownerDocument || document).createTreeWalker(container, 4, null);
-      const first = walker.nextNode();
-      return first && map.has(first) ? map.get(first) : 0;
+
+    // Map a (container, offset) boundary to an absolute offset in `text`.
+    // Text-node containers are a direct lookup. Element containers use a DOM
+    // offset that is a CHILD INDEX, not a character offset — so we resolve it to
+    // the text position at that child boundary: the start of the child at
+    // [offset] if it (or a descendant) is indexed, else the end of the text
+    // covered by the children BEFORE it. Falling back to 0 (the old behaviour)
+    // silently anchored cross-element selections to the top of the document.
+    function firstIndexedIn(node) {
+      if (map.has(node)) return map.get(node);
+      const w = (root.ownerDocument || document).createTreeWalker(node, 4, null);
+      let t;
+      while ((t = w.nextNode())) { if (map.has(t)) return map.get(t); }
+      return null;
     }
-    let start = abs(range.startContainer, range.startOffset);
-    let end = abs(range.endContainer, range.endOffset);
+    function lastIndexedEndIn(node) {
+      if (map.has(node)) return map.get(node) + node.nodeValue.length;
+      const w = (root.ownerDocument || document).createTreeWalker(node, 4, null);
+      let t, end = null;
+      while ((t = w.nextNode())) { if (map.has(t)) end = map.get(t) + t.nodeValue.length; }
+      return end;
+    }
+    function abs(container, off, isEnd) {
+      if (map.has(container)) return map.get(container) + off;
+      const kids = container.childNodes || [];
+      // Search forward from the boundary child for the next indexed text position.
+      for (let i = off; i < kids.length; i++) {
+        const p = firstIndexedIn(kids[i]);
+        if (p !== null) return p;
+      }
+      // Nothing after the boundary — use the end of the last indexed text before it.
+      for (let i = Math.min(off, kids.length) - 1; i >= 0; i--) {
+        const p = lastIndexedEndIn(kids[i]);
+        if (p !== null) return p;
+      }
+      // Container has no indexed text at all: start→0, end→document end.
+      return isEnd ? text.length : 0;
+    }
+    let start = abs(range.startContainer, range.startOffset, false);
+    let end = abs(range.endContainer, range.endOffset, true);
     if (start > end) { const t = start; start = end; end = t; }
     const quote = text.slice(start, end);
     if (!quote.trim()) return null;

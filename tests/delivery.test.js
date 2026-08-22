@@ -89,5 +89,27 @@ let app, protoId, shareToken;
     expect(res.text).toContain('<h1>Hello MD</h1>');
     expect(res.text).toContain('<strong>bold</strong>');
     expect(res.text).toContain('/sdk/feedback.js');
+    // Markdown view is locked down with a CSP (scripts same-origin only). It must
+    // still permit our injected SDK (script-src 'self') and its /api fetches
+    // (connect-src 'self') — verified end-to-end in the browser.
+    expect(res.headers['content-security-policy']).toBeDefined();
+    expect(res.headers['content-security-policy']).toMatch(/script-src 'self'/);
+  });
+
+  test('GET /p/:token/view does NOT set the markdown CSP on an HTML prototype', async () => {
+    // HTML prototypes may legitimately use inline scripts/handlers, so the strict
+    // markdown CSP must not apply to them. Republish an HTML version.
+    const htmlFile = `${protoId}-back-to-html.html`;
+    await storage.putPrototype(htmlFile, '<!DOCTYPE html><html><head></head><body>HTML AGAIN</body></html>');
+    const v = await versions.createDraft(protoId, htmlFile, 'html', 'html');
+    await versions.publish(protoId, v.version);
+
+    const agent = request.agent(app);
+    await agent.post(`/p/${shareToken}/enter`).send('email=allowed@example.com');
+    const res = await agent.get(`/p/${shareToken}/view`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('HTML AGAIN');
+    expect(res.headers['content-security-policy']).toBeUndefined();
   });
 });

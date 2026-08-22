@@ -76,6 +76,26 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
   if (contentType === 'markdown') {
     const { html } = markdown.render(raw);
     documentHtml = readView('markdown-shell.html').split('{{content}}').join(html);
+    // CSP for the markdown view ONLY. We fully control this output (sanitized
+    // render + our own same-origin SDK), so we can lock scripts to same-origin —
+    // blocking any script/object/frame injection that slipped past the sanitizer.
+    // scripts: 'self' (the injected /sdk/*.js); styles: 'unsafe-inline' (the shell
+    // + SDK inject inline <style>/style attrs); connect: 'self' (SDK fetches /api).
+    // img-src stays permissive (https/data) so legitimate docs embedding images by
+    // absolute URL still render — the residual tracking-pixel vector is accepted for
+    // this internal, allowlisted-reviewer tool. NOT applied to HTML prototypes,
+    // whose author markup may legitimately use inline scripts/handlers.
+    res.setHeader('Content-Security-Policy', [
+      "default-src 'none'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' https: data:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "base-uri 'none'",
+      "form-action 'self'",
+      "frame-ancestors 'self'",
+    ].join('; '));
   } else {
     documentHtml = raw;
   }

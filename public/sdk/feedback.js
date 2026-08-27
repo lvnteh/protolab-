@@ -1298,23 +1298,25 @@
       if (!range) { c.__unresolved = true; return; }
       c.__unresolved = false;
       const color = TAG_COLOR[c.tag] || TAG_COLOR.other;
-      let rect = null;
+      let posTarget = null;
       try {
         const mark = document.createElement('mark');
         mark.className = '__fb-mark';
         mark.style.cssText = `background:${hslAlpha(color, 0.28)};color:inherit;border-radius:2px;cursor:pointer`;
         mark.dataset.rangeId = c.id;
         range.surroundContents(mark);
-        rect = mark.getBoundingClientRect();
         mark.addEventListener('click', ev => { ev.stopPropagation(); openRangePopover(c, mark); });
+        posTarget = mark;
       } catch (_) {
-        rect = range.getBoundingClientRect();
+        // Partial-node range can't be wrapped in a single <mark>; pin off the range itself.
+        posTarget = range;
       }
-      if (!rect) return;
+      const pos = window.FBAnchor && window.FBAnchor.markerPos(posTarget);
+      if (!pos) return;
       const marker = document.createElement('div');
       marker.className = 'fb-pin';
       marker.textContent = c.order || '';
-      marker.style.cssText = `position:fixed;left:8px;top:${rect.top}px;background:${color};pointer-events:auto`;
+      marker.style.cssText = `position:fixed;left:${pos.left}px;top:${pos.top}px;background:${color};pointer-events:auto`;
       marker.dataset.rangeMarker = c.id;
       marker.addEventListener('click', ev => { ev.stopPropagation(); openRangePopover(c, marker); });
       rangeLayer.appendChild(marker);
@@ -1327,7 +1329,10 @@
       if (c.page_url && pageKeyOf(c.page_url) !== currentPageKey()) return;
       const mark = document.querySelector(`mark.__fb-mark[data-range-id="${c.id}"]`);
       const marker = rangeLayer.querySelector(`[data-range-marker="${c.id}"]`);
-      if (mark && marker) { const r = mark.getBoundingClientRect(); marker.style.top = r.top + 'px'; }
+      if (mark && marker) {
+        const pos = window.FBAnchor && window.FBAnchor.markerPos(mark);
+        if (pos) { marker.style.left = pos.left + 'px'; marker.style.top = pos.top + 'px'; }
+      }
     });
   }
 

@@ -186,3 +186,75 @@ test('resolveAnchor returns null when the quote no longer exists', () => {
   const anchor = { quote: 'text that was deleted', prefix: '', suffix: '', start: 5, end: 26 };
   expect(A.resolveAnchor(anchor, root)).toBeNull();
 });
+
+// ── markerPos: where a range-comment pin sits relative to its highlight ──────
+// The interactive SDK (feedback.js) used to hardcode the pin to left:8px — the
+// far-left viewport edge — which on a centered document lands nowhere near the
+// text. markerPos computes the pin's viewport point from the highlight element,
+// anchored to the END of the highlighted run (its last line fragment), so the
+// pin butts up against the text like a margin note. Pure + DOM-light so it's
+// unit-testable here; feedback.js calls it with the real <mark> element.
+
+// A fake target exposing getClientRects()/getBoundingClientRect() the way a DOM
+// element (or Range) does — enough surface for markerPos.
+function rectTarget(rects) {
+  const list = rects.slice();
+  // bounding rect = union of fragments (min-left/top, max-right/bottom).
+  const bounding = list.length ? {
+    left: Math.min(...list.map(r => r.left)),
+    top: Math.min(...list.map(r => r.top)),
+    right: Math.max(...list.map(r => r.right)),
+    bottom: Math.max(...list.map(r => r.bottom)),
+    get width() { return this.right - this.left; },
+    get height() { return this.bottom - this.top; },
+  } : { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  return {
+    getClientRects() { return list; },
+    getBoundingClientRect() { return bounding; },
+  };
+}
+// helper to build a rect with derived width/height
+function R(left, top, right, bottom) {
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+test('markerPos: single-line highlight → pin at end of the run, vertically centered', () => {
+  // one line fragment from x=100..260, y=40..60 → pin just right of x=260,
+  // centered at y=50, nudged out by the default gap.
+  const target = rectTarget([R(100, 40, 260, 60)]);
+  const pos = A.markerPos(target);
+  expect(pos).toEqual({ left: 260 + A.PIN_GAP, top: 50 });
+});
+
+test('markerPos: multi-line highlight uses the LAST line fragment, not the bounding box', () => {
+  // A wrapped selection: line 1 runs long (x→700), line 2 is short (x→180).
+  // The pin must follow the END of the run — the last fragment — so left is
+  // driven by the short second line (180), NOT the wide bounding box (700).
+  const target = rectTarget([
+    R(300, 40, 700, 60), // first line, wraps far right
+    R(100, 60, 180, 80), // last line, ends early
+  ]);
+  const pos = A.markerPos(target);
+  expect(pos).toEqual({ left: 180 + A.PIN_GAP, top: 70 }); // centered on last line
+});
+
+test('markerPos: falls back to bounding rect when getClientRects is empty', () => {
+  const target = {
+    getClientRects() { return []; },
+    getBoundingClientRect() { return R(20, 200, 120, 224); },
+  };
+  const pos = A.markerPos(target);
+  expect(pos).toEqual({ left: 120 + A.PIN_GAP, top: 212 });
+});
+
+test('markerPos: custom gap overrides the default', () => {
+  const target = rectTarget([R(0, 0, 50, 20)]);
+  expect(A.markerPos(target, 4)).toEqual({ left: 54, top: 10 });
+});
+
+test('markerPos: null / rectless target → null (caller skips the pin)', () => {
+  expect(A.markerPos(null)).toBeNull();
+  expect(A.markerPos({})).toBeNull();
+  const zero = { getClientRects() { return []; }, getBoundingClientRect() { return R(0, 0, 0, 0); } };
+  expect(A.markerPos(zero)).toBeNull(); // collapsed/invisible → no pin
+});

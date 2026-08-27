@@ -137,6 +137,28 @@
     };
   }
 
+  // Where a range-comment pin should sit relative to its highlight.
+  // `target` is anything exposing getClientRects()/getBoundingClientRect() — the
+  // <mark> element (preferred) or the Range itself. We anchor to the END of the
+  // highlighted run: the LAST client rect (last wrapped line), not the bounding
+  // box — a bounding box's right edge is the widest line, which for a multi-line
+  // selection is nowhere near where the text actually ends. The pin is placed
+  // just past that line's right edge (by `gap` px) and vertically centered on it.
+  // Returns viewport coordinates {left, top}, or null when there's nothing to
+  // pin to (no rects / zero-area) so the caller can skip rendering.
+  const PIN_GAP = 16;
+  function markerPos(target, gap) {
+    if (!target || typeof target.getClientRects !== 'function') return null;
+    const g = typeof gap === 'number' ? gap : PIN_GAP;
+    const rects = target.getClientRects();
+    let r = rects && rects.length ? rects[rects.length - 1] : null;
+    if (!r || (r.width === 0 && r.height === 0)) {
+      r = typeof target.getBoundingClientRect === 'function' ? target.getBoundingClientRect() : null;
+    }
+    if (!r || (r.width === 0 && r.height === 0)) return null;
+    return { left: r.right + g, top: r.top + r.height / 2 };
+  }
+
   // anchor → DOM Range (or null if unresolvable).
   function resolveAnchor(anchor, root) {
     const { text, nodes } = textIndex(root);
@@ -152,5 +174,5 @@
     return range;
   }
 
-  return { locateQuote, serializeSelection, resolveAnchor, textIndex, CTX };
+  return { locateQuote, serializeSelection, resolveAnchor, textIndex, markerPos, PIN_GAP, CTX };
 });

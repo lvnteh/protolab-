@@ -16,6 +16,26 @@ async function initDb() {
       ssl: isLocal ? false : { rejectUnauthorized: false },
       connectionTimeoutMillis: 10000,
     });
+
+    // Managed Postgres (Railway) can accept the app before the DB is reachable,
+    // producing an ETIMEDOUT on the first connect that would otherwise crash the
+    // boot (server.js exits on initDb failure). Retry the initial connection with
+    // linear backoff so a slow-starting DB self-heals instead of crash-looping.
+    let lastErr;
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      try {
+        const client = await _pool.connect();
+        client.release();
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        const waitMs = Math.min(attempt * 1000, 5000);
+        console.warn(`initDb: Postgres not ready (attempt ${attempt}/10): ${err.code || err.message}; retrying in ${waitMs}ms`);
+        await new Promise((r) => setTimeout(r, waitMs));
+      }
+    }
+    if (lastErr) throw lastErr;
   }
 
   await _pool.query(`

@@ -17,6 +17,20 @@
   const CLUSTER_PX = 28;
   const EDIT_WINDOW_MS = 5 * 60 * 1000;
 
+  // Every piece of SDK chrome lives inside a top-level container whose id starts
+  // with "__fb-" (toolbar, comment/explain banners, pins, ranges, explains,
+  // sidebar, draft/explain cards, toast — see the creation block ~L400-530).
+  // A click or text-selection anywhere inside that chrome must NEVER be treated
+  // as interacting with the prototype (which would drop a pin / open a draft
+  // card, and — because our handlers run at capture phase with stopPropagation —
+  // would also swallow the real control's click, e.g. a popover's Delete button).
+  // Keying on the id-prefix keeps this drift-proof: the three handlers below
+  // previously carried three separate, out-of-sync exclusion lists.
+  const FB_UI_SELECTOR = '[id^="__fb-"]';
+  function isOwnUi(target) {
+    return !!(target && target.closest && target.closest(FB_UI_SELECTOR));
+  }
+
   /* ── styles ── */
   const STYLE = `
     #__fb-toolbar {
@@ -1482,7 +1496,7 @@
     const range = sel.getRangeAt(0);
     const anc = range.commonAncestorContainer;
     const ancEl = anc.nodeType === 1 ? anc : anc.parentElement;
-    if (ancEl && ancEl.closest && ancEl.closest('#__fb-toolbar,#__fb-draft-card,#__fb-sidebar,#__fb-ranges,#__fb-pins')) return;
+    if (isOwnUi(ancEl)) return;
     const anchor = window.FBAnchor && window.FBAnchor.serializeSelection(range, document.body);
     if (!anchor) return;
     rangeDraft = { anchor, tagSel: null };
@@ -1499,10 +1513,11 @@
 
   document.addEventListener('click', e => {
     if (mode !== 'comment') return;
-    // Never intercept clicks on our own UI (draft card Post/tags, pins, toolbar).
+    // Never intercept clicks on our own UI (toolbar, banners, pins, sidebar,
+    // draft card, range/pin popovers + their Delete/Edit buttons, tag pills…).
     // This MUST run before the suppress guard so a selection's trailing state can
     // never swallow a click on the draft card's Post button.
-    if (e.target.closest('#__fb-draft-card') || e.target.closest('.fb-pin') || e.target.closest('.fb-cluster') || e.target.closest('#__fb-toolbar')) return;
+    if (isOwnUi(e.target)) return;
     // Swallow the click that ends a text-selection drag (so it doesn't also drop
     // an element pin). Only consumed for document clicks, never the UI clicks above.
     if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
@@ -1522,7 +1537,7 @@
   /* ── explain mode click ── */
   document.addEventListener('click', e => {
     if (mode !== 'explain') return;
-    if (e.target.closest('#__fb-explain-card') || e.target.closest('.fb-explain-marker') || e.target.closest('#__fb-toolbar')) return;
+    if (isOwnUi(e.target)) return;
     e.preventDefault(); e.stopPropagation();
 
     // Walk up from SVG internals (<path>, <circle>, etc.) to their owning SVG or parent element

@@ -100,7 +100,7 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
     documentHtml = raw;
   }
 
-  const injected = injectSdk(documentHtml, proto.id, req.session.customerEmail);
+  const injected = injectSdk(documentHtml, proto.id, req.session.customerEmail, contentType);
 
   await getDb().query(
     'INSERT INTO access_log (prototype_id, email, opened_at, user_agent) VALUES ($1,$2,$3,$4)',

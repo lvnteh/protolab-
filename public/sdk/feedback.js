@@ -4,6 +4,11 @@
   if (!script) return;
   const PROTO_ID = script.getAttribute('data-proto-id');
   const EMAIL = decodeURIComponent(script.getAttribute('data-email') || '');
+  // Rendered-markdown docs annotate by selecting text (range comments); HTML
+  // prototypes annotate by clicking an element (element pins). delivery.js sets
+  // data-content-type="markdown" only for the former. This flips comment mode to
+  // selection-only and keeps the text (I-beam) cursor instead of the crosshair.
+  const IS_MARKDOWN = script.getAttribute('data-content-type') === 'markdown';
 
   const TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
   const TAG_LABEL = { bug: 'Bug', copy: 'Copy', question: 'Question', idea: 'Idea', other: 'Other' };
@@ -69,6 +74,13 @@
     body.__fb-comment-mode #__fb-comment-banner { display: block; }
     body.__fb-comment-mode { cursor: crosshair !important; }
     body.__fb-comment-mode * { cursor: crosshair !important; }
+    /* Markdown docs annotate by selecting text, so keep the text (I-beam) cursor
+       over the document body — but our own chrome keeps its normal pointer. */
+    body.__fb-markdown.__fb-comment-mode,
+    body.__fb-markdown.__fb-comment-mode .md-doc,
+    body.__fb-markdown.__fb-comment-mode .md-doc * { cursor: text !important; }
+    body.__fb-markdown.__fb-comment-mode [id^="__fb-"],
+    body.__fb-markdown.__fb-comment-mode [id^="__fb-"] * { cursor: auto !important; }
 
     /* pin layer */
     #__fb-pins {
@@ -443,8 +455,12 @@
 
   const commentBanner = document.createElement('div');
   commentBanner.id = '__fb-comment-banner';
-  commentBanner.textContent = 'Click any element to leave a comment · Esc to exit';
+  commentBanner.textContent = IS_MARKDOWN
+    ? 'Select any text to leave a comment · Esc to exit'
+    : 'Click any element to leave a comment · Esc to exit';
   document.body.insertBefore(commentBanner, toolbar.nextSibling);
+  // Tag the body so the markdown-only CSS (text cursor, selection-first) applies.
+  if (IS_MARKDOWN) document.body.classList.add('__fb-markdown');
 
   const explainBanner = document.createElement('div');
   explainBanner.id = '__fb-explain-banner';
@@ -610,7 +626,7 @@
     if (e.key === 'Escape') {
       if (openRangePopoverEl) { closeRangePopover(); return; }
       if (unpinActive) { unpinActive(); unpinActive = null; return; }
-      if (draft) { closeDraft(); return; }
+      if (draft || rangeDraft) { closeDraft(); return; }
       if (explainDraft) { closeExplainCard(); return; }
       if (mode !== 'view') setMode('view');
     }
@@ -1508,7 +1524,9 @@
     suppressNextClick = true;
     setTimeout(() => { suppressNextClick = false; }, 0);
     openDraftCard('“' + anchor.quote.slice(0, 60) + (anchor.quote.length > 60 ? '…' : '') + '”');
-    sel.removeAllRanges();
+    // Keep the browser selection visible so the user sees exactly what they're
+    // annotating; it is cleared in closeDraft() (on Post or Cancel), not here.
+    // The saved highlight <mark> is rendered by renderRangeLayer once posted.
   });
 
   document.addEventListener('click', e => {
@@ -1521,6 +1539,31 @@
     // Swallow the click that ends a text-selection drag (so it doesn't also drop
     // an element pin). Only consumed for document clicks, never the UI clicks above.
     if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
+
+    // A text selection (range comment) always wins over dropping an element pin.
+    // If a range draft is pending, or the user clicked inside a live selection,
+    // keep/adopt the range and leave its draft card open — never overwrite it
+    // with an element draft. This is what makes "select, then click the
+    // selection to pin it" work, and keeps the selection intact until Post/Cancel.
+    const sel = window.getSelection();
+    const inLiveSelection = sel && !sel.isCollapsed && sel.rangeCount &&
+      !isOwnUi((sel.anchorNode && sel.anchorNode.nodeType === 1 ? sel.anchorNode : (sel.anchorNode && sel.anchorNode.parentElement)));
+    if (rangeDraft || inLiveSelection) {
+      e.preventDefault(); e.stopPropagation();
+      if (!rangeDraft && inLiveSelection) {
+        // No draft yet (e.g. selection carried over from view mode without a
+        // mouseup in comment mode): build the range draft from the live selection.
+        const anchor = window.FBAnchor && window.FBAnchor.serializeSelection(sel.getRangeAt(0), document.body);
+        if (anchor) { rangeDraft = { anchor, tagSel: null }; draft = null; openDraftCard('“' + anchor.quote.slice(0, 60) + (anchor.quote.length > 60 ? '…' : '') + '”'); }
+      }
+      return;
+    }
+
+    // Markdown documents annotate by selection only — a bare click never drops a
+    // free-floating element pin (which would "float" while scrolling since the
+    // rendered doc has no meaningful element to anchor to).
+    if (IS_MARKDOWN) { e.preventDefault(); e.stopPropagation(); return; }
+
     e.preventDefault(); e.stopPropagation();
 
     const el = e.target;
@@ -1629,6 +1672,10 @@
     draft = null;
     rangeDraft = null;
     draftCard.classList.remove('visible');
+    // Drop the text selection now that the draft is resolved (posted or cancelled).
+    // Kept live until this point so the user sees what they're annotating.
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.removeAllRanges && !sel.isCollapsed) sel.removeAllRanges();
   }
 
   /* ── api helpers ── */

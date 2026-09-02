@@ -3,9 +3,13 @@ function escAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function sdkScript(protoId, email) {
+function sdkScript(protoId, email, contentType) {
+  // data-content-type is emitted ONLY for markdown so the SDK can switch comment
+  // mode to select-text-to-annotate; HTML prototypes keep click-to-pin and get
+  // no attribute (absence = html).
+  const ctAttr = contentType === 'markdown' ? ` data-content-type="markdown"` : '';
   return `<script src="/sdk/anchor.js"></script>\n`
-    + `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"></script>`;
+    + `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"${ctAttr}></script>`;
 }
 
 function previewScript(protoId, highlightId, commentsJson) {
@@ -75,9 +79,9 @@ function scanHtml(html) {
   return { lastHeadClose, lastBodyClose };
 }
 
-function injectSdk(html, protoId, email) {
+function injectSdk(html, protoId, email, contentType) {
   const { lastBodyClose } = scanHtml(html);
-  const sdkTag = sdkScript(protoId, email);
+  const sdkTag = sdkScript(protoId, email, contentType);
   if (lastBodyClose !== -1) {
     return html.slice(0, lastBodyClose) + `\n${sdkTag}\n` + html.slice(lastBodyClose);
   }

@@ -70,6 +70,15 @@ function makeApp() {
       `INSERT INTO comments (id,prototype_id,email,type,comment,created_at,parent_id)
        VALUES ($1,$2,$3,'reply',$4,$5,$6)`,
       [nanoid(12), protoId, 'bob@sap.com', 'confirmed', new Date().toISOString(), cId]);
+    // A markdown range comment: no element_selector; the anchored text lives in
+    // the anchor_* columns. The payload must surface these so a machine reader
+    // knows which passage the note refers to.
+    await getDb().query(
+      `INSERT INTO comments (id,prototype_id,email,type,comment,page_url,created_at,tag,version_id,
+                             anchor_quote,anchor_prefix,anchor_suffix,anchor_start,anchor_end)
+       VALUES ($1,$2,$3,'range',$4,$5,$6,'copy',$7,$8,$9,$10,$11,$12)`,
+      [nanoid(12), protoId, 'carol@sap.com', 'reword this', '/spec', new Date().toISOString(), v1Id,
+       'must authenticate', 'The system ', ' every request', 11, 28]);
     await getDb().query(
       `INSERT INTO explanations (id,prototype_id,element_selector,page_url,body,created_at,updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -92,11 +101,32 @@ function makeApp() {
       .set('Authorization', `Bearer ${rawToken}`);
     expect(res.status).toBe(200);
     expect(res.body.prototype.id).toBe(protoId);
-    expect(res.body.comments).toHaveLength(1);
-    expect(res.body.comments[0].tag).toBe('bug');
-    expect(res.body.comments[0].madeAgainstVersion).toBe(1);
-    expect(res.body.comments[0].replies).toHaveLength(1);
+    const el = res.body.comments.find(c => c.type === 'element');
+    expect(el).toBeTruthy();
+    expect(el.tag).toBe('bug');
+    expect(el.madeAgainstVersion).toBe(1);
+    expect(el.replies).toHaveLength(1);
     expect(res.body.explanations[0].body).toBe('recomputes on change');
+  });
+
+  test('range comments expose their anchored quote/prefix/suffix so a reader can locate the text', async () => {
+    const res = await request(app).get(`/api/v1/prototypes/${protoId}/feedback`)
+      .set('Authorization', `Bearer ${rawToken}`);
+    expect(res.status).toBe(200);
+    const range = res.body.comments.find(c => c.type === 'range');
+    expect(range).toBeTruthy();
+    expect(range.comment).toBe('reword this');
+    expect(range.element).toBeNull();       // range comments have no DOM selector
+    expect(range.anchor).toEqual({
+      quote: 'must authenticate',
+      prefix: 'The system ',
+      suffix: ' every request',
+      start: 11,
+      end: 28,
+    });
+    // Element comments must NOT carry an anchor object.
+    const el = res.body.comments.find(c => c.type === 'element');
+    expect(el.anchor).toBeNull();
   });
 
   test('cross-tenant feedback returns 404', async () => {

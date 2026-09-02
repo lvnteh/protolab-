@@ -7,6 +7,17 @@
 // output, and keep the manifest's lastPulled/lastPushed in sync.
 const manifestLib = require('./manifest.cjs');
 
+// Render a range comment's anchored quote as a compact, single-line preview:
+// collapse all runs of whitespace (incl. the newlines a multi-line/code-block
+// selection carries) to single spaces, then cap length with an ellipsis. Keeps
+// each pull() comment on one line-parseable bullet; the full text stays on the
+// REST anchor.quote field for callers that need it.
+const QUOTE_MAX = 120;
+function previewQuote(quote) {
+  const q = String(quote).replace(/\s+/g, ' ').trim();
+  return q.length > QUOTE_MAX ? q.slice(0, QUOTE_MAX - 1) + '…' : q;
+}
+
 async function list(ctx) {
   const items = await ctx.client.list();
   if (!items.length) return 'No prototypes found for this token.';
@@ -29,8 +40,18 @@ async function pull(ctx, { file_or_id }) {
   for (const c of fb.comments) {
     const tag = c.tag ? `[${c.tag}] ` : '';
     const status = c.resolved ? '✓resolved' : 'open';
-    const el = c.element ? ` @ ${c.element.selector}` : '';
-    lines.push(`  • (${status}, v${c.madeAgainstVersion}) ${tag}${c.comment}${el} — ${c.email}`);
+    // Where the comment is anchored. Element/pin comments carry a DOM selector;
+    // range (markdown text-selection) comments carry no selector — only the
+    // highlighted passage — so fall back to quoting that text. Without this a
+    // range note ("reword this") reaches the agent with no idea what "this" is.
+    // The quote is text.slice() of the rendered doc, so it can contain newlines
+    // (multi-line/code-block selections) and be arbitrarily long — collapse
+    // whitespace and cap it so each comment stays on ONE line-parseable bullet.
+    // The full untruncated quote remains available in the REST anchor.quote field.
+    let loc = '';
+    if (c.element) loc = ` @ ${c.element.selector}`;
+    else if (c.anchor && c.anchor.quote) loc = ` @ “${previewQuote(c.anchor.quote)}”`;
+    lines.push(`  • (${status}, v${c.madeAgainstVersion}) ${tag}${c.comment}${loc} — ${c.email}`);
     for (const r of c.replies || []) lines.push(`      ↳ ${r.comment} — ${r.email}`);
   }
   lines.push('');

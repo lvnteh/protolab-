@@ -67,7 +67,8 @@ router.get('/prototypes/:id/feedback', async (req, res) => {
     const { rows } = await getDb().query(
       `SELECT id, email, type, element_selector, element_label, comment, page_url,
               created_at, tag, x_pct, y_pct, parent_id, version_id,
-              resolved_at, resolved_in_version
+              resolved_at, resolved_in_version,
+              anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end
        FROM comments WHERE prototype_id = $1 ORDER BY created_at ASC`, [proto.id]);
 
     const replyMap = {};
@@ -78,6 +79,17 @@ router.get('/prototypes/:id/feedback', async (req, res) => {
     const comments = rows.filter(r => !r.parent_id).map(r => ({
       id: r.id, type: r.type, tag: r.tag, comment: r.comment, email: r.email,
       element: r.element_selector ? { selector: r.element_selector, label: r.element_label } : null,
+      // Range (markdown text-selection) comments carry no DOM selector — the
+      // anchored passage lives in the anchor_* columns. Surface it so a machine
+      // reader (the local-AI MCP client) knows which text the note refers to;
+      // element/pin comments have no quote → null.
+      anchor: r.anchor_quote ? {
+        quote: r.anchor_quote,
+        prefix: r.anchor_prefix || '',
+        suffix: r.anchor_suffix || '',
+        start: r.anchor_start ?? null,
+        end: r.anchor_end ?? null,
+      } : null,
       pageUrl: r.page_url, createdAt: r.created_at,
       madeAgainstVersion: versionOf[r.version_id] || 1, // null version_id = legacy/backfilled comment → treat as v1
       resolved: !!r.resolved_at,

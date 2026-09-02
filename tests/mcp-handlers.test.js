@@ -192,6 +192,45 @@ test('pull formats element selectors and nested replies', async () => {
   expect(text).toMatch(/↳ agreed/);
 });
 
+test('pull shows the anchored quote for a range (markdown text-selection) comment', async () => {
+  // A range comment has no DOM selector — only the highlighted text. The agent
+  // must see that quote, otherwise the note ("reword this") is unactionable.
+  const { ctx } = makeCtx({
+    feedback: { prototype: { id: 'ID_C', name: 'Spec', publishedVersion: 1, draftVersion: null },
+      comments: [{ id: 'r1', type: 'range', tag: 'copy', comment: 'reword this',
+        madeAgainstVersion: 1, resolved: false, element: null,
+        anchor: { quote: 'must authenticate', prefix: 'The system ', suffix: ' every request', start: 11, end: 28 },
+        replies: [] }],
+      explanations: [] },
+  });
+  const text = await handlers.pull(ctx, { file_or_id: 'checkout.html' });
+  expect(text).toMatch(/reword this/);
+  expect(text).toMatch(/“must authenticate”/); // quoted passage w/ the actual delimiters
+});
+
+test('pull collapses newlines and caps an over-long range quote to keep one bullet per comment', async () => {
+  // A range selection over a fenced code block / multiple lines yields a quote
+  // with embedded newlines; a whole-paragraph selection yields a very long one.
+  // pull() must render each comment on exactly ONE line, so the agent-facing feed
+  // stays line-parseable.
+  const longQuote = 'line A\nline B ' + 'x'.repeat(300);
+  const { ctx } = makeCtx({
+    feedback: { prototype: { id: 'ID_C', name: 'Spec', publishedVersion: 1, draftVersion: null },
+      comments: [{ id: 'r1', type: 'range', tag: 'copy', comment: 'tighten this',
+        madeAgainstVersion: 1, resolved: false, element: null,
+        anchor: { quote: longQuote, prefix: '', suffix: '', start: 0, end: longQuote.length },
+        replies: [] }],
+      explanations: [] },
+  });
+  const text = await handlers.pull(ctx, { file_or_id: 'checkout.html' });
+  const bulletLines = text.split('\n').filter(l => l.trimStart().startsWith('•'));
+  expect(bulletLines).toHaveLength(1);               // no orphaned trailing line
+  expect(bulletLines[0]).not.toMatch(/\n/);
+  expect(bulletLines[0]).toMatch(/line A line B/);   // newline collapsed to a space
+  expect(bulletLines[0]).toMatch(/…/);               // truncated with an ellipsis
+  expect(bulletLines[0].length).toBeLessThan(200);   // bounded
+});
+
 test('list reports when there are no prototypes', async () => {
   const { ctx } = makeCtx({ list: [] });
   expect(await handlers.list(ctx, {})).toMatch(/No prototypes found/i);

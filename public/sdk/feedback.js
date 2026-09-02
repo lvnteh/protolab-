@@ -1328,19 +1328,23 @@
       if (!range) { c.__unresolved = true; return; }
       c.__unresolved = false;
       const color = TAG_COLOR[c.tag] || TAG_COLOR.other;
-      let posTarget = null;
-      try {
+      // Wrap the highlight as one <mark> per intersecting text node. A single
+      // surroundContents() throws on any multi-text-node range — which rendered
+      // markdown produces constantly (a word next to **bold** / `code` / a link
+      // spans two text nodes) — leaving the text un-highlighted AND the pin
+      // unable to track it on scroll. Per-node marks never throw.
+      const marks = (window.FBAnchor && window.FBAnchor.wrapRange(range, document.body, () => {
         const mark = document.createElement('mark');
         mark.className = '__fb-mark';
         mark.style.cssText = `background:${hslAlpha(color, 0.28)};color:inherit;border-radius:2px;cursor:pointer`;
         mark.dataset.rangeId = c.id;
-        range.surroundContents(mark);
-        mark.addEventListener('click', ev => { ev.stopPropagation(); openRangePopover(c, mark); });
-        posTarget = mark;
-      } catch (_) {
-        // Partial-node range can't be wrapped in a single <mark>; pin off the range itself.
-        posTarget = range;
-      }
+        return mark;
+      })) || [];
+      marks.forEach(mark => mark.addEventListener('click', ev => { ev.stopPropagation(); openRangePopover(c, mark); }));
+      // Position the pin off the LAST mark (end of the highlighted run); fall back
+      // to the raw range if nothing could be wrapped (e.g. quote resolved but every
+      // slice was un-wrappable — rare).
+      const posTarget = marks.length ? marks[marks.length - 1] : range;
       const pos = window.FBAnchor && window.FBAnchor.markerPos(posTarget);
       if (!pos) return;
       const marker = document.createElement('div');
@@ -1357,7 +1361,10 @@
     rangeComments.forEach(c => {
       if (c.__unresolved) return;
       if (c.page_url && pageKeyOf(c.page_url) !== currentPageKey()) return;
-      const mark = document.querySelector(`mark.__fb-mark[data-range-id="${c.id}"]`);
+      // A highlight may be several <mark>s (one per text node); the pin sits off
+      // the END of the run, so track the LAST mark for this range.
+      const marks = document.querySelectorAll(`mark.__fb-mark[data-range-id="${c.id}"]`);
+      const mark = marks.length ? marks[marks.length - 1] : null;
       const marker = rangeLayer.querySelector(`[data-range-marker="${c.id}"]`);
       if (mark && marker) {
         const pos = window.FBAnchor && window.FBAnchor.markerPos(mark);
@@ -1606,7 +1613,45 @@
     if (draft) draft.tag = null;
     if (rangeDraft) rangeDraft.tagSel = null;
     draftCard.classList.add('visible');
+    positionDraftCard();
     document.getElementById('__fb-draft-textarea').focus();
+  }
+
+  // Place the draft card next to what's being annotated instead of pinned to the
+  // top-right corner (far from the user's eyes/selection). Anchor rect: the live
+  // text selection for a range comment, else the clicked element for an element
+  // pin. Prefer sitting to the RIGHT of the anchor; flip to the LEFT if it would
+  // collide with the sidebar; clamp within the toolbar/​viewport so it's never cut
+  // off. Falls back to the old top-right slot when there's no usable anchor.
+  function positionDraftCard() {
+    let rect = null;
+    const sel = window.getSelection && window.getSelection();
+    if (rangeDraft && sel && sel.rangeCount && !sel.isCollapsed) {
+      rect = sel.getRangeAt(0).getBoundingClientRect();
+    } else if (draft && draft.selector) {
+      try { const el = document.querySelector(draft.selector); if (el) rect = el.getBoundingClientRect(); } catch (_) {}
+    }
+    const cardW = draftCard.offsetWidth || 296;
+    const cardH = draftCard.offsetHeight || 260;
+    const sidebarW = sidebarExpanded ? 260 : 32;
+    const GAP = 12, TOP_MIN = 52, MARGIN = 8;
+    if (!rect || (rect.width === 0 && rect.height === 0)) {
+      // No anchor — keep the historical top-right placement.
+      draftCard.style.left = 'auto';
+      draftCard.style.right = (sidebarW + MARGIN) + 'px';
+      draftCard.style.top = '60px';
+      return;
+    }
+    const maxRight = window.innerWidth - sidebarW - MARGIN;
+    let left = rect.right + GAP;
+    if (left + cardW > maxRight) left = rect.left - GAP - cardW; // flip left
+    if (left < MARGIN) left = MARGIN;                            // clamp left
+    left = Math.min(left, maxRight - cardW);
+    let top = rect.top;
+    top = Math.max(TOP_MIN, Math.min(top, window.innerHeight - cardH - MARGIN));
+    draftCard.style.right = 'auto';
+    draftCard.style.left = Math.round(left) + 'px';
+    draftCard.style.top = Math.round(top) + 'px';
   }
 
   document.getElementById('__fb-draft-close').addEventListener('click', closeDraft);

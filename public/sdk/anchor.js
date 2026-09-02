@@ -74,9 +74,25 @@
     return { text, nodes };
   }
 
-  function offsetToPoint(nodes, offset) {
+  function offsetToPoint(nodes, offset, isEnd) {
+    // A character offset that lands exactly on a text-node boundary is ambiguous:
+    // it is simultaneously the END of node A and the START of node B. Which node
+    // we pick matters — resolving a quote that lives wholly inside one text node
+    // to (endOfPrevNode → startOfNextNode) manufactures a cross-node range that
+    // Range.surroundContents() then refuses to wrap. So we disambiguate by role:
+    // a START point continues INTO a node (prefer the node whose [start,end) the
+    // offset opens), an END point comes FROM a node (prefer the node whose
+    // (start,end] the offset closes). Non-boundary offsets match either way.
+    if (isEnd) {
+      for (const e of nodes) {
+        if (offset > e.start && offset <= e.end) return { node: e.node, offset: offset - e.start };
+      }
+      // offset === 0 (or before all text): collapse to the very start.
+      const first = nodes[0];
+      return first ? { node: first.node, offset: 0 } : null;
+    }
     for (const e of nodes) {
-      if (offset >= e.start && offset <= e.end) return { node: e.node, offset: offset - e.start };
+      if (offset >= e.start && offset < e.end) return { node: e.node, offset: offset - e.start };
     }
     const last = nodes[nodes.length - 1];
     return last ? { node: last.node, offset: last.node.nodeValue.length } : null;
@@ -165,8 +181,8 @@
     if (!nodes.length) return null;
     const loc = locateQuote(text, anchor);
     if (!loc) return null;
-    const startPt = offsetToPoint(nodes, loc.start);
-    const endPt = offsetToPoint(nodes, loc.end);
+    const startPt = offsetToPoint(nodes, loc.start, false);
+    const endPt = offsetToPoint(nodes, loc.end, true);
     if (!startPt || !endPt) return null;
     const range = (root.ownerDocument || document).createRange();
     range.setStart(startPt.node, startPt.offset);
@@ -174,5 +190,75 @@
     return range;
   }
 
-  return { locateQuote, serializeSelection, resolveAnchor, textIndex, markerPos, PIN_GAP, CTX };
+  // Plan a highlight as one slice per intersecting text node. Range.surroundContents
+  // throws on ANY range that partially selects a non-Text node — which is every
+  // multi-text-node range (rendered markdown splits a paragraph across bold/code/
+  // link nodes, so even a single selected word can span two). Instead we compute,
+  // for each text node the range touches, the [start,end) character slice of that
+  // node covered by the range. Each slice is later wrapped in its OWN <mark> via a
+  // single-text-node sub-range, which never throws. Pure (uses textIndex only) so
+  // it is unit-testable without a live DOM.
+  function rangeSegments(range, root) {
+    const { nodes } = textIndex(root);
+    const startAbs = absOffsetOf(nodes, range.startContainer, range.startOffset);
+    const endAbs = absOffsetOf(nodes, range.endContainer, range.endOffset);
+    if (startAbs == null || endAbs == null) return [];
+    const lo = Math.min(startAbs, endAbs), hi = Math.max(startAbs, endAbs);
+    const segs = [];
+    for (const e of nodes) {
+      const s = Math.max(lo, e.start), en = Math.min(hi, e.end);
+      if (s < en) segs.push({ node: e.node, start: s - e.start, end: en - e.start });
+    }
+    return segs;
+  }
+
+  // Absolute offset in the concatenated text for a (container, offset) point.
+  // Text-node containers are a direct lookup; element containers use a child-index
+  // offset (same resolution rule as serializeSelection's abs()).
+  function absOffsetOf(nodes, container, offset) {
+    const map = new Map(nodes.map(e => [e.node, e.start]));
+    if (map.has(container)) return map.get(container) + offset;
+    const kids = container.childNodes || [];
+    const firstIn = (node) => {
+      if (map.has(node)) return map.get(node);
+      const w = (container.ownerDocument || document).createTreeWalker(node, 4, null);
+      let t; while ((t = w.nextNode())) { if (map.has(t)) return map.get(t); }
+      return null;
+    };
+    const lastEndIn = (node) => {
+      if (map.has(node)) return map.get(node) + node.nodeValue.length;
+      const w = (container.ownerDocument || document).createTreeWalker(node, 4, null);
+      let t, end = null; while ((t = w.nextNode())) { if (map.has(t)) end = map.get(t) + t.nodeValue.length; }
+      return end;
+    };
+    for (let i = offset; i < kids.length; i++) { const p = firstIn(kids[i]); if (p !== null) return p; }
+    for (let i = Math.min(offset, kids.length) - 1; i >= 0; i--) { const p = lastEndIn(kids[i]); if (p !== null) return p; }
+    return null;
+  }
+
+  // Wrap a resolved range in per-text-node <mark>s. `makeMark()` returns a fresh
+  // mark element (caller styles/attributes it); we wrap each segment's slice with
+  // its own single-text-node sub-range (surroundContents-safe) and return the mark
+  // elements in document order. Browser-only (mutates the DOM); the pure planning
+  // lives in rangeSegments, which is what the unit tests exercise.
+  function wrapRange(range, root, makeMark) {
+    const doc = root.ownerDocument || document;
+    const { nodes } = textIndex(root);
+    const segs = rangeSegments(range, root);
+    // Re-fetch nodes by identity is unnecessary; segs already reference live nodes.
+    // Wrap from LAST to FIRST so wrapping (which splits text nodes) never shifts
+    // the offsets of segments we haven't processed yet.
+    const marks = [];
+    for (let i = segs.length - 1; i >= 0; i--) {
+      const seg = segs[i];
+      const sub = doc.createRange();
+      sub.setStart(seg.node, seg.start);
+      sub.setEnd(seg.node, seg.end);
+      const mark = makeMark();
+      try { sub.surroundContents(mark); marks.unshift(mark); } catch (_) { /* skip un-wrappable slice */ }
+    }
+    return marks;
+  }
+
+  return { locateQuote, serializeSelection, resolveAnchor, textIndex, rangeSegments, wrapRange, markerPos, PIN_GAP, CTX };
 });

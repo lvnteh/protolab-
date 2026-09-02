@@ -181,14 +181,17 @@
       const anchor = { quote: c.anchor_quote, prefix: c.anchor_prefix, suffix: c.anchor_suffix, start: c.anchor_start, end: c.anchor_end };
       const range = window.FBAnchor && window.FBAnchor.resolveAnchor(anchor, document.body);
       if (!range) return;
-      try {
+      const color = pinColor(c.tag);
+      // One <mark> per intersecting text node — a single surroundContents() throws
+      // on any multi-text-node range (a word beside **bold**/`code`/a link), which
+      // would leave the highlight invisible. Parity with feedback.js.
+      const marks = (window.FBAnchor && window.FBAnchor.wrapRange(range, document.body, () => {
         const mark = document.createElement('mark');
         mark.className = '__fb-mark';
-        const color = pinColor(c.tag);
         mark.style.cssText = `background:${color.replace('hsl(', 'hsla(').replace(')', ',0.28)')};border-radius:2px;cursor:pointer`;
-        range.surroundContents(mark);
-        mark.addEventListener('click', e => { e.stopPropagation(); showTooltip(c, mark); });
-      } catch (_) { /* partial-node range: skip highlight; pin list still shows it */ }
+        return mark;
+      })) || [];
+      marks.forEach(mark => mark.addEventListener('click', e => { e.stopPropagation(); showTooltip(c, mark); }));
     });
   }
   requestAnimationFrame(() => requestAnimationFrame(renderRanges));

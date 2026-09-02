@@ -187,6 +187,89 @@ test('resolveAnchor returns null when the quote no longer exists', () => {
   expect(A.resolveAnchor(anchor, root)).toBeNull();
 });
 
+// ── boundary-aware resolveAnchor: single-node quotes must stay single-node ──
+// Rendered markdown splits a paragraph into many text nodes (bold/code/links).
+// A quote that lives ENTIRELY inside one text node — but whose start offset
+// coincides with the end of the PREVIOUS node — must resolve to a range wholly
+// inside that one node. The old offsetToPoint returned "previous node at its
+// end" for a start boundary, manufacturing a cross-node range that later made
+// surroundContents throw (invisible, floating highlight). Start boundaries must
+// pick the node the text CONTINUES into; end boundaries the node it came FROM.
+test('resolveAnchor keeps a quote inside a later sibling node single-node (start boundary)', () => {
+  // "hello " | "must" | " world"  →  quote "must" starts exactly at the boundary
+  // between node 0 and node 1, and ends at the boundary between node 1 and node 2.
+  const a = txt('hello ');
+  const b = txt('must');
+  const c = txt(' world');
+  const root = el(el(a), el(b), el(c)); // like <p>hello <strong>must</strong> world</p>
+  makeDoc(root);
+
+  const anchor = A.serializeSelection((() => {
+    const r = root.ownerDocument.createRange(); r.setStart(b, 0); r.setEnd(b, 4); return r;
+  })(), root);
+  expect(anchor.quote).toBe('must');
+
+  const resolved = A.resolveAnchor(anchor, root);
+  expect(resolved).toBeTruthy();
+  // Both boundaries must land on node `b` — a single-node range.
+  expect(resolved.startContainer).toBe(b);
+  expect(resolved.endContainer).toBe(b);
+  expect(resolved.startOffset).toBe(0);
+  expect(resolved.endOffset).toBe(4);
+});
+
+// ── rangeSegments: split a range into per-text-node slices (pure) ──
+// surroundContents throws on ANY multi-text-node range. Instead we plan the
+// highlight as one slice per intersecting text node, then wrap each slice in its
+// own <mark> (a single-text-node sub-range never throws). rangeSegments is the
+// pure planner — the DOM wrapping (wrapRange) is a thin browser-only wrapper.
+test('rangeSegments returns a single slice for a single-node range', () => {
+  const t = txt('The quick brown fox');
+  const root = el(el(t));
+  const doc = makeDoc(root);
+  const r = doc.createRange(); r.setStart(t, 4); r.setEnd(t, 15); // "quick brown"
+
+  const segs = A.rangeSegments(r, root);
+  expect(segs.length).toBe(1);
+  expect(segs[0].node).toBe(t);
+  expect(segs[0].start).toBe(4);
+  expect(segs[0].end).toBe(15);
+});
+
+test('rangeSegments returns one slice per intersecting text node for a cross-node range', () => {
+  // "The system " | "must" (inside strong)  → selection "system must" spans two nodes.
+  const a = txt('The system ');
+  const b = txt('must');
+  const root = el(el(a), el(b));
+  const doc = makeDoc(root);
+  const r = doc.createRange(); r.setStart(a, 4); r.setEnd(b, 4); // "system must"
+
+  const segs = A.rangeSegments(r, root);
+  expect(segs.length).toBe(2);
+  expect(segs[0].node).toBe(a);
+  expect(segs[0].start).toBe(4);        // "system "
+  expect(segs[0].end).toBe(11);
+  expect(segs[1].node).toBe(b);
+  expect(segs[1].start).toBe(0);        // "must"
+  expect(segs[1].end).toBe(4);
+  // Combined slice text == the selected quote.
+  const combined = segs.map(s => s.node.nodeValue.slice(s.start, s.end)).join('');
+  expect(combined).toBe('system must');
+});
+
+test('rangeSegments skips zero-length slices at node boundaries', () => {
+  // A quote that ends exactly at a node boundary must not emit an empty trailing slice.
+  const a = txt('hello ');
+  const b = txt('world');
+  const root = el(el(a), el(b));
+  const doc = makeDoc(root);
+  const r = doc.createRange(); r.setStart(a, 0); r.setEnd(a, 6); // "hello " — ends at boundary
+
+  const segs = A.rangeSegments(r, root);
+  expect(segs.length).toBe(1);
+  expect(segs[0].node).toBe(a);
+});
+
 // ── markerPos: where a range-comment pin sits relative to its highlight ──────
 // The interactive SDK (feedback.js) used to hardcode the pin to left:8px — the
 // far-left viewport edge — which on a centered document lands nowhere near the

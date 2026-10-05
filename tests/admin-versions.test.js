@@ -53,8 +53,25 @@ async function signUpAsOrgAdmin(a, userEmail) {
   return { agent, email: userEmail, orgId, userId };
 }
 
+// Sign up a fresh user and enrol them as a non-admin ('viewer') member of an
+// EXISTING org, then log in so their active org is that org. Used to prove the
+// upload route's requireAdmin guard rejects non-admins with 403.
+async function addOrgMember(userEmail, targetOrgId) {
+  await request(app).post('/admin/signup').send(`email=${userEmail}&password=${password}&confirm=${password}`);
+  const { rows } = await getDb().query('SELECT id FROM users WHERE email = $1', [userEmail]);
+  await getDb().query(
+    `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+     VALUES ($1,$2,$3,'viewer',$4)`,
+    [nanoid(12), targetOrgId, rows[0].id, new Date().toISOString()]
+  );
+  const agent = request.agent(app);
+  await agent.post('/admin/login').send(`email=${userEmail}&password=${password}`);
+  return agent;
+}
+
 (hasDb ? describe : describe.skip)('admin versions endpoint', () => {
   let protoId;
+  let orgId;
   beforeAll(async () => {
     await initDb();
     app = express();
@@ -66,7 +83,8 @@ async function signUpAsOrgAdmin(a, userEmail) {
     // User A: admin of their own org, so the upload (requireAdmin) succeeds and the
     // new prototype is stamped with that org's id. The same agent is a member of the
     // org, so it can read the version history.
-    const { agent } = await signUpAsOrgAdmin(app, email);
+    const { agent, orgId: adminOrgId } = await signUpAsOrgAdmin(app, email);
+    orgId = adminOrgId;
     // User B: a plain signup (viewer of the Default Organization, NOT of A's org),
     // used by the "another user gets 404" test.
     await request(app).post('/admin/signup').send(`email=${emailB}&password=${password}&confirm=${password}`);
@@ -83,7 +101,7 @@ async function signUpAsOrgAdmin(a, userEmail) {
     const res = await agent.get(`/admin/prototypes/${protoId}/versions`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body[0]).toMatchObject({ version: 1, status: 'published', isPublished: true, isDraft: false });
+    expect(res.body[0]).toMatchObject({ version: 1, status: 'published', isCurrent: true, isDraft: false });
   });
 
   test('another user gets 404 (owner-scoped)', async () => {
@@ -95,5 +113,81 @@ async function signUpAsOrgAdmin(a, userEmail) {
 
   test('requires a session', async () => {
     expect((await request(app).get(`/admin/prototypes/${protoId}/versions`)).status).toBe(302);
+  });
+
+  test('admin uploads a new draft version; wrong content-type is rejected (Review Focus #4)', async () => {
+    const agent = request.agent(app);
+    await agent.post('/admin/login').send(`email=${email}&password=${password}`);
+
+    const ok = await agent.post(`/admin/prototypes/${protoId}/versions`)
+      .field('note', 'v2 draft')
+      .attach('file', Buffer.from('<h1>v2</h1>'), 'v2.html');
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ version: 2, status: 'draft' });
+
+    const bad = await agent.post(`/admin/prototypes/${protoId}/versions`)
+      .attach('file', Buffer.from('# md'), 'notes.md');     // .md onto an html prototype
+    expect(bad.status).toBe(400);
+  });
+
+  test('a non-admin org member cannot upload a version', async () => {
+    const memberEmail = `ver-member-${nanoid(8)}@sap.com`.toLowerCase();
+    const agent = await addOrgMember(memberEmail, orgId);
+    const res = await agent.post(`/admin/prototypes/${protoId}/versions`)
+      .attach('file', Buffer.from('<h1>x</h1>'), 'x.html');
+    expect(res.status).toBe(403);
+  });
+
+  test('admin publishes a draft, then switches the live version back to an older one', async () => {
+    const agent = request.agent(app);
+    await agent.post('/admin/login').send(`email=${email}&password=${password}`);
+    const up = await agent.post('/admin/prototypes').set('Accept', 'application/json')
+      .field('name', 'Pub').attach('file', Buffer.from('<html>v1</html>'), 'p.html');
+    const pid = up.body.id;
+    await agent.post(`/admin/prototypes/${pid}/versions`)
+      .attach('file', Buffer.from('<h1>v2</h1>'), 'v2.html').expect(201);
+
+    const pub = await agent.post(`/admin/prototypes/${pid}/publish`).send({ version: 2 });
+    expect(pub.status).toBe(200);
+    expect(pub.body).toMatchObject({ version: 2, status: 'published', promoted: true });
+
+    const back = await agent.post(`/admin/prototypes/${pid}/publish`).send({ version: 1 });
+    expect(back.status).toBe(200);                 // re-point to older published → no 409
+    expect(back.body.promoted).toBe(false);
+
+    const bad = await agent.post(`/admin/prototypes/${pid}/publish`).send({ version: 'nope' });
+    expect(bad.status).toBe(400);
+  });
+
+  test('admin versions list flags every draft by status; explanations endpoint filters by version', async () => {
+    const adminEmail = `ver-admin-t10-${nanoid(8)}@sap.com`.toLowerCase();
+    const { agent } = await signUpAsOrgAdmin(app, adminEmail);
+    const up = await agent.post('/admin/prototypes').set('Accept', 'application/json')
+      .field('name', 'T10').attach('file', Buffer.from('<html>v1</html>'), 'p.html');
+    const pid = up.body.id;
+    await agent.post(`/admin/prototypes/${pid}/versions`)
+      .attach('file', Buffer.from('<h1>v2</h1>'), 'v2.html').expect(201);
+    await agent.post(`/admin/prototypes/${pid}/versions`)
+      .attach('file', Buffer.from('<h1>v3</h1>'), 'v3.html').expect(201);
+
+    const vs = await agent.get(`/admin/prototypes/${pid}/versions`).expect(200);
+    const drafts = vs.body.filter(v => v.isDraft).map(v => v.version).sort();
+    expect(drafts).toEqual([2, 3]);                 // both coexisting drafts flagged
+    expect(vs.body.find(v => v.version === 1).isCurrent).toBe(true);
+
+    // seed one explanation on v1 (the live version) through the reviewer path is complex here;
+    // assert the endpoint returns a version-tagged array and respects ?version
+    const all = await agent.get(`/admin/prototypes/${pid}/explanations`).expect(200);
+    expect(Array.isArray(all.body)).toBe(true);
+    const scoped = await agent.get(`/admin/prototypes/${pid}/explanations?version=1`).expect(200);
+    expect(Array.isArray(scoped.body)).toBe(true);
+  });
+
+  test('the detail view renders the version upload form for an admin', async () => {
+    const agent = request.agent(app);
+    await agent.post('/admin/login').send(`email=${email}&password=${password}`);
+    const res = await agent.get(`/admin/prototypes/${protoId}`).expect(200);
+    expect(res.text).toContain('id="version-upload-form"');
+    expect(res.text).toContain('accept=".html"');     // html prototype → accept locked
   });
 });

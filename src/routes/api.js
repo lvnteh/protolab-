@@ -1,11 +1,9 @@
 // src/routes/api.js
 const express = require('express');
-const { nanoid } = require('nanoid');
 const { getDb } = require('../db');
-const versions = require('../services/versions');
+const annotations = require('../services/annotations');
 
 const router = express.Router();
-const VALID_TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
 
 // Authorize the current request to read/mutate data belonging to `prototypeId`.
 // These /api routes are the reviewer-facing SDK endpoints (no auth middleware),
@@ -62,67 +60,26 @@ router.post('/comments', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden.' });
     }
 
-    const id = nanoid(12);
-
-    if (parentId) {
-      const { rows: parentRows } = await getDb().query(
-        'SELECT id, parent_id FROM comments WHERE id = $1 AND prototype_id = $2',
-        [parentId, prototypeId]
-      );
-      if (!parentRows.length) return res.status(404).json({ error: 'Parent comment not found.' });
-      if (parentRows[0].parent_id) return res.status(400).json({ error: 'Cannot reply to a reply.' });
-
-      await getDb().query(
-        `INSERT INTO comments
-          (id, prototype_id, email, type, comment, created_at, parent_id)
-         VALUES ($1,$2,$3,'reply',$4,$5,$6)`,
-        [id, prototypeId, commentEmail, comment.trim(), new Date().toISOString(), parentId]
-      );
-      return res.status(201).json({ ok: true, id });
-    }
-
-    if (!['general', 'element', 'range'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
-
-    // Range comments require an anchor with a non-empty quote.
-    let anchorCols = { quote: null, prefix: null, suffix: null, start: null, end: null };
-    if (type === 'range') {
-      if (!anchor || !anchor.quote || !String(anchor.quote).trim()) {
-        return res.status(400).json({ error: 'Range comment requires an anchor quote.' });
+    try {
+      let versionId;
+      if (parentId) {
+        const { rows: parentRows } = await getDb().query(
+          'SELECT id, parent_id, version_id FROM comments WHERE id = $1 AND prototype_id = $2',
+          [parentId, prototypeId]);
+        if (!parentRows.length) return res.status(404).json({ error: 'Parent comment not found.' });
+        if (parentRows[0].parent_id) return res.status(400).json({ error: 'Cannot reply to a reply.' });
+        versionId = parentRows[0].version_id;           // reply inherits the parent's version
+      } else {
+        if (!['general', 'element', 'range'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
+        ({ versionId } = await annotations.resolveViewedVersion(prototypeId, req.body.version));
       }
-      anchorCols = {
-        quote: String(anchor.quote),
-        prefix: anchor.prefix != null ? String(anchor.prefix) : null,
-        suffix: anchor.suffix != null ? String(anchor.suffix) : null,
-        start: Number.isInteger(anchor.start) ? anchor.start : null,
-        end: Number.isInteger(anchor.end) ? anchor.end : null,
-      };
+      const { id } = await annotations.createComment(prototypeId, versionId,
+        { email: commentEmail, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, parentId, anchor });
+      return res.status(201).json({ ok: true, id });
+    } catch (e) {
+      if (e.code === 'ANCHOR_REQUIRED') return res.status(400).json({ error: 'Range comment requires an anchor quote.' });
+      throw e;
     }
-
-    const versionId = await versions.publishedVersionId(prototypeId);
-
-    await getDb().query(
-      `INSERT INTO comments
-        (id, prototype_id, email, type, element_selector, element_label, element_tag,
-         breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct, version_id,
-         anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-      [
-        id, prototypeId, commentEmail, type,
-        element?.selector || null,
-        element?.label    || null,
-        element?.tagName  || null,
-        breadcrumb ? JSON.stringify(breadcrumb) : null,
-        comment.trim(),
-        pageUrl || null,
-        new Date().toISOString(),
-        VALID_TAGS.includes(tag) ? tag : null,
-        typeof xPct === 'number' ? xPct : null,
-        typeof yPct === 'number' ? yPct : null,
-        versionId,
-        anchorCols.quote, anchorCols.prefix, anchorCols.suffix, anchorCols.start, anchorCols.end,
-      ]
-    );
-    res.status(201).json({ ok: true, id });
   } catch (err) {
     console.error('POST /comments error:', err);
     res.status(500).json({ error: 'Internal server error.' });
@@ -134,33 +91,8 @@ router.get('/comments/:prototypeId', async (req, res) => {
     if (!(await authorizedForPrototype(req, req.params.prototypeId))) {
       return res.status(403).json({ error: 'Forbidden.' });
     }
-    const { rows } = await getDb().query(
-      `SELECT id, email, type, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id,
-              anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end
-       FROM comments
-       WHERE prototype_id = $1
-       ORDER BY created_at ASC`,
-      [req.params.prototypeId]
-    );
-
-    const parents = [];
-    const replyMap = {};
-
-    rows.forEach(r => {
-      if (r.parent_id) {
-        if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
-        replyMap[r.parent_id].push({ id: r.id, email: r.email, comment: r.comment, created_at: r.created_at });
-      } else {
-        parents.push(r);
-      }
-    });
-
-    const result = parents.map((r, i) => ({
-      ...r,
-      order: i + 1,
-      replies: replyMap[r.id] || [],
-    }));
-
+    const { versionId } = await annotations.resolveViewedVersion(req.params.prototypeId, req.query.version);
+    const result = await annotations.listComments(req.params.prototypeId, versionId);
     res.json(result);
   } catch (err) {
     console.error('GET /comments error:', err);
@@ -202,14 +134,8 @@ router.get('/explanations/:prototypeId', async (req, res) => {
   if (!(await authorizedForPrototype(req, req.params.prototypeId))) {
     return res.status(403).json({ error: 'Forbidden.' });
   }
-  const { rows } = await getDb().query(
-    `SELECT id, element_selector, x_pct, y_pct, page_url, body, created_at, updated_at
-     FROM explanations
-     WHERE prototype_id = $1
-     ORDER BY created_at ASC`,
-    [req.params.prototypeId]
-  );
-  res.json(rows);
+  const { versionId } = await annotations.resolveViewedVersion(req.params.prototypeId, req.query.version);
+  res.json(await annotations.listExplanations(req.params.prototypeId, versionId));
 });
 
 router.post('/explanations', async (req, res) => {
@@ -220,22 +146,14 @@ router.post('/explanations', async (req, res) => {
   if (!(await authorizedForPrototype(req, prototypeId))) {
     return res.status(403).json({ error: 'Forbidden.' });
   }
-  const id = nanoid(12);
-  const now = new Date().toISOString();
   try {
-    await getDb().query(
-      `INSERT INTO explanations (id, prototype_id, element_selector, x_pct, y_pct, page_url, body, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [id, prototypeId, elementSelector,
-       typeof xPct === 'number' ? xPct : null,
-       typeof yPct === 'number' ? yPct : null,
-       pageUrl || null, body.trim(), now, now]
-    );
+    const { versionId } = await annotations.resolveViewedVersion(prototypeId, req.body.version);
+    const { id } = await annotations.createExplanation(prototypeId, versionId, { elementSelector, xPct, yPct, pageUrl, body });
+    res.status(201).json({ ok: true, id });
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ error: 'Explanation already exists for this element.' });
     throw e;
   }
-  res.status(201).json({ ok: true, id });
 });
 
 router.patch('/explanations/:id', async (req, res) => {

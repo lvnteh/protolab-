@@ -62,6 +62,36 @@ async function publish(prototypeId, version) {
   return { version, status: 'published' };
 }
 
+// Admin go-live control. Unlike publish(), this NEVER 409s on an
+// already-published version — it re-points published_version_id so an admin can
+// switch back to any earlier published version. A draft is promoted to published.
+async function setPublished(prototypeId, version) {
+  const { rows } = await getDb().query(
+    'SELECT id, status FROM prototype_versions WHERE prototype_id = $1 AND version = $2',
+    [prototypeId, version]);
+  if (!rows[0]) { const e = new Error('Version not found.'); e.code = 'CONFLICT'; throw e; }
+  const vId = rows[0].id;
+  const promoted = rows[0].status === 'draft';
+  const client = await getDb().connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT 1 FROM prototypes WHERE id = $1 FOR UPDATE', [prototypeId]);
+    if (promoted) await client.query(`UPDATE prototype_versions SET status = 'published' WHERE id = $1`, [vId]);
+    await client.query(
+      `UPDATE prototypes SET published_version_id = $1,
+         draft_version_id = CASE WHEN draft_version_id = $1 THEN NULL ELSE draft_version_id END
+       WHERE id = $2`,
+      [vId, prototypeId]);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  return { version, status: 'published', promoted, publishedVersionId: vId };
+}
+
 // The storage filename the share link should serve = the published version's file.
 async function resolvePublishedFile(prototypeId) {
   const { rows } = await getDb().query(
@@ -91,4 +121,52 @@ async function publishedVersionId(prototypeId) {
   return rows[0] ? rows[0].published_version_id : null;
 }
 
-module.exports = { latestVersion, createDraft, publish, resolvePublishedFile, resolvePublished, publishedVersionId };
+async function listPublishedVersions(prototypeId) {
+  const { rows } = await getDb().query(
+    `SELECT v.version, v.note, v.created_at, v.content_type,
+            COALESCE(v.id = p.published_version_id, false) AS is_current
+     FROM prototype_versions v JOIN prototypes p ON p.id = v.prototype_id
+     WHERE v.prototype_id = $1 AND v.status = 'published'
+     ORDER BY v.version DESC`, [prototypeId]);
+  return rows.map(r => ({
+    version: r.version, note: r.note, createdAt: r.created_at,
+    contentType: r.content_type || 'html', isCurrent: r.is_current,
+  }));
+}
+
+async function listAllVersions(prototypeId) {
+  const { rows } = await getDb().query(
+    `SELECT v.version, v.status, v.note, v.created_at, v.content_type,
+            COALESCE(v.id = p.published_version_id, false) AS is_current
+     FROM prototype_versions v JOIN prototypes p ON p.id = v.prototype_id
+     WHERE v.prototype_id = $1 ORDER BY v.version DESC`, [prototypeId]);
+  return rows.map(r => ({
+    version: r.version, status: r.status, note: r.note, createdAt: r.created_at,
+    contentType: r.content_type || 'html', isCurrent: r.is_current, isDraft: r.status === 'draft',
+  }));
+}
+
+// The version NUMBER of the current published pointer (null when none). Used to
+// label the default (no ?version) view's switcher; a null is fine — the switcher
+// hides when there is <= 1 published version.
+async function publishedVersionNumber(prototypeId) {
+  const { rows } = await getDb().query(
+    `SELECT pv.version FROM prototypes p
+     JOIN prototype_versions pv ON pv.id = p.published_version_id
+     WHERE p.id = $1`, [prototypeId]);
+  return rows[0] ? rows[0].version : null;
+}
+
+async function resolvePublishedVersion(prototypeId, version) {
+  const v = parseInt(version, 10);
+  if (Number.isNaN(v)) return null;
+  const { rows } = await getDb().query(
+    `SELECT id, version, filename, content_type FROM prototype_versions
+     WHERE prototype_id = $1 AND version = $2 AND status = 'published'`,
+    [prototypeId, v]);
+  return rows[0]
+    ? { id: rows[0].id, version: rows[0].version, filename: rows[0].filename, contentType: rows[0].content_type || 'html' }
+    : null;
+}
+
+module.exports = { latestVersion, createDraft, publish, setPublished, resolvePublishedFile, resolvePublished, publishedVersionId, publishedVersionNumber, listPublishedVersions, listAllVersions, resolvePublishedVersion };

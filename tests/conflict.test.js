@@ -88,4 +88,12 @@ let app, userId, protoId, rawToken;
       .send({ version: 2 });
     expect(res.status).toBe(409);
   });
+
+  test('apiV1 rejects an upload whose content-type differs from the prototype (Review Focus #4)', async () => {
+    // `protoId` here is an html prototype owned by `rawToken` (reuse the file's setup)
+    const res = await request(app).post(`/api/v1/prototypes/${protoId}/versions`)
+      .set('Authorization', `Bearer ${rawToken}`)
+      .attach('file', Buffer.from('# markdown'), 'notes.md');
+    expect(res.status).toBe(400);
+  });
 });

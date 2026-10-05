@@ -98,13 +98,16 @@ router.get('/prototypes/:id/feedback', async (req, res) => {
     }));
 
     const { rows: expl } = await getDb().query(
-      `SELECT element_selector, page_url, body FROM explanations
+      `SELECT element_selector, page_url, body, version_id FROM explanations
        WHERE prototype_id = $1 ORDER BY created_at ASC`, [proto.id]);
 
     res.json({
       prototype: { id: proto.id, name: proto.name, publishedVersion: pubVer, draftVersion: draftVer },
       comments,
-      explanations: expl.map(e => ({ elementSelector: e.element_selector, pageUrl: e.page_url, body: e.body })),
+      explanations: expl.map(e => ({
+        elementSelector: e.element_selector, pageUrl: e.page_url, body: e.body,
+        madeAgainstVersion: versionOf[e.version_id] || 1,
+      })),
     });
   } catch (err) {
     console.error('GET /api/v1/prototypes/:id/feedback error:', err);
@@ -158,8 +161,14 @@ router.get('/prototypes/:id/source', async (req, res) => {
 // POST /prototypes/:id/versions — upload HTML as a DRAFT. Conflict-guarded.
 router.post('/prototypes/:id/versions', upload.single('file'), async (req, res) => {
   try {
-    if (!await getOwned(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
+    const proto = await getOwned(req.params.id, req.orgId, 'id, content_type');
+    if (!proto) return res.status(404).json({ error: 'Not found.' });
     if (!req.file) return res.status(400).json({ error: 'Only .html or .md files are accepted.' });
+
+    const lockedType = proto.content_type || 'html';
+    if (filetype.contentTypeForFilename(req.file.originalname) !== lockedType) {
+      return res.status(400).json({ error: `This prototype accepts ${lockedType} files only.` });
+    }
 
     const latest = await versions.latestVersion(req.params.id);
     const base = parseInt(req.body.baseVersion, 10);
@@ -167,11 +176,10 @@ router.post('/prototypes/:id/versions', upload.single('file'), async (req, res) 
       return res.status(409).json({ error: 'Prototype changed since you pulled.', currentVersion: latest });
     }
 
-    const contentType = filetype.contentTypeForFilename(req.file.originalname) || 'html';
-    const filename = `${nanoid(12)}.${filetype.extForContentType(contentType)}`;
-    await storage.putPrototype(filename, req.file.buffer, filetype.mimeForContentType(contentType));
+    const filename = `${nanoid(12)}.${filetype.extForContentType(lockedType)}`;
+    await storage.putPrototype(filename, req.file.buffer, filetype.mimeForContentType(lockedType));
     try {
-      const v = await versions.createDraft(req.params.id, filename, req.body.note, contentType);
+      const v = await versions.createDraft(req.params.id, filename, req.body.note, lockedType);
       res.status(201).json(v);
     } catch (e) {
       // Concurrent push race: UNIQUE(prototype_id, version) collision. Someone

@@ -359,4 +359,69 @@ let app, protoId;
       expect(res.status).toBe(403);
     });
   });
+
+  describe('version-scoped annotations', () => {
+    let vp, v1, v2;
+    beforeAll(async () => {
+      vp = nanoid(12);
+      await getDb().query(
+        'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
+        [vp, 'VP', `${vp}.html`, nanoid(12), new Date().toISOString()]);
+      const mk = async (n) => {
+        const id = nanoid(12);
+        await getDb().query(
+          `INSERT INTO prototype_versions (id,prototype_id,version,filename,status,created_at,content_type)
+           VALUES ($1,$2,$3,$4,'published',$5,'html')`,
+          [id, vp, n, `${id}.html`, new Date().toISOString()]);
+        return id;
+      };
+      v1 = await mk(1); v2 = await mk(2);
+      await getDb().query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [v2, vp]);
+      void v1;
+    });
+
+    test('a comment is stamped against the viewed version and only shows there', async () => {
+      await request(app).post('/api/comments').set('x-test-proto', vp)
+        .send({ prototypeId: vp, type: 'element', comment: 'on v1', element: { selector: '.a' }, version: 1 })
+        .expect(201);
+      const onV1 = await request(app).get(`/api/comments/${vp}?version=1`).set('x-test-proto', vp).expect(200);
+      expect(onV1.body.map(c => c.comment)).toContain('on v1');
+      const onV2 = await request(app).get(`/api/comments/${vp}?version=2`).set('x-test-proto', vp).expect(200);
+      expect(onV2.body.map(c => c.comment)).not.toContain('on v1');
+    });
+
+    test('a reply appears nested in its parent version read (Review Focus #2)', async () => {
+      const parent = await request(app).post('/api/comments').set('x-test-proto', vp)
+        .send({ prototypeId: vp, type: 'element', comment: 'parent', element: { selector: '.b' }, version: 1 }).expect(201);
+      await request(app).post('/api/comments').set('x-test-proto', vp)
+        .send({ prototypeId: vp, comment: 'reply', parentId: parent.body.id, version: 1 }).expect(201);
+      const onV1 = await request(app).get(`/api/comments/${vp}?version=1`).set('x-test-proto', vp).expect(200);
+      const p = onV1.body.find(c => c.comment === 'parent');
+      expect(p.replies.map(r => r.comment)).toContain('reply');
+    });
+
+    test('a draft ?version is not honored — read falls back to the live version (Review Focus #1)', async () => {
+      const dv = nanoid(12);
+      await getDb().query(
+        `INSERT INTO prototype_versions (id,prototype_id,version,filename,status,created_at,content_type)
+         VALUES ($1,$2,3,$3,'draft',$4,'html')`,
+        [dv, vp, `${dv}.html`, new Date().toISOString()]);
+      // writing while "viewing" the draft stamps the LIVE version (v2), not the draft
+      await request(app).post('/api/comments').set('x-test-proto', vp)
+        .send({ prototypeId: vp, type: 'element', comment: 'sneaky', element: { selector: '.c' }, version: 3 }).expect(201);
+      const onV3 = await request(app).get(`/api/comments/${vp}?version=3`).set('x-test-proto', vp).expect(200);
+      expect(onV3.body.map(c => c.comment)).toContain('sneaky'); // ?version=3 fell back to live=v2
+      const onV2 = await request(app).get(`/api/comments/${vp}?version=2`).set('x-test-proto', vp).expect(200);
+      expect(onV2.body.map(c => c.comment)).toContain('sneaky');
+    });
+
+    test('same selector explanation on two versions is OK; same version is 409 (Review Focus #3)', async () => {
+      await request(app).post('/api/explanations').set('x-test-proto', vp)
+        .send({ prototypeId: vp, elementSelector: '.e', pageUrl: '/e', body: 'live one', version: 2 }).expect(201);
+      await request(app).post('/api/explanations').set('x-test-proto', vp)
+        .send({ prototypeId: vp, elementSelector: '.e', pageUrl: '/e', body: 'dupe', version: 2 }).expect(409);
+      await request(app).post('/api/explanations').set('x-test-proto', vp)
+        .send({ prototypeId: vp, elementSelector: '.e', pageUrl: '/e', body: 'v1 one', version: 1 }).expect(201);
+    });
+  });
 });

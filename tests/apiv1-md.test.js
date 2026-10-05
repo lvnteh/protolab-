@@ -22,10 +22,11 @@ let app, protoId, orgId, userId, rawToken;
     await getDb().query("INSERT INTO org_memberships (id,org_id,user_id,role,created_at) VALUES ($1,$2,$3,'admin',$4)",
       [nanoid(12), orgId, userId, new Date().toISOString()]);
     const vid = nanoid(12);
+    // A markdown prototype: content-type is locked to markdown (spec decision 2).
     await getDb().query('INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id,org_id,content_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [protoId, 'V1 Proto', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId, orgId, 'html']);
-    await getDb().query("INSERT INTO prototype_versions (id,prototype_id,version,filename,status,created_at,content_type) VALUES ($1,$2,1,$3,'published',$4,'html')",
-      [vid, protoId, `${protoId}.html`, new Date().toISOString()]);
+      [protoId, 'V1 Proto', `${protoId}.md`, nanoid(12), new Date().toISOString(), userId, orgId, 'markdown']);
+    await getDb().query("INSERT INTO prototype_versions (id,prototype_id,version,filename,status,created_at,content_type) VALUES ($1,$2,1,$3,'published',$4,'markdown')",
+      [vid, protoId, `${protoId}.md`, new Date().toISOString()]);
     await getDb().query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [vid, protoId]);
     const t = await tokens.createToken(userId, 'test', orgId);
     rawToken = t.raw;
@@ -36,7 +37,7 @@ let app, protoId, orgId, userId, rawToken;
   });
   afterAll(async () => { await closeDb(); });
 
-  test('pushes a .md draft with content_type=markdown', async () => {
+  test('pushes a .md draft onto a markdown prototype with content_type=markdown', async () => {
     const res = await request(app)
       .post(`/api/v1/prototypes/${protoId}/versions`)
       .set('Authorization', `Bearer ${rawToken}`)
@@ -47,5 +48,18 @@ let app, protoId, orgId, userId, rawToken;
       'SELECT content_type, filename FROM prototype_versions WHERE prototype_id = $1 AND version = 2', [protoId]);
     expect(rows[0].content_type).toBe('markdown');
     expect(rows[0].filename.endsWith('.md')).toBe(true);
+  });
+
+  test('rejects a mismatched content-type upload (.html onto a markdown prototype) with 400', async () => {
+    const res = await request(app)
+      .post(`/api/v1/prototypes/${protoId}/versions`)
+      .set('Authorization', `Bearer ${rawToken}`)
+      .attach('file', Buffer.from('<h1>nope</h1>'), 'wrong.html')
+      .field('note', 'mismatched push');
+    expect(res.status).toBe(400);
+    // No new version is stored — the lock rejects before persistence.
+    const { rows } = await getDb().query(
+      'SELECT COUNT(*)::int AS n FROM prototype_versions WHERE prototype_id = $1', [protoId]);
+    expect(rows[0].n).toBe(2); // v1 + the markdown draft from the previous test; the .html upload did not land
   });
 });

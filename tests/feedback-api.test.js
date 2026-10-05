@@ -107,6 +107,7 @@ function makeApp() {
     expect(el.madeAgainstVersion).toBe(1);
     expect(el.replies).toHaveLength(1);
     expect(res.body.explanations[0].body).toBe('recomputes on change');
+    expect(res.body.explanations[0].madeAgainstVersion).toBe(1);
   });
 
   test('range comments expose their anchored quote/prefix/suffix so a reader can locate the text', async () => {

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{csrfToken}}">
-<title>{{name}} — Engagement Cloud ProtoLab (Beta!)</title>
+<title>{{name}} — ProtoLab (Beta!)</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh}
@@ -81,6 +81,14 @@ textarea.input{resize:vertical;line-height:1.5}
 .reply-row td { background: hsl(252,83%,98%); border-left: 3px solid hsl(252,83%,57%); padding-left: 32px; font-size: 12px; }
 .reply-row:hover td { background: hsl(252,83%,95%); }
 .reply-badge { display:inline-block; padding:1px 7px; border-radius:20px; font-size:10px; font-weight:700; background:hsl(252,83%,95%); color:hsl(252,83%,40%); margin-left:6px; cursor:pointer; }
+.file-trigger{font-size:12px;padding:7px 14px}
+.file-name{font-size:12px;color:hsl(220,9%,46%);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+.toast-host{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:2000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 6px 24px rgba(15,20,40,.18);opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;max-width:420px}
+.toast.show{opacity:1;transform:none}
+.toast-success{background:#e6f9f0;color:#1a7f4b;border:1px solid #b3e8cf}
+.toast-error{background:hsl(0,84%,97%);color:hsl(0,72%,40%);border:1px solid hsl(0,84%,88%)}
 </style>
 </head>
 <body>
@@ -126,6 +134,8 @@ textarea.input{resize:vertical;line-height:1.5}
           <option value="general">General</option>
           <option value="element">Element</option>
         </select>
+        <label style="font-size:13px;font-weight:600;color:hsl(220,9%,46%)">Version:</label>
+        <select id="comments-version-filter"><option value="">All versions</option></select>
         <div style="flex:1"></div>
         <button class="btn btn-danger" style="font-size:12px;padding:5px 12px" onclick="clearAllComments()">Clear all comments</button>
       </div>
@@ -251,6 +261,10 @@ textarea.input{resize:vertical;line-height:1.5}
 
     <!-- Explanations tab -->
     <div class="tab-panel" id="tab-explanations">
+      <div class="filter-bar">
+        <label style="font-size:13px;font-weight:600;color:hsl(220,9%,46%)">Version:</label>
+        <select id="explanations-version"><option value="">All versions</option></select>
+      </div>
       <div class="tbl-wrap">
         <table class="tbl" id="explanations-table">
           <thead>
@@ -270,6 +284,15 @@ textarea.input{resize:vertical;line-height:1.5}
 
     <!-- Versions tab -->
     <div class="tab-panel" id="tab-versions">
+      <form id="version-upload-form" class="version-upload" data-org-role="{{orgRole}}"
+            style="display:none;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid hsl(220,14%,96%)" onsubmit="return false">
+        <label for="version-file" class="btn btn-secondary file-trigger">Choose file</label>
+        <input type="file" id="version-file" accept="{{uploadAccept}}" class="visually-hidden" />
+        <span id="version-file-name" class="file-name">No file selected</span>
+        <input class="input" type="text" id="version-note" placeholder="Note (optional)" style="max-width:240px" />
+        <button class="btn btn-primary" id="version-upload-btn">Upload new version</button>
+        <span id="version-upload-msg" style="color:hsl(0,84%,50%);font-size:12px"></span>
+      </form>
       <div class="tbl-wrap">
         <table class="tbl" id="versions-table">
           <thead>
@@ -278,10 +301,11 @@ textarea.input{resize:vertical;line-height:1.5}
               <th>Status</th>
               <th>Note</th>
               <th>Created</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="versions-body">
-            <tr><td colspan="4" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Loading…</td></tr>
+            <tr><td colspan="5" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -364,13 +388,17 @@ function renderPager(containerId, infoId, total, page, onPage) {
 // Comments
 let commentsPage = 1;
 let commentType = '';
+let commentVersion = '';
 
 async function loadComments(page) {
   commentsPage = page;
   try {
+    const filterValues = {};
+    if (commentType) filterValues.type = commentType;
+    if (commentVersion) filterValues.version = commentVersion;
     const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/comments', {
       method: 'POST', headers: {'Content-Type':'application/json', 'x-csrf-token': CSRF},
-      body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE, sortingKey: 'created_at', sortingOrder: 'desc', filterValues: commentType ? {type: commentType} : {} })
+      body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE, sortingKey: 'created_at', sortingOrder: 'desc', filterValues })
     });
     if (!resp.ok) { window.location.href = '/admin/login'; return; }
     const {data, totalCount} = await resp.json();
@@ -427,6 +455,30 @@ document.getElementById('type-filter').addEventListener('change', e => {
   loadComments(1);
 });
 
+document.getElementById('comments-version-filter').addEventListener('change', e => {
+  commentVersion = e.target.value;
+  loadComments(1);
+});
+
+// Populate a <select> with the prototype's versions (newest-first). Idempotent per element.
+async function populateVersionSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel || sel.dataset.populated === '1') return;
+  try {
+    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/versions');
+    if (!resp.ok) return;
+    const rows = await resp.json();
+    rows.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.version;
+      opt.textContent = 'v' + v.version + (v.isCurrent ? ' (live)' : '');
+      sel.appendChild(opt);
+    });
+    sel.dataset.populated = '1';
+  } catch (e) { /* ignore */ }
+}
+populateVersionSelect('comments-version-filter');
+
 // Access Log
 let logPage = 1;
 
@@ -463,10 +515,16 @@ async function loadAllowlistCount() {
   }
 }
 
-async function deleteProto() {
-  if (!confirm('Delete this prototype and all its data? This cannot be undone.')) return;
-  await fetch('/admin/prototypes/{{id}}', { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
-  location.href = '/admin/prototypes';
+function deleteProto() {
+  showModal(
+    'Delete this prototype?',
+    'This prototype and all of its data — comments, versions and access logs — will be permanently deleted. This cannot be undone.',
+    async () => {
+      await fetch('/admin/prototypes/{{id}}', { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
+      location.href = '/admin/prototypes';
+    },
+    { confirmLabel: 'Delete prototype' }
+  );
 }
 
 loadComments(1);
@@ -580,13 +638,49 @@ async function clearAllComments() {
 }
 
 let _modalCallback = null;
-function showModal(title, body, onConfirm) {
+const MODAL_ICON = {
+  danger: { bg: 'hsl(0,84%,95%)', svg: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="color:hsl(0,84%,50%)"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>' },
+  primary: { bg: 'hsl(252,83%,95%)', svg: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="color:hsl(252,83%,57%)"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' },
+};
+
+// Styled confirm dialog. opts.danger (default true) picks the red destructive
+// treatment; pass {danger:false} for a neutral/affirmative action.
+function showModal(title, body, onConfirm, opts = {}) {
+  const danger = opts.danger !== false;
+  const icon = danger ? MODAL_ICON.danger : MODAL_ICON.primary;
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').textContent = body;
+  const iconEl = document.querySelector('#confirm-modal .modal__icon');
+  iconEl.style.background = icon.bg;
+  iconEl.innerHTML = icon.svg;
+  const confirmBtn = document.getElementById('modal-confirm');
+  confirmBtn.textContent = opts.confirmLabel || (danger ? 'Delete' : 'Confirm');
+  confirmBtn.className = danger ? 'btn btn-danger' : 'btn btn-primary';
+  confirmBtn.style.cssText = danger ? 'background:hsl(0,84%,50%);color:#fff;border-color:transparent' : '';
   _modalCallback = onConfirm;
   const el = document.getElementById('confirm-modal');
   el.style.display = 'flex';
   requestAnimationFrame(() => el.classList.add('open'));
+}
+
+// Non-blocking styled notification, replacing native alert() calls.
+function toast(message, type = 'success') {
+  let host = document.getElementById('toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toast-host';
+    host.className = 'toast-host';
+    document.body.appendChild(host);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = message;
+  host.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => {
+    t.classList.remove('show');
+    t.addEventListener('transitionend', () => t.remove(), { once: true });
+  }, 3200);
 }
 function closeModal() {
   const el = document.getElementById('confirm-modal');
@@ -614,11 +708,19 @@ async function loadFunnels() {
 // Explanations tab
 let explanationsLoaded = false;
 let adminExplanations = [];
+let explVersion = '';
+
+document.getElementById('explanations-version').addEventListener('change', e => {
+  explVersion = e.target.value;
+  explanationsLoaded = false;
+  loadExplanations();
+});
 
 async function loadExplanations() {
+  populateVersionSelect('explanations-version');
   if (explanationsLoaded) return;
   try {
-    const resp = await fetch('/api/explanations/' + PROTO_ID);
+    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/explanations' + (explVersion ? '?version=' + explVersion : ''));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     adminExplanations = await resp.json();
     renderExplanations();
@@ -680,12 +782,13 @@ async function saveExplanationEdit(id) {
     body: JSON.stringify({ body }),
   });
   if (!resp.ok) {
-    alert('Failed to save. Please try again.');
+    toast('Failed to save. Please try again.', 'error');
     return;
   }
   const idx = adminExplanations.findIndex(e => e.id === id);
   if (idx !== -1) adminExplanations[idx].body = body;
   renderExplanations();
+  toast('Explanation saved.');
 }
 
 function deleteExplanation(id) {
@@ -714,6 +817,57 @@ function toggleReplies(parentId) {
 
 // Versions tab
 let versionsLoaded = false;
+
+// Reveal the upload form only for admins (data-org-role rendered server-side).
+(function () {
+  const form = document.getElementById('version-upload-form');
+  if (form && form.dataset.orgRole === 'admin') form.style.display = 'flex';
+})();
+
+document.getElementById('version-file')?.addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  document.getElementById('version-file-name').textContent = f ? f.name : 'No file selected';
+  document.getElementById('version-upload-msg').textContent = '';
+});
+
+document.getElementById('version-upload-btn')?.addEventListener('click', async () => {
+  const fileInput = document.getElementById('version-file');
+  const f = fileInput.files[0];
+  const msg = document.getElementById('version-upload-msg');
+  if (!f) { msg.textContent = 'Choose a file first.'; return; }
+  msg.textContent = '';
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('note', document.getElementById('version-note').value || '');
+  const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/versions',
+    { method: 'POST', headers: { 'x-csrf-token': CSRF }, body: fd, credentials: 'include' });
+  if (resp.status === 201) {
+    fileInput.value = '';
+    document.getElementById('version-file-name').textContent = 'No file selected';
+    document.getElementById('version-note').value = '';
+    versionsLoaded = false; await loadVersions();
+    toast('New version uploaded as a draft.');
+  } else {
+    const e = await resp.json().catch(() => ({}));
+    msg.textContent = e.error || ('HTTP ' + resp.status);
+  }
+});
+
+function publishVersion(n) {
+  showModal(
+    'Make v' + n + ' live?',
+    'Version ' + n + ' will become the live version shown to all reviewers. Earlier versions stay available in the history.',
+    async () => {
+      const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/publish',
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': CSRF },
+          body: JSON.stringify({ version: n }), credentials: 'include' });
+      if (resp.ok) { versionsLoaded = false; await loadVersions(); toast('v' + n + ' is now live.'); }
+      else toast('Could not publish v' + n + ' (HTTP ' + resp.status + ').', 'error');
+    },
+    { danger: false, confirmLabel: 'Make live' }
+  );
+}
+
 async function loadVersions() {
   if (versionsLoaded) return;
   try {
@@ -722,27 +876,30 @@ async function loadVersions() {
     const rows = await resp.json();
     const tbody = document.getElementById('versions-body');
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">No versions yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">No versions yet.</td></tr>`;
       versionsLoaded = true;
       return;
     }
     tbody.innerHTML = rows.map(v => {
-      const badge = v.isPublished
-        ? '<span class="badge badge-general">published (live)</span>'
+      const badge = v.isCurrent
+        ? '<span class="badge badge-general">live</span>'
         : v.isDraft
           ? '<span class="badge badge-element">draft</span>'
-          : `<span class="badge badge-other">${esc(v.status)}</span>`;
+          : '<span class="badge badge-other">published</span>';
+      const action = v.isCurrent ? ''
+        : `<button class="btn btn-secondary" style="font-size:11px;padding:4px 8px" onclick="publishVersion(${v.version})">${v.isDraft ? 'Publish' : 'Set live'}</button>`;
       return `<tr>
         <td><strong>v${v.version}</strong></td>
         <td>${badge}</td>
         <td class="comment-text">${esc(v.note || '—')}</td>
         <td class="ts">${fmtDate(v.createdAt)}</td>
+        <td>${action}</td>
       </tr>`;
     }).join('');
     versionsLoaded = true;
   } catch (e) {
     document.getElementById('versions-body').innerHTML =
-      `<tr><td colspan="4" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Failed to load versions.</td></tr>`;
+      `<tr><td colspan="5" style="text-align:center;padding:40px;color:hsl(220,9%,46%)">Failed to load versions.</td></tr>`;
   }
 }
 </script>

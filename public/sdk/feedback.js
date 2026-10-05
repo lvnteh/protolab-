@@ -10,6 +10,20 @@
   // selection-only and keeps the text (I-beam) cursor instead of the crosshair.
   const IS_MARKDOWN = script.getAttribute('data-content-type') === 'markdown';
 
+  // Versioned annotations: the viewed version (null when the delivery view omits
+  // the attrs — half-deployed safety: behave exactly as today). VIEW_BASE drives
+  // the switcher reload; VERSIONS lists the published versions for the switcher.
+  let VERSION = script.getAttribute('data-version');
+  VERSION = (VERSION == null || VERSION === '') ? null : parseInt(VERSION, 10);
+  const VIEW_BASE = script.getAttribute('data-view-base') || '';
+  let VERSIONS = [];
+  try { VERSIONS = JSON.parse(script.getAttribute('data-versions') || '[]'); } catch (e) { VERSIONS = []; }
+
+  function withVersion(url) {
+    if (VERSION == null) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'version=' + VERSION;
+  }
+
   const TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
   const TAG_LABEL = { bug: 'Bug', copy: 'Copy', question: 'Question', idea: 'Idea', other: 'Other' };
   const TAG_COLOR = {
@@ -62,11 +76,39 @@
     .fb-mode-btn:hover { color: #fff; }
     .fb-mode-btn.active-view    { background: #fff; color: hsl(252,83%,57%); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
     .fb-mode-btn.active-comment { background: rgba(255,255,255,.25); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .fb-mode-btn.active-review  { background: #fff; color: hsl(252,83%,57%); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
     .fb-mode-btn.active-explain { background: hsl(38,92%,50%); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 
+    /* Right-side toolbar cluster: mode switcher + the view-only hide-comments pill. */
+    #__fb-toolbar-right { display: flex; align-items: center; gap: 10px; }
+    #__fb-hide-toggle {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; height: 26px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.15);
+      color: rgba(255,255,255,.9); cursor: pointer;
+      font-size: 12px; font-weight: 500;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      transition: background .15s, color .15s;
+    }
+    #__fb-hide-toggle:hover { background: rgba(255,255,255,.25); color: #fff; }
+    #__fb-hide-toggle.active { background: #fff; color: hsl(252,83%,57%); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+    #__fb-version-switcher {
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
+      margin-left: 2px; padding: 4px 26px 4px 10px; height: 26px;
+      border-radius: 6px; border: 1px solid rgba(255,255,255,.25);
+      background-color: rgba(255,255,255,.15);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 9px center; background-size: 10px;
+      color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 12px; font-weight: 500; line-height: 1.4; cursor: pointer; outline: none;
+      transition: background-color .15s, border-color .15s;
+    }
+    #__fb-version-switcher:hover { background-color: rgba(255,255,255,.25); }
+    #__fb-version-switcher:focus-visible { border-color: rgba(255,255,255,.6); box-shadow: 0 0 0 2px rgba(255,255,255,.25); }
+    #__fb-version-switcher option { color: hsl(222,47%,11%); background: #fff; font-weight: 500; }
+
     #__fb-comment-banner {
-      position: fixed; top: 44px; left: 0; right: 0; z-index: 2147483646;
+      position: fixed; top: 44px; left: 0; right: var(--fb-sidebar-w, 32px); z-index: 2147483646;
       background: hsl(252,83%,45%); color: #fff; text-align: center;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 12px; padding: 6px; pointer-events: none; display: none;
@@ -201,7 +243,7 @@
 
     /* ── explain mode ── */
     #__fb-explain-banner {
-      position: fixed; top: 44px; left: 0; right: 0; z-index: 2147483646;
+      position: fixed; top: 44px; left: 0; right: var(--fb-sidebar-w, 32px); z-index: 2147483646;
       background: hsl(38,92%,50%); color: #fff; text-align: center;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 12px; padding: 6px; pointer-events: none; display: none;
@@ -432,26 +474,44 @@
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#fff" width="18" height="18" style="flex-shrink:0"><path d="M13.13 22.19L11.5 18.36C13.07 17.78 14.54 17 15.9 16.09L13.13 22.19M5.64 12.5L1.81 10.87L7.91 8.1C7 9.46 6.22 10.93 5.64 12.5M21.61 2.39C21.61 2.39 16.66 .269 11 5.93C8.81 8.12 7.5 10.53 6.65 12.64C6.37 13.39 6.56 14.21 7.11 14.77L9.24 16.89C9.79 17.45 10.61 17.63 11.36 17.35C13.5 16.53 15.88 15.19 18.07 13C23.73 7.34 21.61 2.39 21.61 2.39M14.54 9.46C13.76 8.68 13.76 7.41 14.54 6.63S16.59 5.85 17.37 6.63C18.14 7.41 18.15 8.68 17.37 9.46C16.59 10.24 15.32 10.24 14.54 9.46M8.88 16.53L7.47 15.12L8.88 16.53M6.24 22L9.88 18.36C9.54 18.27 9.21 18.12 8.91 17.91L4.83 22H6.24M2 22H3.41L8.18 17.24L6.76 15.83L2 20.59V22M2 19.17L6.09 15.09C5.88 14.79 5.73 14.46 5.64 14.12L2 17.76V19.17Z"/></svg>
       <span id="__fb-toolbar-title">ProtoLab</span>
     </div>
-    <div id="__fb-mode-switcher">
-      <button class="fb-mode-btn active-view" data-mode="view">
-        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        View
-      </button>
-      <button class="fb-mode-btn" data-mode="comment">
-        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        Comment
-      </button>
-      <button class="fb-mode-btn" data-mode="review">
-        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        Review
-      </button>
-      <button class="fb-mode-btn" data-mode="explain">
-        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        Explain
-      </button>
+    <div id="__fb-toolbar-right">
+      <div id="__fb-mode-switcher">
+        <button class="fb-mode-btn active-view" data-mode="view">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          View
+        </button>
+        <button class="fb-mode-btn" data-mode="comment">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Comment
+        </button>
+        <button class="fb-mode-btn" data-mode="explain">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Explain
+        </button>
+      </div>
+      <button id="__fb-hide-toggle" type="button" aria-pressed="false"></button>
     </div>
   `;
   document.body.insertBefore(toolbar, document.body.firstChild);
+
+  // Version switcher: only when more than one published version exists. Reloads
+  // the share URL with ?version=N (CSP-safe: addEventListener, no inline handler).
+  if (VERSIONS.length > 1) {
+    const toolbarLeft = toolbar.querySelector('#__fb-toolbar-left');
+    const sel = document.createElement('select');
+    sel.id = '__fb-version-switcher';
+    VERSIONS.forEach(function (v) {
+      const opt = document.createElement('option');
+      opt.value = v.version;
+      opt.textContent = 'v' + v.version + (v.isCurrent ? ' (live)' : '');
+      if (VERSION != null && v.version === VERSION) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', function () {
+      window.location.assign(VIEW_BASE + '?version=' + sel.value);
+    });
+    toolbarLeft.appendChild(sel);
+  }
 
   const commentBanner = document.createElement('div');
   commentBanner.id = '__fb-comment-banner';
@@ -575,6 +635,7 @@
 
   /* ── state ── */
   let mode = 'view';
+  let commentsHidden = false; // View-tab toggle: hide on-canvas pins + range highlights for a clean read
   let pins = [];          // [{id,email,element_selector,comment,created_at,order,tag,x_pct,y_pct,page_url}]
   let generalComments = [];
   let sidebarExpanded = false;
@@ -602,12 +663,26 @@
   setInterval(() => { now = Date.now(); }, 1000);
 
   /* ── mode switching ── */
+  const hideToggle = toolbar.querySelector('#__fb-hide-toggle');
+  const EYE_SVG = '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF_SVG = '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  // The pill advertises the action it performs: when comments are showing it
+  // offers to hide them (eye-off); when hidden it offers to show them (eye).
+  function renderHideToggle() {
+    hideToggle.classList.toggle('active', commentsHidden);
+    hideToggle.setAttribute('aria-pressed', String(commentsHidden));
+    hideToggle.innerHTML = (commentsHidden ? EYE_SVG : EYE_OFF_SVG)
+      + (commentsHidden ? 'Show comments' : 'Hide comments');
+  }
+
   function setMode(m) {
     mode = m;
     document.querySelectorAll('.fb-mode-btn').forEach(btn => {
       const bm = btn.dataset.mode;
       btn.className = 'fb-mode-btn' + (bm === m ? ` active-${m}` : '');
     });
+    // The hide-comments pill only makes sense on the View tab.
+    hideToggle.style.display = (m === 'view') ? 'inline-flex' : 'none';
     document.body.classList.toggle('__fb-comment-mode', m === 'comment');
     document.body.classList.toggle('__fb-explain-mode', m === 'explain');
     if (m !== 'comment') closeDraft();
@@ -617,6 +692,14 @@
     // explain layer is driven by the RAF loop; clear it immediately when leaving explain mode
     if (m !== 'explain') { explainContainer.innerHTML = ''; explainMarkerEls = {}; }
   }
+
+  renderHideToggle();
+  hideToggle.addEventListener('click', () => {
+    commentsHidden = !commentsHidden;
+    renderHideToggle();
+    renderPinLayer();
+    renderRangeLayer();
+  });
 
   toolbar.querySelectorAll('.fb-mode-btn').forEach(btn => {
     btn.addEventListener('click', () => setMode(btn.dataset.mode));
@@ -635,7 +718,7 @@
   /* ── load pins ── */
   async function loadPins() {
     try {
-      const resp = await fetch('/api/comments/' + PROTO_ID, { credentials: 'include' });
+      const resp = await fetch(withVersion('/api/comments/' + PROTO_ID), { credentials: 'include' });
       if (resp.ok) {
         const all = await resp.json();
         pins = all.filter(c => c.element_selector);
@@ -654,7 +737,7 @@
 
   async function loadExplanations() {
     try {
-      const resp = await fetch('/api/explanations/' + PROTO_ID, { credentials: 'include' });
+      const resp = await fetch(withVersion('/api/explanations/' + PROTO_ID), { credentials: 'include' });
       if (resp.ok) {
         explanations = await resp.json();
       }
@@ -666,6 +749,7 @@
     sidebar.classList.toggle('expanded', expanded);
     sidebar.classList.toggle('collapsed', !expanded);
     document.body.style.paddingRight = expanded ? '260px' : '32px';
+    document.body.style.setProperty('--fb-sidebar-w', expanded ? '260px' : '32px');
     if (persist) {
       try { localStorage.setItem('__fb_sidebar_' + PROTO_ID, expanded ? '1' : '0'); } catch (_) {}
     }
@@ -896,7 +980,7 @@
         await fetch('/api/explanations/' + draft.existingId, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ body }),
+          body: JSON.stringify({ body, version: VERSION }),
           credentials: 'include',
         });
         const idx = explanations.findIndex(e => e.id === draft.existingId);
@@ -912,6 +996,7 @@
             yPct: draft.yPct,
             pageUrl: location.href,
             body,
+            version: VERSION,
           }),
           credentials: 'include',
         });
@@ -1079,7 +1164,8 @@
     pinContainer.innerHTML = '';
     pinElements = {};
     clusterElements = [];
-    if (mode === 'review' || mode === 'explain') return;
+    if (mode === 'explain') return;
+    if (mode === 'view' && commentsHidden) return;
 
     const visibleItems = pins
       .map((p, i) => ({ pin: p, idx: i + 1, pos: pinPositions[p.id] }))
@@ -1319,7 +1405,8 @@
       parent.normalize && parent.normalize();
     });
     rangeLayer.innerHTML = '';
-    if (mode === 'review' || mode === 'explain') return;
+    if (mode === 'explain') return;
+    if (mode === 'view' && commentsHidden) return;
 
     rangeComments.forEach(c => {
       if (c.page_url && pageKeyOf(c.page_url) !== currentPageKey()) return;
@@ -1728,7 +1815,7 @@
     const resp = await fetch('/api/comments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prototypeId: PROTO_ID, email: EMAIL, ...payload }),
+      body: JSON.stringify({ prototypeId: PROTO_ID, email: EMAIL, version: VERSION, ...payload }),
       credentials: 'include',
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -1856,5 +1943,6 @@
   } else {
     sidebar.classList.add('collapsed');
     document.body.style.paddingRight = '32px';
+    document.body.style.setProperty('--fb-sidebar-w', '32px');
   }
 })();

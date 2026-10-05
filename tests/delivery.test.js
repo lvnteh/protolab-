@@ -112,4 +112,30 @@ let app, protoId, shareToken;
     expect(res.text).toContain('HTML AGAIN');
     expect(res.headers['content-security-policy']).toBeUndefined();
   });
+
+  test('a draft or unknown ?version redirects to the live view (Review Focus #1)', async () => {
+    // The suite has published v1 (html) earlier; v999 does not exist, so it
+    // must 302 to the bare live view rather than leaking/serving anything.
+    const agent = request.agent(app);
+    await agent.post(`/p/${shareToken}/enter`).send('email=allowed@example.com');
+    const res = await agent.get(`/p/${shareToken}/view?version=999`).redirects(0);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe(`/p/${shareToken}/view`);
+  });
+
+  test('a valid published ?version serves that version', async () => {
+    // Seed a dedicated published version through storage so its file is
+    // guaranteed readable (the backfill v1's file was written via direct fs,
+    // not storage, so it isn't a reliable target here).
+    const vfile = `${protoId}-vx.html`;
+    await storage.putPrototype(vfile, '<!DOCTYPE html><html><head></head><body>VERSIONED</body></html>');
+    const v = await versions.createDraft(protoId, vfile, 'vx');
+    await versions.setPublished(protoId, v.version);
+
+    const agent = request.agent(app);
+    await agent.post(`/p/${shareToken}/enter`).send('email=allowed@example.com');
+    const res = await agent.get(`/p/${shareToken}/view?version=${v.version}`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(`data-version="${v.version}"`);
+  });
 });

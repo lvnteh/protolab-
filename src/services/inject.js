@@ -3,13 +3,21 @@ function escAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function sdkScript(protoId, email, contentType) {
+function sdkScript(protoId, email, contentType, versionCtx) {
   // data-content-type is emitted ONLY for markdown so the SDK can switch comment
   // mode to select-text-to-annotate; HTML prototypes keep click-to-pin and get
   // no attribute (absence = html).
   const ctAttr = contentType === 'markdown' ? ` data-content-type="markdown"` : '';
+  // Version context (reviewer switcher). CSP-safe: data-attributes only, no inline
+  // script. Omitted entirely when no context is supplied so output is unchanged.
+  let vAttrs = '';
+  if (versionCtx) {
+    if (versionCtx.version != null) vAttrs += ` data-version="${escAttr(String(versionCtx.version))}"`;
+    if (versionCtx.viewBase) vAttrs += ` data-view-base="${escAttr(versionCtx.viewBase)}"`;
+    if (Array.isArray(versionCtx.versions)) vAttrs += ` data-versions="${escAttr(JSON.stringify(versionCtx.versions))}"`;
+  }
   return `<script src="/sdk/anchor.js"></script>\n`
-    + `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"${ctAttr}></script>`;
+    + `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"${ctAttr}${vAttrs}></script>`;
 }
 
 function previewScript(protoId, highlightId, commentsJson) {
@@ -79,9 +87,9 @@ function scanHtml(html) {
   return { lastHeadClose, lastBodyClose };
 }
 
-function injectSdk(html, protoId, email, contentType) {
+function injectSdk(html, protoId, email, contentType, versionCtx) {
   const { lastBodyClose } = scanHtml(html);
-  const sdkTag = sdkScript(protoId, email, contentType);
+  const sdkTag = sdkScript(protoId, email, contentType, versionCtx);
   if (lastBodyClose !== -1) {
     return html.slice(0, lastBodyClose) + `\n${sdkTag}\n` + html.slice(lastBodyClose);
   }

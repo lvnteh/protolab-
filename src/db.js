@@ -132,9 +132,23 @@ async function initDb() {
     )
   `);
 
+  // Version-scope explanations (mirrors comments.version_id). Nullable: a legacy
+  // row carries NULL until the data migration clears it; a new row is stamped
+  // with the viewed version by annotations.js.
+  await _pool.query(`ALTER TABLE explanations ADD COLUMN IF NOT EXISTS version_id TEXT`);
+
+  // Recreate the uniqueness guard with version in scope. COALESCE(version_id,'')
+  // (not NULL-distinct) so two NULL-version rows on one selector still collide —
+  // preserving the 23505 -> 409 edit-in-place upsert contract — while the SAME
+  // selector/page on a DIFFERENT version is allowed.
+  await _pool.query(`DROP INDEX IF EXISTS idx_explanations_unique`);
   await _pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_explanations_unique
-      ON explanations(prototype_id, element_selector, COALESCE(page_url, ''))
+      ON explanations(prototype_id, element_selector, COALESCE(page_url, ''), COALESCE(version_id, ''))
+  `);
+  await _pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_explanations_version
+      ON explanations(prototype_id, version_id)
   `);
 
   // --- Multi-tenancy ---
@@ -339,6 +353,14 @@ async function initDb() {
       ALTER TABLE comments   ADD  CONSTRAINT comments_version_fk
         FOREIGN KEY (version_id) REFERENCES prototype_versions(id) ON DELETE SET NULL;
 
+      UPDATE explanations SET version_id = NULL
+        WHERE version_id IS NOT NULL
+          AND version_id NOT IN (SELECT id FROM prototype_versions);
+      ALTER TABLE explanations DROP CONSTRAINT IF EXISTS explanations_version_id_fkey;
+      ALTER TABLE explanations DROP CONSTRAINT IF EXISTS explanations_version_fk;
+      ALTER TABLE explanations ADD  CONSTRAINT explanations_version_fk
+        FOREIGN KEY (version_id) REFERENCES prototype_versions(id) ON DELETE SET NULL;
+
       ALTER TABLE prototypes DROP CONSTRAINT IF EXISTS prototypes_published_version_id_fkey;
       ALTER TABLE prototypes DROP CONSTRAINT IF EXISTS prototypes_pub_ver_fk;
       ALTER TABLE prototypes ADD  CONSTRAINT prototypes_pub_ver_fk
@@ -434,6 +456,18 @@ async function initDb() {
          ON CONFLICT (name) DO NOTHING`,
         ['v1-version-backfill', new Date().toISOString()]
       );
+    }
+
+    // Explanations version-scope data migration (runs AFTER v1 backfill so
+    // parent comments already carry version_id). Marker-guarded, same lock.
+    const { rows: expMarker } = await lockClient.query(
+      'SELECT 1 FROM schema_migrations WHERE name = $1', ['explanations-version-scope-v1']);
+    if (!expMarker.length) {
+      await runAnnotationVersionBackfill(lockClient);
+      await lockClient.query(
+        `INSERT INTO schema_migrations (name, applied_at) VALUES ($1, $2)
+         ON CONFLICT (name) DO NOTHING`,
+        ['explanations-version-scope-v1', new Date().toISOString()]);
     }
 
     // --- Org multi-tenancy migration (P1) ---
@@ -535,6 +569,40 @@ async function closeDb() {
   }
 }
 
+async function seedDevUser() {
+  // In dev mode: ensure a dev user + org exists so the auto-auth middleware
+  // can reference valid IDs. Runs once on startup (idempotent).
+  if (process.env.NODE_ENV === 'production') return;
+
+  const devUserId = 'dev-user-12345';
+  const devOrgId = 'dev-org-12345';
+
+  try {
+    // Insert dev user if it doesn't exist.
+    await _pool.query(
+      `INSERT INTO users (id, email, password_hash, created_at)
+       VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+      [devUserId, 'dev@sap.com', 'dev-hash', new Date().toISOString()]
+    );
+
+    // Insert dev org if it doesn't exist.
+    await _pool.query(
+      `INSERT INTO organizations (id, name, created_at)
+       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [devOrgId, 'Dev Organization', new Date().toISOString()]
+    );
+
+    // Add dev user to dev org as admin (idempotent).
+    await _pool.query(
+      `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+       VALUES ($1, $2, $3, 'admin', $4) ON CONFLICT DO NOTHING`,
+      [`m_dev_${devUserId}`, devOrgId, devUserId, new Date().toISOString()]
+    );
+  } catch (err) {
+    console.error('Warning: Failed to seed dev user:', err.message);
+  }
+}
+
 // Test-isolation helper: wipe all DATA tables (not schema_migrations, which is
 // migration bookkeeping) in one FK-safe TRUNCATE. RESTART IDENTITY resets the
 // SERIAL sequences on access_log/nav_events; CASCADE lets the single statement
@@ -550,4 +618,17 @@ async function cleanDb() {
   `);
 }
 
-module.exports = { initDb, getDb, closeDb, cleanDb };
+// One-time data migration for version-scoped annotations. Stamps every reply
+// with its parent's version (new replies created by the pre-fix path carry
+// NULL), then clears all legacy prototype-scoped explanations (Option A: no
+// version reference survives). Idempotent; safe to re-run.
+async function runAnnotationVersionBackfill(db) {
+  await db.query(`
+    UPDATE comments c SET version_id = p.version_id
+    FROM comments p
+    WHERE c.parent_id = p.id AND c.version_id IS NULL AND p.version_id IS NOT NULL
+  `);
+  await db.query(`DELETE FROM explanations WHERE version_id IS NULL`);
+}
+
+module.exports = { initDb, getDb, closeDb, cleanDb, seedDevUser, runAnnotationVersionBackfill };

@@ -13,6 +13,8 @@ const storage = require('../services/storage');
 const markdown = require('../services/markdown');
 const apiTokens = require('../services/tokens');
 const filetype = require('../services/filetype');
+const versions = require('../services/versions');
+const annotations = require('../services/annotations');
 
 const router = express.Router();
 
@@ -224,7 +226,7 @@ router.get('/prototypes/:id', orgs.requireOrg, async (req, res) => {
   if (!proto) return res.status(404).send('Not found.');
   const { rows: allowRows } = await getDb().query('SELECT email FROM allowlist WHERE prototype_id = $1', [proto.id]);
   const allowlist = allowRows.map(r => r.email).join('\n');
-  res.send(renderView('admin-prototype-detail.html', { id: proto.id, name: escapeHtml(proto.name), allowlist: escapeHtml(allowlist), shareToken: proto.share_token, csrfToken: res.locals.csrfToken || '', orgRole: req.orgRole }));
+  res.send(renderView('admin-prototype-detail.html', { id: proto.id, name: escapeHtml(proto.name), allowlist: escapeHtml(allowlist), shareToken: proto.share_token, csrfToken: res.locals.csrfToken || '', orgRole: req.orgRole, contentType: proto.content_type || 'html', uploadAccept: proto.content_type === 'markdown' ? '.md' : '.html' }));
 });
 
 router.post('/prototypes/:id/settings', orgs.requireAdmin, async (req, res) => {
@@ -240,6 +242,53 @@ router.post('/prototypes/:id/settings', orgs.requireAdmin, async (req, res) => {
     );
   }
   res.redirect(`/admin/prototypes/${proto.id}?saved=1`);
+});
+
+// Upload a new prototype version as a DRAFT (never flips the live pointer). The
+// content-type is locked to the prototype's existing type (decision 2 — no mixed
+// html/markdown histories): a mismatched extension is rejected with 400 before
+// anything is stored. A unique-violation on the version number maps to 409 with
+// the current latest version so the client can reload and retry.
+router.post('/prototypes/:id/versions', orgs.requireAdmin, upload.single('file'), async (req, res) => {
+  const proto = await getOrgPrototype(req.params.id, req.orgId, 'id, content_type');
+  if (!proto) return res.status(404).json({ error: 'Not found.' });
+  if (!req.file) return res.status(400).json({ error: 'Only .html or .md files are accepted.' });
+
+  const uploadedType = filetype.contentTypeForFilename(req.file.originalname);
+  const lockedType = proto.content_type || 'html';
+  if (uploadedType !== lockedType) {
+    return res.status(400).json({ error: `This prototype accepts ${lockedType} files only.` });
+  }
+
+  const filename = `${nanoid(12)}.${filetype.extForContentType(lockedType)}`;
+  await storage.putPrototype(filename, req.file.buffer, filetype.mimeForContentType(lockedType));
+  try {
+    const v = await versions.createDraft(req.params.id, filename, req.body.note, lockedType);
+    res.status(201).json(v);
+  } catch (e) {
+    if (e.code === '23505') {
+      await storage.deletePrototype(filename).catch(() => {});
+      return res.status(409).json({ error: 'Prototype changed; reload and retry.', currentVersion: await versions.latestVersion(req.params.id) });
+    }
+    throw e;
+  }
+});
+
+// Set (or switch) the live published version. Delegates to versions.setPublished,
+// which promotes a draft or re-points to any already-published version (including
+// an older one) WITHOUT the 409 that publish() raises. 400 on a non-integer
+// version; 404 cross-org/missing; 409 when the version doesn't exist (CONFLICT).
+router.post('/prototypes/:id/publish', orgs.requireAdmin, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
+  const version = parseInt(req.body.version, 10);
+  if (Number.isNaN(version)) return res.status(400).json({ error: 'version must be an integer.' });
+  try {
+    const result = await versions.setPublished(req.params.id, version);
+    res.json(result);
+  } catch (err) {
+    if (err.code === 'CONFLICT') return res.status(409).json({ error: err.message });
+    throw err;
+  }
 });
 
 router.get('/prototypes/:id/allowlist-count', orgs.requireOrg, async (req, res) => {
@@ -276,28 +325,19 @@ router.post('/prototypes/:id/comments', orgs.requireOrg, async (req, res) => {
   const order = sortingOrder === 'desc' ? 'DESC' : 'ASC';
 
   const typeFilter = filterValues.type;
-  const hasFilter = typeFilter && typeFilter.length > 0;
-
-  let totalResult, rowsResult;
-  if (hasFilter) {
-    totalResult = await getDb().query(
-      'SELECT COUNT(*) AS n FROM comments WHERE prototype_id = $1 AND type = $2 AND parent_id IS NULL',
-      [req.params.id, typeFilter]
-    );
-    rowsResult = await getDb().query(
-      `SELECT * FROM comments WHERE prototype_id = $1 AND type = $2 AND parent_id IS NULL ORDER BY ${orderBy} ${order} LIMIT $3 OFFSET $4`,
-      [req.params.id, typeFilter, parseInt(pageSize, 10), parseInt(offset, 10)]
-    );
-  } else {
-    totalResult = await getDb().query(
-      'SELECT COUNT(*) AS n FROM comments WHERE prototype_id = $1 AND parent_id IS NULL',
-      [req.params.id]
-    );
-    rowsResult = await getDb().query(
-      `SELECT * FROM comments WHERE prototype_id = $1 AND parent_id IS NULL ORDER BY ${orderBy} ${order} LIMIT $2 OFFSET $3`,
-      [req.params.id, parseInt(pageSize, 10), parseInt(offset, 10)]
-    );
+  const versionFilter = filterValues.version != null ? parseInt(filterValues.version, 10) : null;
+  const conds = ['prototype_id = $1', 'parent_id IS NULL'];
+  const base = [req.params.id];
+  if (typeFilter && typeFilter.length > 0) { base.push(typeFilter); conds.push(`type = $${base.length}`); }
+  if (versionFilter != null && !Number.isNaN(versionFilter)) {
+    base.push(versionFilter);
+    conds.push(`version_id = (SELECT id FROM prototype_versions WHERE prototype_id = $1 AND version = $${base.length})`);
   }
+  const whereSql = conds.join(' AND ');
+  const totalResult = await getDb().query(`SELECT COUNT(*) AS n FROM comments WHERE ${whereSql}`, base);
+  const rowsResult = await getDb().query(
+    `SELECT * FROM comments WHERE ${whereSql} ORDER BY ${orderBy} ${order} LIMIT $${base.length + 1} OFFSET $${base.length + 2}`,
+    [...base, parseInt(pageSize, 10), parseInt(offset, 10)]);
 
   const total = parseInt(totalResult.rows[0].n, 10);
   const rows = rowsResult.rows.map(r => ({
@@ -357,30 +397,19 @@ router.get('/prototypes/:id/preview', orgs.requireOrg, async (req, res) => {
   const proto = await getOrgPrototype(req.params.id, req.orgId);
   if (!proto) return res.status(404).send('Prototype not found.');
 
-  if (path.basename(proto.filename) !== proto.filename) return res.status(400).send('Invalid prototype filename.');
-  const raw = await storage.getPrototype(proto.filename);
+  const published = await versions.resolvePublished(proto.id);
+  const filename = published ? published.filename : proto.filename;
+  const contentType = published ? published.contentType : (proto.content_type || 'html');
+  if (path.basename(filename) !== filename) return res.status(400).send('Invalid prototype filename.');
+  const raw = await storage.getPrototype(filename);
   if (raw === null) return res.status(404).send('Prototype file not found.');
 
   const highlightId = req.query.comment || '';
-  const { rows: allCommentRows } = await getDb().query(
-    `SELECT id, email, type, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id,
-            anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end
-     FROM comments WHERE prototype_id = $1
-     ORDER BY created_at ASC`,
-    [proto.id]
-  );
-
-  const replyMap = {};
-  allCommentRows.filter(r => r.parent_id).forEach(r => {
-    if (!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
-    replyMap[r.parent_id].push({ id: r.id, email: r.email, comment: r.comment, created_at: r.created_at });
-  });
-  const comments = allCommentRows
-    .filter(r => !r.parent_id)
-    .map((r, i) => ({ ...r, order: i + 1, replies: replyMap[r.id] || [] }));
+  const { versionId } = await annotations.resolveViewedVersion(proto.id, req.query.version);
+  const comments = await annotations.listComments(proto.id, versionId);
 
   let documentHtml = raw;
-  if ((proto.content_type || 'html') === 'markdown') {
+  if (contentType === 'markdown') {
     const { html } = markdown.render(raw);
     documentHtml = readView('markdown-shell.html').split('{{content}}').join(html);
   }
@@ -418,21 +447,29 @@ router.get('/tokens/page', orgs.requireAdmin, (_req, res) => {
 });
 
 // Org-scoped version history for a prototype (consumed by the detail view's
-// Versions tab). Flags which row is the live-published one and which is the draft.
+// Versions tab). Status-based: every coexisting draft is flagged by its own
+// status (not the single draft_version_id pointer) and the live version is
+// flagged isCurrent.
 router.get('/prototypes/:id/versions', orgs.requireOrg, async (req, res) => {
   if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
+  res.json(await versions.listAllVersions(req.params.id));
+});
+
+// Admin explanations with their version number. No ?version = all versions
+// (admin default); ?version=N scopes to that version. Reviewer-side scoping is
+// in /api; this is the admin grid's own feed.
+router.get('/prototypes/:id/explanations', orgs.requireOrg, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
+  const v = req.query.version != null ? parseInt(req.query.version, 10) : null;
+  const params = [req.params.id];
+  let where = 'e.prototype_id = $1';
+  if (v != null && !Number.isNaN(v)) { params.push(v); where += ` AND pv.version = $2`; }
   const { rows } = await getDb().query(
-    `SELECT v.version, v.status, v.note, v.created_at,
-            COALESCE(v.id = p.published_version_id, false) AS is_published,
-            COALESCE(v.id = p.draft_version_id, false)     AS is_draft
-     FROM prototype_versions v
-     JOIN prototypes p ON p.id = v.prototype_id
-     WHERE v.prototype_id = $1 ORDER BY v.version DESC`,
-    [req.params.id]);
-  res.json(rows.map(r => ({
-    version: r.version, status: r.status, note: r.note, createdAt: r.created_at,
-    isPublished: r.is_published, isDraft: r.is_draft,
-  })));
+    `SELECT e.id, e.element_selector, e.page_url, e.body, pv.version
+     FROM explanations e
+     LEFT JOIN prototype_versions pv ON pv.id = e.version_id
+     WHERE ${where} ORDER BY e.created_at ASC`, params);
+  res.json(rows);
 });
 
 router.get('/prototypes/:id/funnels', orgs.requireOrg, async (req, res) => {

@@ -46,3 +46,17 @@ test('injectSdk content-type does not break script ordering', () => {
   expect(result.indexOf('/sdk/anchor.js')).toBeLessThan(result.indexOf('/sdk/feedback.js'));
   expect(result.indexOf('/sdk/feedback.js')).toBeLessThan(result.indexOf('</body>'));
 });
+
+test('injectSdk emits version data-attributes when a version context is supplied', () => {
+  const ctx = { version: 2, versions: [{ version: 1 }, { version: 2 }], viewBase: '/p/tok/view' };
+  const out = injectSdk('<body></body>', 'proto1', 'a@b.com', 'html', ctx);
+  expect(out).toContain('data-version="2"');
+  expect(out).toContain('data-view-base="/p/tok/view"');
+  expect(out).toContain('data-versions=');            // escaped JSON present
+  expect(out).toContain('&quot;version&quot;:2');      // JSON was HTML-escaped, not raw
+});
+
+test('injectSdk output is unchanged when no version context is supplied', () => {
+  const a = injectSdk('<body></body>', 'proto1', 'a@b.com', 'html');
+  expect(a).not.toContain('data-version=');
+});

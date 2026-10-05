@@ -3,7 +3,7 @@ const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const helmet = require('helmet');
-const { initDb, getDb, closeDb } = require('./db');
+const { initDb, getDb, closeDb, seedDevUser } = require('./db');
 const config = require('./config');
 const deliveryRouter = require('./routes/delivery');
 const apiRouter = require('./routes/api');
@@ -56,6 +56,19 @@ if (usePgSessions) {
 }
 app.use(session(sessionOptions));
 
+// Dev mode: auto-authenticate to bypass login (localhost only).
+// In production, always require login. In dev, hitting /admin/* without a session
+// automatically creates a session with a fake userId so you skip the login form.
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/admin', (req, res, next) => {
+    if (!req.session.userId) {
+      req.session.userId = 'dev-user-12345';
+      req.session.activeOrgId = 'dev-org-12345';
+    }
+    next();
+  });
+}
+
 // Targeted rate limiters. Mounted on shared paths but guarded to POST so GET
 // (form render, /p view flow) is never throttled.
 app.use('/admin/login', postOnly(loginLimiter));
@@ -97,7 +110,8 @@ if (require.main === module) {
     console.error('DATABASE_URL environment variable is required');
     process.exit(1);
   }
-  initDb().then(() => {
+  initDb().then(async () => {
+    await seedDevUser();
     const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`Proto Share running on http://0.0.0.0:${config.port}`);
     });

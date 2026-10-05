@@ -66,9 +66,22 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
   // Serve the published version's file. Markdown versions are rendered to a
   // sanitized HTML document first; HTML versions are served as-is. Either way
   // the SDK is injected into the final HTML.
-  const published = await versions.resolvePublished(proto.id);
-  const filename = published ? published.filename : proto.filename;
-  const contentType = published ? published.contentType : 'html';
+  // Resolve which version to serve. An explicit ?version=N is honored only when
+  // it names a PUBLISHED version of this prototype; a draft/unknown/non-integer
+  // ?version 302-redirects to the bare live view (never leaks a draft). Absent
+  // ?version keeps the current-published behavior.
+  let served;
+  if (req.query.version != null) {
+    const n = parseInt(req.query.version, 10);
+    served = Number.isNaN(n) ? null : await versions.resolvePublishedVersion(proto.id, n);
+    if (!served) return res.redirect(302, `/p/${req.params.shareToken}/view`);
+  } else {
+    const pub = await versions.resolvePublished(proto.id); // {filename, contentType} | null
+    served = pub ? { ...pub, version: await versions.publishedVersionNumber(proto.id) } : null;
+  }
+  const filename = served ? served.filename : proto.filename;
+  const contentType = served ? served.contentType : (proto.content_type || 'html');
+  const servedVersion = served ? served.version : null;
   const raw = await storage.getPrototype(filename);
   if (raw === null) return res.status(404).send('Prototype file not found.');
 
@@ -100,7 +113,13 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
     documentHtml = raw;
   }
 
-  const injected = injectSdk(documentHtml, proto.id, req.session.customerEmail, contentType);
+  const publishedVersions = await versions.listPublishedVersions(proto.id);
+  const versionCtx = {
+    version: servedVersion,
+    versions: publishedVersions, // [{version, note, createdAt, contentType, isCurrent}]
+    viewBase: `/p/${req.params.shareToken}/view`,
+  };
+  const injected = injectSdk(documentHtml, proto.id, req.session.customerEmail, contentType, versionCtx);
 
   await getDb().query(
     'INSERT INTO access_log (prototype_id, email, opened_at, user_agent) VALUES ($1,$2,$3,$4)',

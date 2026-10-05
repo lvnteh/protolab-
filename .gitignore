@@ -2,4 +2,13 @@ node_modules/
 uploads/
 data/
 .env
+.env.docker
 coverage/
+
+# OS / editor cruft
+.DS_Store
+
+# Local tooling state
+.playwright-mcp/
+.superpowers/
+.workflow-label

@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: protoshare-pg
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - proto-share-db:/var/lib/postgresql/data
+    networks:
+      - proto-share-net
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: protoshare-dev
+    ports:
+      - "${PORT:-1337}:${PORT:-1337}"
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/postgres
+      NODE_ENV: development
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./uploads:/app/uploads
+      - /app/node_modules
+    working_dir: /app
+    command: npm start
+    depends_on:
+      - db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-1337}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - proto-share-net
+
+volumes:
+  proto-share-db:
+
+networks:
+  proto-share-net:
+    driver: bridge

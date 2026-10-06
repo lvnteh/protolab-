@@ -115,6 +115,7 @@ if (typeof document !== 'undefined') {
   if (cfg.mode === 'list') renderList();
   else {
     loadComments();
+    try { new EventSource('/docs/__events').onmessage = () => location.reload(); } catch { /* no SSE */ }
     const docRoot = document.querySelector('.docs__doc');
     if (docRoot) docRoot.addEventListener('mouseup', onSelect);
   }

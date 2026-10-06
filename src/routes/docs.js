@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const { createReloadHub } = require('../services/reloadHub');
 
 function defaultReadView(name) {
   return fs.readFileSync(path.join(__dirname, '..', 'views', name), 'utf8');
@@ -24,7 +25,7 @@ function buildRealDeps() {
     }
     return client;
   };
-  return { docSource, ghComments, markdown, readView: defaultReadView };
+  return { docSource, ghComments, markdown, readView: defaultReadView, watchRoot: config.docsRepoPath };
 }
 
 function createDocsRouter(deps) {
@@ -35,6 +36,22 @@ function createDocsRouter(deps) {
   const resolveGh = typeof resolved.ghComments === 'function'
     ? resolved.ghComments
     : async () => resolved.ghComments;
+
+  const hub = createReloadHub();
+  if (resolved.watchRoot) {
+    try {
+      require('fs').watch(resolved.watchRoot, { recursive: true }, (_e, name) => {
+        if (!name || name.endsWith('.md')) hub.broadcast();
+      });
+    } catch { /* recursive watch unsupported on this platform; skip live-reload */ }
+  }
+
+  router.get('/__events', (req, res) => {
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    if (res.flushHeaders) res.flushHeaders();
+    const unsub = hub.subscribe((msg) => res.write(`data: ${msg}\n\n`));
+    req.on('close', unsub);
+  });
 
   router.get('/', async (_req, res, next) => {
     try {

@@ -8,32 +8,31 @@
 const MarkdownIt = require('markdown-it');
 const sanitizeHtml = require('sanitize-html');
 
-const md = new MarkdownIt({
-  html: false,      // do not parse raw HTML tags in the markdown
-  linkify: true,    // autolink bare URLs
-  breaks: false,
-  typographer: true,
+const BASE_OPTS = { html: false, linkify: true, breaks: false, typographer: true };
+const md = new MarkdownIt(BASE_OPTS);
+
+// Separate instance so the default renderer stays untouched.
+const mdLines = new MarkdownIt(BASE_OPTS);
+mdLines.core.ruler.push('source_line', (state) => {
+  for (const token of state.tokens) {
+    if (token.nesting === 1 && token.map) {
+      token.attrSet('data-source-line', String(token.map[0] + 1));
+    }
+  }
 });
 
 const SANITIZE_OPTIONS = {
   allowedTags: [
-    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'p', 'a', 'ul', 'ol', 'li', 'blockquote', 'hr', 'br',
-    'strong', 'em', 'del', 'code', 'pre', 'span',
-    'table', 'thead', 'tbody', 'tr', 'th', 'td',
-    'img', 'input', // input: task-list checkboxes
+    'h1','h2','h3','h4','h5','h6','p','a','ul','ol','li','blockquote','hr','br',
+    'strong','em','del','code','pre','span','table','thead','tbody','tr','th','td','img','input',
   ],
   allowedAttributes: {
-    a: ['href', 'title'],
-    img: ['src', 'alt', 'title'],
-    input: ['type', 'checked', 'disabled'],
-    span: ['class'],
-    code: ['class'],
-    pre: ['class'],
-    th: ['align'],
-    td: ['align'],
+    '*': ['data-source-line'],
+    a: ['href','title'], img: ['src','alt','title'],
+    input: ['type','checked','disabled'], span: ['class'], code: ['class'],
+    pre: ['class'], th: ['align'], td: ['align'],
   },
-  allowedSchemes: ['http', 'https', 'mailto'],
+  allowedSchemes: ['http','https','mailto'],
   transformTags: {
     input: (tagName, attribs) => ({
       tagName,
@@ -42,10 +41,10 @@ const SANITIZE_OPTIONS = {
   },
 };
 
-function render(rawMd) {
-  const rendered = md.render(String(rawMd == null ? '' : rawMd));
-  const html = sanitizeHtml(rendered, SANITIZE_OPTIONS);
-  return { html };
+function render(rawMd, opts = {}) {
+  const engine = opts.sourceLines ? mdLines : md;
+  const rendered = engine.render(String(rawMd == null ? '' : rawMd));
+  return { html: sanitizeHtml(rendered, SANITIZE_OPTIONS) };
 }
 
 module.exports = { render };

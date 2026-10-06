@@ -172,6 +172,8 @@ if (typeof document !== 'undefined') {
     const repos = cfg.repos || [];
     if (!repos.length) {
       repEl.style.display = 'none';
+      const addBtn = document.getElementById('docs-repo-add');
+      if (addBtn) addBtn.style.display = cfg.role === 'admin' ? '' : 'none';
       return;
     }
     repEl.innerHTML = repos.map((r) =>

@@ -105,11 +105,9 @@
         </a>
       </div>
       <script>
-        // Reveal the Wiki entry only on instances where /docs is actually mounted
-        // (local-first: DOCS_REPO_PATH set). On the hosted app it stays hidden.
-        fetch('/docs', { method: 'HEAD' }).then(function (r) {
-          if (r.ok) { var w = document.getElementById('wiki-btn'); if (w) w.style.display = 'inline-flex'; }
-        }).catch(function () {});
+        fetch('/docs/enabled').then(function (r) { return r.ok ? r.json() : { enabled: false }; })
+          .then(function (j) { if (j.enabled) { var w = document.getElementById('wiki-btn'); if (w) w.style.display = 'inline-flex'; } })
+          .catch(function () {});
       </script>
     </section>
 

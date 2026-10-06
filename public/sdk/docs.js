@@ -180,6 +180,7 @@ if (typeof document !== 'undefined') {
       `<option value="${esc(r.id)}"${r.id === cfg.repo ? ' selected' : ''}>${esc(r.label || r.url || r.id)}</option>`
     ).join('');
     repEl.addEventListener('change', () => {
+      showLoading();
       location.href = '/docs?repo=' + encodeURIComponent(repEl.value);
     });
 
@@ -251,6 +252,7 @@ if (typeof document !== 'undefined') {
       verEl.innerHTML = `<select id="docs-ver-select" title="View an earlier committed version">${opts}</select>`;
       const sel = document.getElementById('docs-ver-select');
       sel.addEventListener('change', () => {
+        showLoading();
         location.href = cfg.repo
           ? repoViewHref(cfg.repo, cfg.path, sel.value)
           : `/docs/view?path=${encodeURIComponent(cfg.path)}&sha=${encodeURIComponent(sel.value)}`;
@@ -311,6 +313,7 @@ if (typeof document !== 'undefined') {
     try {
     const list = document.getElementById('docs-side');
     const count = document.getElementById('docs-count');
+    if (list && !list.querySelector('.docs-card')) list.innerHTML = '<div class="docs-side__empty">Loading comments…</div>';
     let comments;
     try {
       const repoQ = cfg.repo ? `&repo=${encodeURIComponent(cfg.repo)}` : '';
@@ -443,6 +446,23 @@ if (typeof document !== 'undefined') {
   renderRepoSwitcher();
   const addBtn = document.getElementById('docs-repo-add');
   if (addBtn) addBtn.addEventListener('click', addRepo);
+
+  // Loading state: a full-page navigation to a /docs page fetches from GitHub and
+  // takes a beat. Reveal the top progress bar the instant any /docs link is
+  // clicked (it rides over the current page until the next one paints).
+  function showLoading() {
+    const el = document.getElementById('docs-loading');
+    if (el) el.classList.add('is-on');
+    document.body.classList.add('docs-busy');
+    // Fade + blur the current document out so switching reads as a transition;
+    // it rides over the old page until the next one paints fresh (unblurred).
+    const page = document.getElementById('docs-page');
+    if (page) page.classList.add('is-leaving');
+  }
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href^="/docs"]');
+    if (a && !a.target) showLoading();
+  }, true);
 
   if (cfg.mode === 'view') {
     renderHeader();

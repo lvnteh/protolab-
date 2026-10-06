@@ -89,3 +89,36 @@ test('DELETE /docs/comments/:id with a foreign ?repo= returns 404', async () => 
   const res = await request(app()).delete('/docs/comments/7').query({ repo: 'foreign' });
   expect(res.status).toBe(404);
 });
+
+test('GET /docs?repo=r1 emits docs list in cfg', async () => {
+  const res = await request(app()).get('/docs').query({ repo: 'r1' });
+  expect(res.status).toBe(200);
+  const cfgMatch = res.text.match(/<script id="docs-cfg">([\s\S]*?)<\/script>/);
+  const cfg = JSON.parse(cfgMatch[1]);
+  expect(cfg.docs).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'a.md' })]));
+  expect(cfg.repo).toBe('r1');
+});
+
+test('GET /docs/view?repo=r1&path=a.md emits docs list in cfg', async () => {
+  const res = await request(app()).get('/docs/view').query({ repo: 'r1', path: 'a.md' });
+  expect(res.status).toBe(200);
+  const cfgMatch = res.text.match(/<script id="docs-cfg">([\s\S]*?)<\/script>/);
+  const cfg = JSON.parse(cfgMatch[1]);
+  expect(cfg.docs).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'a.md' })]));
+});
+
+test('GET /docs/view without ?path= returns 400', async () => {
+  const res = await request(app()).get('/docs/view').query({ repo: 'r1' });
+  expect(res.status).toBe(400);
+});
+
+test('GET /docs and GET /docs/view map repos to label:owner/repo shape', async () => {
+  const home = await request(app()).get('/docs').query({ repo: 'r1' });
+  const homeCfg = JSON.parse(home.text.match(/<script id="docs-cfg">([\s\S]*?)<\/script>/)[1]);
+  expect(homeCfg.repos[0]).toMatchObject({ id: 'r1', label: 'acme/widgets', url: 'h' });
+  expect(homeCfg.repos[0]).not.toHaveProperty('org_id');
+
+  const view = await request(app()).get('/docs/view').query({ repo: 'r1', path: 'a.md' });
+  const viewCfg = JSON.parse(view.text.match(/<script id="docs-cfg">([\s\S]*?)<\/script>/)[1]);
+  expect(viewCfg.repos[0]).toMatchObject({ id: 'r1', label: 'acme/widgets', url: 'h' });
+});

@@ -30,6 +30,12 @@ function createDocsRouter(deps) {
   const router = express.Router();
   const esc = (s) => JSON.stringify(s).replace(/</g, '\\u003c');
 
+  // Map raw DB rows to a safe display shape for the browser: id + label (owner/repo) + url.
+  // Drops org_id, created_by, created_at from the page payload.
+  function mapRepos(rows) {
+    return rows.map((r) => ({ id: r.id, label: `${r.owner}/${r.repo}`, url: r.html_url }));
+  }
+
   // public: landing feature-check
   router.get('/enabled', (_req, res) => res.json({ enabled: !!d.tokenAvailable() }));
 
@@ -43,21 +49,35 @@ function createDocsRouter(deps) {
   router.get('/', d.requireOrg, async (req, res, next) => {
     try {
       const repos = await d.docsRepos.listRepos(req.orgId);
-      const cfg = { mode: 'home', repos, role: req.orgRole };
+      const mappedRepos = mapRepos(repos);
+      let docs = [];
+      let selectedRepo = null;
+      if (req.query.repo) {
+        const row = await d.docsRepos.getRepo(req.orgId, req.query.repo);
+        if (!row) { res.status(404).send('Repo not found.'); return; }
+        selectedRepo = row.id;
+        const ds = d.makeDocSource(row);
+        try { docs = await ds.listDocs(); } catch { docs = []; }
+      }
+      const cfg = { mode: 'home', repo: selectedRepo, repos: mappedRepos, role: req.orgRole, docs };
       res.send(d.readView('docs-shell.html').split('{{banner}}').join('').split('{{content}}').join('').split('{{cfg}}').join(esc(cfg)));
     } catch (e) { next(e); }
   });
 
   router.get('/view', d.requireOrg, async (req, res, next) => {
     try {
+      if (!req.query.path) return res.status(400).send('?path= is required');
       const row = await repoOr404(req, res); if (!row) return;
       const ds = d.makeDocSource(row);
       const { raw, versionSha, dirty } = await ds.readDoc(req.query.path, req.query.sha || undefined);
       const { html } = d.markdown.render(raw, { sourceLines: true });
       const banner = '';
       const repos = await d.docsRepos.listRepos(req.orgId);
+      const mappedRepos = mapRepos(repos);
       const versions = await ds.recentVersions(req.query.path).catch(() => []);
-      const cfg = { mode: 'view', repo: row.id, repos, role: req.orgRole, path: req.query.path, sha: versionSha, commentable: !!versionSha, versions };
+      let docs = [];
+      try { docs = await ds.listDocs(); } catch { docs = []; }
+      const cfg = { mode: 'view', repo: row.id, repos: mappedRepos, role: req.orgRole, path: req.query.path, sha: versionSha, commentable: !!versionSha, versions, docs };
       res.send(d.readView('docs-shell.html').split('{{banner}}').join(banner).split('{{content}}').join(html).split('{{cfg}}').join(esc(cfg)));
     } catch (e) { next(e); }
   });

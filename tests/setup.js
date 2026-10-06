@@ -12,10 +12,12 @@
 //   the cleanup in afterAll gives PER-FILE isolation (wipe on the way out of each
 //   file) while leaving within-file fixtures intact.
 //
-// NO-OP WITHOUT A DATABASE:
-//   DB-free suites (mcp-*.test.js, inject.test.js) run with NO DATABASE_URL. In
-//   that mode this hook must not touch pg or open a connection at all — so we
-//   gate the whole thing on process.env.DATABASE_URL and return early otherwise.
+// DB-FREE SUITES:
+//   jest.setup-env.js now forces DATABASE_URL for every suite (to the dedicated
+//   test database). DB-free suites (mcp-*.test.js, inject.test.js) still never
+//   call initDb(), so their pool stays null and cleanDb() no-ops on them (it
+//   returns early on a null pool). The early return below is kept only as a
+//   defensive fast-path for a run with DATABASE_URL explicitly cleared.
 //
 // ORDERING SAFETY:
 //   Many DB suites call closeDb() in their OWN afterAll, which ends the pool. If
@@ -29,7 +31,8 @@
 const { cleanDb } = require('../src/db');
 
 afterAll(async () => {
-  // Unit-only suites (no DATABASE_URL): complete no-op, never require/connect pg.
+  // Defensive fast-path: a run with DATABASE_URL explicitly cleared never
+  // requires/connects pg.
   if (!process.env.DATABASE_URL) return;
 
   try {

@@ -85,12 +85,8 @@ app.use('/api', apiRouter);
 // (see middleware/csrf.js) so existing token-less supertest suites still pass.
 app.use('/admin', csrf, adminRouter);
 
-// Docs review workflow (opt-in, local-first). Mounts only when a local clone
-// path is configured, so the hosted app is unaffected when it is absent.
-if (config.docsRepoPath) {
-  const { createDocsRouter } = require('./routes/docs');
-  app.use('/docs', createDocsRouter());
-}
+// Docs workflow (login-gated inside the router; GitHub-API backed).
+app.use('/docs', require('./routes/docs').createDocsRouter());
 
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'views/landing.html')));
 

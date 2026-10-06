@@ -1,115 +1,113 @@
 // src/routes/docs.js
-// Thin HTTP layer translating between the docs SDK and the git/GitHub services.
-// Holds no state. deps are injectable for tests; omitted => built from config.
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
-const { createReloadHub } = require('../services/reloadHub');
 
-function defaultReadView(name) {
-  return fs.readFileSync(path.join(__dirname, '..', 'views', name), 'utf8');
-}
+function defaultReadView(name) { return fs.readFileSync(path.join(__dirname, '..', 'views', name), 'utf8'); }
+const SHA_RE = /^[0-9a-f]{7,64}$/;
 
 function buildRealDeps() {
-  const config = require('../config');
+  const orgs = require('../services/orgs');
+  const bareRepos = require('../services/docsRepos');
   const markdown = require('../services/markdown');
   const { createDocSource } = require('../services/docSource');
   const { createGhComments, resolveToken } = require('../services/ghComments');
-  const docSource = createDocSource(config.docsRepoPath);
-  let client = null;
-  // Async factory: build the GitHub client once, lazily (needs repoSlug + token).
-  const ghComments = async () => {
-    if (!client) {
-      const { owner, repo } = await docSource.repoSlug();
-      client = createGhComments({ owner, repo, token: resolveToken() });
-    }
-    return client;
+  let cachedToken;
+  const token = () => (cachedToken !== undefined ? cachedToken : (cachedToken = (() => { try { return resolveToken(); } catch { return null; } })()));
+  // Wrap addRepo to inject the token so the route call site stays token-free.
+  const docsRepos = { ...bareRepos, addRepo: (args) => bareRepos.addRepo({ ...args, token: token() }) };
+  return {
+    docsRepos, markdown, readView: defaultReadView,
+    requireOrg: orgs.requireOrg, requireAdmin: orgs.requireAdmin,
+    tokenAvailable: () => !!token(),
+    makeDocSource: (row) => createDocSource({ owner: row.owner, repo: row.repo, token: token(), defaultBranch: row.default_branch }),
+    makeGhComments: (row) => createGhComments({ owner: row.owner, repo: row.repo, token: token() }),
   };
-  return { docSource, ghComments, markdown, readView: defaultReadView, watchRoot: config.docsRepoPath };
 }
 
 function createDocsRouter(deps) {
+  const d = deps || buildRealDeps();
   const router = express.Router();
-  const resolved = deps || buildRealDeps();
-  const { docSource, markdown, readView = defaultReadView } = resolved;
-  // ghComments is an async factory in real wiring, or a ready object in tests.
-  const resolveGh = typeof resolved.ghComments === 'function'
-    ? resolved.ghComments
-    : async () => resolved.ghComments;
+  const esc = (s) => JSON.stringify(s).replace(/</g, '\\u003c');
 
-  const hub = createReloadHub();
-  if (resolved.watchRoot) {
-    try {
-      require('fs').watch(resolved.watchRoot, { recursive: true }, (_e, name) => {
-        if (!name || name.endsWith('.md')) hub.broadcast();
-      });
-    } catch { /* recursive watch unsupported on this platform; skip live-reload */ }
+  // public: landing feature-check
+  router.get('/enabled', (_req, res) => res.json({ enabled: !!d.tokenAvailable() }));
+
+  // resolve + scope a repo row to the caller's org, or 404
+  async function repoOr404(req, res) {
+    const row = await d.docsRepos.getRepo(req.orgId, req.query.repo);
+    if (!row) { res.status(404).send('Repo not found.'); return null; }
+    return row;
   }
 
-  router.get('/__events', (req, res) => {
-    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    if (res.flushHeaders) res.flushHeaders();
-    const unsub = hub.subscribe((msg) => res.write(`data: ${msg}\n\n`));
-    req.on('close', unsub);
-  });
-
-  router.get('/', async (_req, res, next) => {
+  router.get('/', d.requireOrg, async (req, res, next) => {
     try {
-      const docs = await docSource.listDocs();
-      const html = readView('docs-shell.html')
-        .split('{{banner}}').join('')
-        .split('{{content}}').join('')
-        .split('{{cfg}}').join(JSON.stringify({ mode: 'list', docs }).replace(/</g, '\\u003c'));
-      res.send(html);
+      const repos = await d.docsRepos.listRepos(req.orgId);
+      const cfg = { mode: 'home', repos, role: req.orgRole };
+      res.send(d.readView('docs-shell.html').split('{{banner}}').join('').split('{{content}}').join('').split('{{cfg}}').join(esc(cfg)));
     } catch (e) { next(e); }
   });
 
-  router.get('/view', async (req, res, next) => {
+  router.get('/view', d.requireOrg, async (req, res, next) => {
     try {
-      const { raw, versionSha, dirty } = await docSource.readDoc(req.query.path, req.query.sha || undefined);
-      const { html } = markdown.render(raw, { sourceLines: true });
-      const banner = dirty
-        ? `<div class="docs__banner">Uncommitted local changes are hidden; comments attach to ${versionSha ? versionSha.slice(0, 7) : 'this file once committed'}.</div>`
-        : '';
-      const versions = await docSource.recentVersions(req.query.path).catch(() => []);
-      const docs = await docSource.listDocs().catch(() => []);
-      const cfg = { mode: 'view', path: req.query.path, sha: versionSha, commentable: !!versionSha, versions, docs };
-      const out = readView('docs-shell.html')
-        .split('{{banner}}').join(banner)
-        .split('{{content}}').join(html)
-        .split('{{cfg}}').join(JSON.stringify(cfg).replace(/</g, '\\u003c'));
-      res.send(out);
+      const row = await repoOr404(req, res); if (!row) return;
+      const ds = d.makeDocSource(row);
+      const { raw, versionSha, dirty } = await ds.readDoc(req.query.path, req.query.sha || undefined);
+      const { html } = d.markdown.render(raw, { sourceLines: true });
+      const banner = dirty ? '' : '';
+      const repos = await d.docsRepos.listRepos(req.orgId);
+      const versions = await ds.recentVersions(req.query.path).catch(() => []);
+      const cfg = { mode: 'view', repo: row.id, repos, role: req.orgRole, path: req.query.path, sha: versionSha, commentable: !!versionSha, versions };
+      res.send(d.readView('docs-shell.html').split('{{banner}}').join(banner).split('{{content}}').join(html).split('{{cfg}}').join(esc(cfg)));
     } catch (e) { next(e); }
   });
 
-  router.get('/comments', async (req, res, next) => {
+  router.get('/comments', d.requireOrg, async (req, res, next) => {
     try {
-      const { sha, path: p } = req.query;
-      if (!sha || !/^[0-9a-f]{7,64}$/.test(sha)) {
-        return res.status(400).json({ error: 'invalid sha' });
-      }
-      const client = await resolveGh();
-      res.json(await client.list(sha, p));
+      const row = await repoOr404(req, res); if (!row) return;
+      if (req.query.sha && !SHA_RE.test(req.query.sha)) return res.status(400).json({ error: 'invalid sha' });
+      res.json(await d.makeGhComments(row).list(req.query.sha, req.query.path));
     } catch (e) { next(e); }
   });
 
-  router.post('/comments', async (req, res, next) => {
+  router.post('/comments', d.requireOrg, async (req, res, next) => {
     try {
-      const { path: p, sha, line, kind, text, anchor, tag, replyTo } = req.body;
-      const doc = await docSource.readDoc(p, sha || undefined);
-      if (!doc.versionSha) return res.status(409).json({ error: 'Commit this file before annotating.' });
-      const client = await resolveGh();
-      const created = await client.post(doc.versionSha, { path: p, line, kind, text, anchor, tag, replyTo });
+      const row = await d.docsRepos.getRepo(req.orgId, req.body.repo);
+      if (!row) return res.status(404).json({ error: 'repo not found' });
+      const ds = d.makeDocSource(row);
+      const doc = await ds.readDoc(req.body.path, req.body.sha || undefined);
+      if (!doc.versionSha) return res.status(409).json({ error: 'no committed version' });
+      const created = await d.makeGhComments(row).post(doc.versionSha, req.body);
       res.status(201).json(created);
     } catch (e) { next(e); }
   });
 
-  router.delete('/comments/:id', async (req, res, next) => {
+  router.delete('/comments/:id', d.requireOrg, async (req, res, next) => {
     try {
-      const client = await resolveGh();
-      await client.del(req.params.id);
+      const row = await repoOr404(req, res); if (!row) return;
+      await d.makeGhComments(row).del(req.params.id);
       res.status(204).end();
     } catch (e) { next(e); }
+  });
+
+  router.get('/repos', d.requireOrg, async (req, res, next) => {
+    try { res.json(await d.docsRepos.listRepos(req.orgId)); } catch (e) { next(e); }
+  });
+
+  router.post('/repos', d.requireAdmin, async (req, res, next) => {
+    try {
+      const row = await d.docsRepos.addRepo({ orgId: req.orgId, url: req.body.url, userId: req.session && req.session.userId });
+      res.status(201).json(row);
+    } catch (e) {
+      if (e && e.code === '23505') return res.status(409).json({ error: 'already added' });
+      if (/github\.com|owner\/repo|invalid url/i.test(e.message)) return res.status(400).json({ error: e.message });
+      if (/no access/i.test(e.message)) return res.status(502).json({ error: e.message });
+      next(e);
+    }
+  });
+
+  router.delete('/repos/:id', d.requireAdmin, async (req, res, next) => {
+    try { res.json({ removed: await d.docsRepos.removeRepo(req.orgId, req.params.id) }); } catch (e) { next(e); }
   });
 
   return router;

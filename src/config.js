@@ -34,7 +34,6 @@ module.exports = {
   allowedEmailDomains: ['sap.com', 'emarsys.com'],
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
   uploadsPath: process.env.UPLOADS_PATH || './uploads',
-  docsRepoPath: process.env.DOCS_REPO_PATH || '',
   databaseUrl: process.env.DATABASE_URL || '',
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',

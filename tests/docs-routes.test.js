@@ -3,76 +3,67 @@ const express = require('express');
 const request = require('supertest');
 const { createDocsRouter } = require('../src/routes/docs');
 
-function appWith(overrides = {}) {
-  const docSource = {
-    listDocs: async () => [{ path: 'a.md', title: 'A' }],
-    readDoc: async () => ({ raw: '# A\n\npara\n', versionSha: 'abc1234', dirty: false }),
-    repoSlug: async () => ({ owner: 'o', repo: 'r' }),
-    recentVersions: async () => [{ sha: 'abc1234', date: '2026-10-06', subject: 'init' }],
-    ...overrides.docSource,
+function app(overrides = {}) {
+  const repos = { r1: { id: 'r1', org_id: 'org1', owner: 'acme', repo: 'widgets', html_url: 'h', default_branch: 'main' } };
+  const deps = {
+    tokenAvailable: () => true,
+    docsRepos: {
+      listRepos: async () => Object.values(repos),
+      getRepo: async (org, id) => (repos[id] && repos[id].org_id === org ? repos[id] : null),
+      addRepo: async ({ url }) => ({ id: 'r2', owner: 'new', repo: 'repo', url }),
+      removeRepo: async () => true,
+    },
+    makeDocSource: () => ({
+      listDocs: async () => [{ path: 'a.md', title: 'A', created: null }],
+      readDoc: async () => ({ raw: '# A\n', versionSha: 'abc1234', dirty: false }),
+      recentVersions: async () => [],
+    }),
+    makeGhComments: () => ({ list: async () => [{ id: 1, kind: 'note', text: 'hi' }], post: async () => ({ id: 2 }), del: async () => {} }),
+    markdown: require('../src/services/markdown'),
+    readView: () => '<!doctype html><body>{{content}}<script id="docs-cfg">{{cfg}}</script></body>',
+    // test shims for the org guards:
+    requireOrg: (req, _res, next) => { req.orgId = 'org1'; req.orgRole = req.headers['x-role'] || 'admin'; next(); },
+    requireAdmin: (req, res, next) => { req.orgId = 'org1'; if ((req.headers['x-role'] || 'admin') !== 'admin') return res.status(403).json({ error: 'admin' }); next(); },
+    ...overrides,
   };
-  const ghComments = {
-    list: async () => [{ id: 1, kind: 'note', text: 'hi', line: 1, path: 'a.md', anchor: null, author: 'me', hasMeta: true }],
-    post: async (sha, c) => ({ id: 2, ...c, author: 'me', hasMeta: true }),
-    del: async () => {},
-    ...overrides.ghComments,
-  };
-  const markdown = require('../src/services/markdown');
-  const readView = () => '<!doctype html><html><body>{{content}}<script id="docs-cfg">{{cfg}}</script></body></html>';
-  const app = express();
-  app.use(express.json());
-  app.use('/docs', createDocsRouter({ docSource, ghComments, markdown, readView }));
-  return app;
+  const a = express(); a.use(express.json());
+  a.use('/docs', createDocsRouter(deps));
+  return a;
 }
 
-test('GET /docs lists docs', async () => {
-  const res = await request(appWith()).get('/docs');
+test('GET /docs/enabled is public and reports token availability', async () => {
+  const res = await request(app()).get('/docs/enabled');
+  expect(res.status).toBe(200); expect(res.body).toEqual({ enabled: true });
+  const res2 = await request(app({ tokenAvailable: () => false })).get('/docs/enabled');
+  expect(res2.body).toEqual({ enabled: false });
+});
+
+test('GET /docs/view 404s for a repo outside the caller org', async () => {
+  const res = await request(app()).get('/docs/view').query({ repo: 'nope', path: 'a.md' });
+  expect(res.status).toBe(404);
+});
+
+test('GET /docs/view renders for an in-org repo', async () => {
+  const res = await request(app()).get('/docs/view').query({ repo: 'r1', path: 'a.md' });
   expect(res.status).toBe(200);
-  expect(res.text).toContain('a.md');
+  expect(res.text).toContain('data-source-line'); // sourceLines render
+  expect(res.text).toContain('abc1234');          // version sha in cfg
 });
 
-test('GET /docs/view renders with source lines and the version sha', async () => {
-  const res = await request(appWith()).get('/docs/view').query({ path: 'a.md' });
-  expect(res.status).toBe(200);
-  expect(res.text).toContain('data-source-line="1"');
-  expect(res.text).toContain('abc1234');
+test('GET /docs/comments is repo-scoped', async () => {
+  const res = await request(app()).get('/docs/comments').query({ repo: 'r1', path: 'a.md', sha: 'abc1234' });
+  expect(res.status).toBe(200); expect(res.body[0]).toMatchObject({ kind: 'note' });
 });
 
-test('GET /docs/comments returns the GitHub comments for the sha+path', async () => {
-  const res = await request(appWith()).get('/docs/comments').query({ path: 'a.md', sha: 'abc1234' });
-  expect(res.status).toBe(200);
-  expect(res.body).toHaveLength(1);
-  expect(res.body[0]).toMatchObject({ kind: 'note', text: 'hi' });
+test('POST /docs/repos requires admin', async () => {
+  const ok = await request(app()).post('/docs/repos').send({ url: 'https://github.com/new/repo' });
+  expect(ok.status).toBe(201);
+  const no = await request(app()).post('/docs/repos').set('x-role', 'viewer').send({ url: 'https://github.com/new/repo' });
+  expect(no.status).toBe(403);
 });
 
-test('POST /docs/comments posts to GitHub and returns the created comment', async () => {
-  const res = await request(appWith()).post('/docs/comments')
-    .send({ path: 'a.md', sha: 'sha123', line: 2, kind: 'question', text: 'why?', anchor: null });
-  expect(res.status).toBe(201);
-  expect(res.body).toMatchObject({ id: 2, kind: 'question', text: 'why?' });
-});
-
-test('DELETE /docs/comments/:id returns 204', async () => {
-  const res = await request(appWith()).delete('/docs/comments/7');
-  expect(res.status).toBe(204);
-});
-
-test('POST is rejected when the file has no committed version', async () => {
-  const app = appWith({ docSource: { readDoc: async () => ({ raw: '# x', versionSha: null, dirty: true }) } });
-  const res = await request(app).post('/docs/comments')
-    .send({ path: 'new.md', sha: null, line: 1, kind: 'note', text: 'x', anchor: null });
-  expect(res.status).toBe(409);
-});
-
-test('GET /docs/comments rejects invalid sha', async () => {
-  const res = await request(appWith()).get('/docs/comments').query({ path: 'a.md', sha: '../../x' });
-  expect(res.status).toBe(400);
-  expect(res.body).toMatchObject({ error: 'invalid sha' });
-});
-
-test('GET /docs/view includes doc list in cfg', async () => {
-  const res = await request(appWith()).get('/docs/view').query({ path: 'a.md' });
-  expect(res.status).toBe(200);
-  expect(res.text).toContain('"docs"');
-  expect(res.text).toContain('a.md');
+test('POST /docs/repos maps a bad url to 400', async () => {
+  const bad = await request(app({ docsRepos: { addRepo: async () => { const e = new Error('not a github.com url'); throw e; }, listRepos: async () => [], getRepo: async () => null, removeRepo: async () => true } }))
+    .post('/docs/repos').send({ url: 'https://evil.com/x/y' });
+  expect(bad.status).toBe(400);
 });

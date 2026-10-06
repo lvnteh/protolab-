@@ -6,9 +6,9 @@ const { createDocsRouter } = require('../src/routes/docs');
 function appWith(overrides = {}) {
   const docSource = {
     listDocs: async () => [{ path: 'a.md', title: 'A' }],
-    readDoc: async () => ({ raw: '# A\n\npara\n', versionSha: 'sha123', dirty: false }),
+    readDoc: async () => ({ raw: '# A\n\npara\n', versionSha: 'abc1234', dirty: false }),
     repoSlug: async () => ({ owner: 'o', repo: 'r' }),
-    recentVersions: async () => [{ sha: 'sha123', date: '2026-10-06', subject: 'init' }],
+    recentVersions: async () => [{ sha: 'abc1234', date: '2026-10-06', subject: 'init' }],
     ...overrides.docSource,
   };
   const ghComments = {
@@ -35,11 +35,11 @@ test('GET /docs/view renders with source lines and the version sha', async () =>
   const res = await request(appWith()).get('/docs/view').query({ path: 'a.md' });
   expect(res.status).toBe(200);
   expect(res.text).toContain('data-source-line="1"');
-  expect(res.text).toContain('sha123');
+  expect(res.text).toContain('abc1234');
 });
 
 test('GET /docs/comments returns the GitHub comments for the sha+path', async () => {
-  const res = await request(appWith()).get('/docs/comments').query({ path: 'a.md', sha: 'sha123' });
+  const res = await request(appWith()).get('/docs/comments').query({ path: 'a.md', sha: 'abc1234' });
   expect(res.status).toBe(200);
   expect(res.body).toHaveLength(1);
   expect(res.body[0]).toMatchObject({ kind: 'note', text: 'hi' });
@@ -62,4 +62,17 @@ test('POST is rejected when the file has no committed version', async () => {
   const res = await request(app).post('/docs/comments')
     .send({ path: 'new.md', sha: null, line: 1, kind: 'note', text: 'x', anchor: null });
   expect(res.status).toBe(409);
+});
+
+test('GET /docs/comments rejects invalid sha', async () => {
+  const res = await request(appWith()).get('/docs/comments').query({ path: 'a.md', sha: '../../x' });
+  expect(res.status).toBe(400);
+  expect(res.body).toMatchObject({ error: 'invalid sha' });
+});
+
+test('GET /docs/view includes doc list in cfg', async () => {
+  const res = await request(appWith()).get('/docs/view').query({ path: 'a.md' });
+  expect(res.status).toBe(200);
+  expect(res.text).toContain('"docs"');
+  expect(res.text).toContain('a.md');
 });

@@ -54,13 +54,18 @@ if (typeof document !== 'undefined') {
   // HTML-escape helper — applied to every value interpolated into innerHTML or attributes.
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  async function renderList() {
-    const tree = buildTree(cfg.docs);
+  async function renderTree() {
+    const tree = buildTree(cfg.docs || []);
     const host = document.getElementById('docs-tree');
+    if (!host) return;
     const render = (node, depth) => node.children.map((c) => c.path
       ? `<div style="padding-left:${depth * 12}px"><a href="/docs/view?path=${encodeURIComponent(c.path)}">${esc(c.title || c.name)}</a></div>`
       : `<div style="padding-left:${depth * 12}px"><b>${esc(c.name)}/</b></div>${render(c, depth + 1)}`).join('');
-    if (host) host.innerHTML = render(tree, 0);
+    host.innerHTML = render(tree, 0);
+  }
+
+  async function renderList() {
+    await renderTree();
   }
 
   async function loadComments() {
@@ -114,6 +119,7 @@ if (typeof document !== 'undefined') {
 
   if (cfg.mode === 'list') renderList();
   else {
+    renderTree();
     loadComments();
     try { new EventSource('/docs/__events').onmessage = () => location.reload(); } catch { /* no SSE */ }
     const docRoot = document.querySelector('.docs__doc');

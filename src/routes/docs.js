@@ -72,7 +72,8 @@ function createDocsRouter(deps) {
         ? `<div class="docs__banner">Uncommitted local changes are hidden; comments attach to ${versionSha ? versionSha.slice(0, 7) : 'this file once committed'}.</div>`
         : '';
       const versions = await docSource.recentVersions(req.query.path).catch(() => []);
-      const cfg = { mode: 'view', path: req.query.path, sha: versionSha, commentable: !!versionSha, versions };
+      const docs = await docSource.listDocs().catch(() => []);
+      const cfg = { mode: 'view', path: req.query.path, sha: versionSha, commentable: !!versionSha, versions, docs };
       const out = readView('docs-shell.html')
         .split('{{banner}}').join(banner)
         .split('{{content}}').join(html)
@@ -83,8 +84,12 @@ function createDocsRouter(deps) {
 
   router.get('/comments', async (req, res, next) => {
     try {
+      const { sha, path: p } = req.query;
+      if (!sha || !/^[0-9a-f]{7,64}$/.test(sha)) {
+        return res.status(400).json({ error: 'invalid sha' });
+      }
       const client = await resolveGh();
-      res.json(await client.list(req.query.sha, req.query.path));
+      res.json(await client.list(sha, p));
     } catch (e) { next(e); }
   });
 

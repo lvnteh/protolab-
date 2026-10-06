@@ -277,6 +277,20 @@ async function initDb() {
   `);
 
   await _pool.query(`
+    CREATE TABLE IF NOT EXISTS docs_repos (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      html_url TEXT NOT NULL,
+      default_branch TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE (org_id, owner, repo)
+    )
+  `);
+
+  await _pool.query(`
     CREATE TABLE IF NOT EXISTS org_memberships (
       id          TEXT PRIMARY KEY,
       org_id      TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -613,7 +627,7 @@ async function cleanDb() {
   await _pool.query(`
     TRUNCATE TABLE comments, prototype_versions, prototypes, allowlist,
                    access_log, nav_events, explanations, api_tokens,
-                   org_memberships, organizations, users
+                   docs_repos, org_memberships, organizations, users
     RESTART IDENTITY CASCADE
   `);
 }

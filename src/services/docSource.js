@@ -1,109 +1,79 @@
 // src/services/docSource.js
-// Reads a local git clone of a docs repo. All git access is isolated here so a
-// future hosted/server-clone or GitHub-API implementation can replace this
-// module behind the same surface. Paths are validated against traversal.
-const fs = require('fs/promises');
+// Reads a GitHub repo's Markdown over the REST API (no clone). Behind the same
+// surface the /docs routes expect. Paths/refs are validated before use; a small
+// TTL cache keeps browsing responsive and under rate limits.
 const path = require('path');
-const { execFile } = require('child_process');
-const { promisify } = require('util');
-const pexec = promisify(execFile);
-
 const IGNORED = new Set(['README.md', 'CLAUDE.md']);
+const API = 'https://api.github.com';
 
-function createDocSource(repoPath) {
-  async function git(args) {
-    const { stdout } = await pexec('git', args, { cwd: repoPath, maxBuffer: 32 * 1024 * 1024 });
-    return stdout;
+function assertSafePath(p) {
+  const norm = path.posix.normalize(String(p || ''));
+  if (!norm.endsWith('.md') || norm.startsWith('/') || norm.startsWith('..') || norm.includes('../')) {
+    throw new Error(`unsafe doc path: ${p}`);
   }
+  return norm;
+}
+function assertRef(ref) {
+  if (ref == null) return;
+  if (!/^[0-9a-f]{7,64}$/.test(ref) && !/^[\w.\-/]{1,120}$/.test(ref)) throw new Error(`invalid ref: ${ref}`);
+}
+function titleFromPath(p) { return path.posix.basename(p).replace(/\.md$/, ''); }
 
-  // Reject absolute paths, traversal, and non-.md. Returns a normalized posix path.
-  function assertSafePath(p) {
-    const norm = path.posix.normalize(String(p || ''));
-    if (!norm.endsWith('.md') || norm.startsWith('/') || norm.startsWith('..') || norm.includes('../')) {
-      throw new Error(`unsafe doc path: ${p}`);
-    }
-    return norm;
-  }
-
-  function titleFor(raw, fallbackPath) {
-    const fm = raw.match(/^---\n([\s\S]*?)\n---/);
-    if (fm) {
-      const t = fm[1].match(/^title:\s*(.+)\s*$/m);
-      if (t) return t[1].trim().replace(/^["']|["']$/g, '');
-    }
-    const h1 = raw.match(/^#\s+(.+)$/m);
-    if (h1) return h1[1].trim();
-    return path.posix.basename(fallbackPath).replace(/\.md$/, '');
-  }
-
-  // First-add ("creation") date per .md path, in ONE pass over history
-  // (oldest commit first, added files only), so date-sorting the tree needs no
-  // per-file git calls. Returns a { path: ISO-string } map; missing on failure.
-  async function createdDates() {
-    let out = '';
-    try {
-      out = await git(['log', '--reverse', '--diff-filter=A', '--name-only', '--format=@%cI', '--', '*.md']);
-    } catch { return {}; }
-    const dates = {};
-    let cur = null;
-    for (const line of out.split('\n')) {
-      if (line.startsWith('@')) { cur = line.slice(1).trim(); continue; }
-      const f = line.trim();
-      if (f && f.endsWith('.md') && cur && !(f in dates)) dates[f] = cur;
-    }
-    return dates;
+function createDocSource({ owner, repo, token, defaultBranch = 'main', fetchImpl = fetch, ttlMs = 15000 }) {
+  const cache = new Map(); // key -> { at, val }
+  async function gh(pathAndQuery) {
+    const now = Date.now();
+    const hit = cache.get(pathAndQuery);
+    if (hit && now - hit.at < ttlMs) return hit.val;
+    const res = await fetchImpl(`${API}${pathAndQuery}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'protoshare-docs' },
+    });
+    if (!res.ok) throw new Error(`GitHub GET ${pathAndQuery} -> ${res.status}`);
+    const val = await res.json();
+    cache.set(pathAndQuery, { at: now, val });
+    return val;
   }
 
   async function listDocs() {
-    const out = await git(['ls-files', '-z', '*.md']);
-    const paths = out.split('\0').filter(Boolean)
-      .filter((p) => !IGNORED.has(path.posix.basename(p)));
-    const dates = await createdDates();
-    const docs = [];
-    for (const p of paths) {
-      let raw = '';
-      try { raw = await fs.readFile(path.join(repoPath, p), 'utf8'); } catch { /* unreadable */ }
-      docs.push({ path: p, title: titleFor(raw, p), created: dates[p] || null });
-    }
-    docs.sort((a, b) => a.path.localeCompare(b.path));
-    return docs;
+    const tree = await gh(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(defaultBranch)}?recursive=1`);
+    const paths = (tree.tree || [])
+      .filter((n) => n.type === 'blob' && n.path.endsWith('.md') && !IGNORED.has(path.posix.basename(n.path)))
+      .map((n) => n.path);
+    // one bounded recent-commits scan for best-effort creation dates
+    const dates = {};
+    try {
+      const commits = await gh(`/repos/${owner}/${repo}/commits?per_page=100`);
+      for (const c of (commits || [])) {
+        const d = c.commit && c.commit.committer && c.commit.committer.date;
+        if (d && Array.isArray(c.files)) for (const f of c.files) if (f.filename && !(f.filename in dates)) dates[f.filename] = d;
+      }
+    } catch { /* best-effort */ }
+    return paths.sort().map((p) => ({ path: p, title: titleFromPath(p), created: dates[p] || null }));
   }
 
   async function resolveVersionSha(p) {
     const safe = assertSafePath(p);
-    const out = (await git(['log', '-1', '--format=%H', '--', safe])).trim();
-    return out || null;
+    const rows = await gh(`/repos/${owner}/${repo}/commits?path=${encodeURIComponent(safe)}&per_page=1`);
+    return (rows && rows[0] && rows[0].sha) || null;
   }
 
-  async function readDoc(p, sha) {
+  async function readDoc(p, ref) {
     const safe = assertSafePath(p);
-    const versionSha = sha || await resolveVersionSha(safe);
-    if (!versionSha) {
-      const raw = await fs.readFile(path.join(repoPath, safe), 'utf8');
-      return { raw, versionSha: null, dirty: true };
-    }
-    const raw = await git(['show', `${versionSha}:${safe}`]);
-    const status = (await git(['status', '--porcelain', '--', safe])).trim();
-    return { raw, versionSha, dirty: status.length > 0 };
+    assertRef(ref);
+    const q = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+    const data = await gh(`/repos/${owner}/${repo}/contents/${safe.split('/').map(encodeURIComponent).join('/')}${q}`);
+    const raw = data.encoding === 'base64' ? Buffer.from(data.content, 'base64').toString('utf8') : (data.content || '');
+    const versionSha = ref && /^[0-9a-f]{7,64}$/.test(ref) ? ref : await resolveVersionSha(safe);
+    return { raw, versionSha, dirty: false };
   }
 
   async function recentVersions(p, limit = 20) {
     const safe = assertSafePath(p);
-    const out = await git(['log', `-${limit}`, '--format=%H%x09%cs%x09%s', '--', safe]);
-    return out.trim().split('\n').filter(Boolean).map((l) => {
-      const [sha, date, subject] = l.split('\t');
-      return { sha, date, subject };
-    });
+    const rows = await gh(`/repos/${owner}/${repo}/commits?path=${encodeURIComponent(safe)}&per_page=${limit}`);
+    return (rows || []).map((c) => ({ sha: c.sha, date: (c.commit && c.commit.committer && c.commit.committer.date) || '', subject: (c.commit && c.commit.message || '').split('\n')[0] }));
   }
 
-  async function repoSlug() {
-    const url = (await git(['remote', 'get-url', 'origin'])).trim();
-    const m = url.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
-    if (!m) throw new Error(`cannot parse owner/repo from origin remote: ${url}`);
-    return { owner: m[1], repo: m[2] };
-  }
-
-  return { listDocs, resolveVersionSha, readDoc, recentVersions, repoSlug };
+  return { listDocs, resolveVersionSha, readDoc, recentVersions, owner, repo };
 }
 
-module.exports = { createDocSource };
+module.exports = { createDocSource, assertSafePath };

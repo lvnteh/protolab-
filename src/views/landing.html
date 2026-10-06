@@ -89,17 +89,28 @@
     <!-- Hero tile -->
     <section class="bg-white rounded-md border border-[#D5DADD] shadow-[0_0_4px_rgba(0,0,0,0.04)] p-10 md:p-16 text-center">
       <h2 class="text-[44px] md:text-[64px] leading-[1.05] font-light text-[#1D2D3E] tracking-tight mb-4 max-w-3xl mx-auto">
-        A better way to <span class="text-[#0070F2] font-normal">share prototypes.</span>
+        A better way to <span class="text-[#0070F2] font-normal">share prototypes &amp; collaborate.</span>
       </h2>
       <p class="text-[16px] md:text-[18px] text-[#556B82] font-normal max-w-2xl mx-auto mb-8">
-        HTML is the new markdown.
+        Share HTML prototypes. Review Markdown docs together.
       </p>
       <div class="flex flex-wrap items-center justify-center gap-3">
         <a href="/admin/login" class="inline-flex items-center gap-2 px-6 py-3 text-[14px] font-medium bg-[#0070F2] hover:bg-[#0058C7] text-white rounded-sm transition-colors">
           Start sharing
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>
         </a>
+        <a id="wiki-btn" href="/docs" style="display:none" class="inline-flex items-center gap-2 px-6 py-3 text-[14px] font-medium bg-white hover:bg-[#F5F6F7] text-[#0070F2] border border-[#0070F2] rounded-sm transition-colors">
+          Go to Wiki
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.5A6.5 6.5 0 004 4H2v14h3a6 6 0 015 2 6 6 0 015-2h3V4h-2a6.5 6.5 0 00-6 2.5zm0 0V20"/></svg>
+        </a>
       </div>
+      <script>
+        // Reveal the Wiki entry only on instances where /docs is actually mounted
+        // (local-first: DOCS_REPO_PATH set). On the hosted app it stays hidden.
+        fetch('/docs', { method: 'HEAD' }).then(function (r) {
+          if (r.ok) { var w = document.getElementById('wiki-btn'); if (w) w.style.display = 'inline-flex'; }
+        }).catch(function () {});
+      </script>
     </section>
 
     <!-- Problem card -->

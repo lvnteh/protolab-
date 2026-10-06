@@ -54,7 +54,7 @@ function createDocsRouter(deps) {
       const ds = d.makeDocSource(row);
       const { raw, versionSha, dirty } = await ds.readDoc(req.query.path, req.query.sha || undefined);
       const { html } = d.markdown.render(raw, { sourceLines: true });
-      const banner = dirty ? '' : '';
+      const banner = '';
       const repos = await d.docsRepos.listRepos(req.orgId);
       const versions = await ds.recentVersions(req.query.path).catch(() => []);
       const cfg = { mode: 'view', repo: row.id, repos, role: req.orgRole, path: req.query.path, sha: versionSha, commentable: !!versionSha, versions };
@@ -100,9 +100,11 @@ function createDocsRouter(deps) {
       res.status(201).json(row);
     } catch (e) {
       if (e && e.code === '23505') return res.status(409).json({ error: 'already added' });
-      if (/github\.com|owner\/repo|invalid url/i.test(e.message)) return res.status(400).json({ error: e.message });
-      if (/no access/i.test(e.message)) return res.status(502).json({ error: e.message });
-      next(e);
+      if (/^(not a github\.com url|invalid url|could not parse owner\/repo)$/i.test(e.message)) {
+        return res.status(400).json({ error: e.message });
+      }
+      // access-verify non-200 or a network failure to GitHub
+      return res.status(502).json({ error: e.message });
     }
   });
 

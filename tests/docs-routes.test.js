@@ -67,3 +67,25 @@ test('POST /docs/repos maps a bad url to 400', async () => {
     .post('/docs/repos').send({ url: 'https://evil.com/x/y' });
   expect(bad.status).toBe(400);
 });
+
+test('POST /docs/repos maps a no-access GitHub error to 502', async () => {
+  const res = await request(app({ docsRepos: { addRepo: async () => { throw new Error('no access to acme/widgets (GitHub 404)'); }, listRepos: async () => [], getRepo: async () => null, removeRepo: async () => true } }))
+    .post('/docs/repos').send({ url: 'https://github.com/acme/widgets' });
+  expect(res.status).toBe(502);
+});
+
+test('POST /docs/repos maps a network failure to 502 (not 400)', async () => {
+  const res = await request(app({ docsRepos: { addRepo: async () => { throw new Error('getaddrinfo ENOTFOUND api.github.com'); }, listRepos: async () => [], getRepo: async () => null, removeRepo: async () => true } }))
+    .post('/docs/repos').send({ url: 'https://github.com/acme/widgets' });
+  expect(res.status).toBe(502);
+});
+
+test('POST /docs/comments with a foreign repo id returns 404', async () => {
+  const res = await request(app()).post('/docs/comments').send({ repo: 'foreign', path: 'a.md', sha: 'abc1234' });
+  expect(res.status).toBe(404);
+});
+
+test('DELETE /docs/comments/:id with a foreign ?repo= returns 404', async () => {
+  const res = await request(app()).delete('/docs/comments/7').query({ repo: 'foreign' });
+  expect(res.status).toBe(404);
+});

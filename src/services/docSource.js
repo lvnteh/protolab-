@@ -36,15 +36,34 @@ function createDocSource(repoPath) {
     return path.posix.basename(fallbackPath).replace(/\.md$/, '');
   }
 
+  // First-add ("creation") date per .md path, in ONE pass over history
+  // (oldest commit first, added files only), so date-sorting the tree needs no
+  // per-file git calls. Returns a { path: ISO-string } map; missing on failure.
+  async function createdDates() {
+    let out = '';
+    try {
+      out = await git(['log', '--reverse', '--diff-filter=A', '--name-only', '--format=@%cI', '--', '*.md']);
+    } catch { return {}; }
+    const dates = {};
+    let cur = null;
+    for (const line of out.split('\n')) {
+      if (line.startsWith('@')) { cur = line.slice(1).trim(); continue; }
+      const f = line.trim();
+      if (f && f.endsWith('.md') && cur && !(f in dates)) dates[f] = cur;
+    }
+    return dates;
+  }
+
   async function listDocs() {
     const out = await git(['ls-files', '-z', '*.md']);
     const paths = out.split('\0').filter(Boolean)
       .filter((p) => !IGNORED.has(path.posix.basename(p)));
+    const dates = await createdDates();
     const docs = [];
     for (const p of paths) {
       let raw = '';
       try { raw = await fs.readFile(path.join(repoPath, p), 'utf8'); } catch { /* unreadable */ }
-      docs.push({ path: p, title: titleFor(raw, p) });
+      docs.push({ path: p, title: titleFor(raw, p), created: dates[p] || null });
     }
     docs.sort((a, b) => a.path.localeCompare(b.path));
     return docs;

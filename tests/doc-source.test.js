@@ -21,10 +21,14 @@ function makeRepo() {
   return dir;
 }
 
-test('listDocs returns tracked .md with titles, excludes README', async () => {
+test('listDocs returns tracked .md with titles + creation dates, excludes README', async () => {
   const ds = createDocSource(makeRepo());
   const docs = await ds.listDocs();
-  expect(docs).toEqual([{ path: 'guide/intro.md', title: 'Intro' }]);
+  expect(docs).toHaveLength(1);
+  expect(docs[0]).toMatchObject({ path: 'guide/intro.md', title: 'Intro' });
+  expect(docs[0]).toHaveProperty('created');
+  // committed in the fixture, so a first-add date is known
+  expect(docs[0].created).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 });
 
 test('resolveVersionSha + readDoc return committed content at a real sha', async () => {

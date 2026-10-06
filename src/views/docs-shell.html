@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docs — ProtoLab (Beta!)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%)}
+.docs{display:grid;grid-template-columns:260px 1fr 320px;height:100vh}
+.docs__tree{border-right:1px solid hsl(220,13%,91%);overflow:auto;padding:12px}
+.docs__doc{overflow:auto;padding:32px 48px;max-width:860px;margin:0 auto;width:100%}
+.docs__side{border-left:1px solid hsl(220,13%,91%);overflow:auto;padding:12px}
+.docs__banner{background:hsl(42,96%,89%);padding:8px 12px;font-size:13px}
+mark{background:hsl(48,96%,76%)}
+</style>
+</head>
+<body>
+<div class="docs">
+  <nav class="docs__tree" id="docs-tree"></nav>
+  <main class="docs__doc">{{banner}}{{content}}</main>
+  <aside class="docs__side" id="docs-side"></aside>
+</div>
+<script id="docs-cfg" type="application/json">{{cfg}}</script>
+<script type="module" src="/sdk/docs.js"></script>
+</body>
+</html>

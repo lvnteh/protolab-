@@ -43,10 +43,18 @@ function commentPayload({ path, sha, line, kind, text, anchor, tag = null, reply
   return { path, sha, line, kind, text, anchor, tag, replyTo };
 }
 
+function repoViewHref(repo, p, sha) {
+  let u = `/docs/view?repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(p)}`;
+  if (sha) u += `&sha=${encodeURIComponent(sha)}`;
+  return u;
+}
+
+function addRepoPayload(url) { return { url: String(url).trim() }; }
+
 // ---- DOM/runtime wiring (browser only) ----
 if (typeof document !== 'undefined') {
   const cfgEl = document.getElementById('docs-cfg');
-  const cfg = cfgEl ? JSON.parse(cfgEl.textContent) : { mode: 'list', docs: [] };
+  const cfg = cfgEl ? JSON.parse(cfgEl.textContent) : { mode: 'home', docs: [], repos: [], repo: null, role: 'viewer' };
 
   const KINDS = [
     { id: 'question', label: 'Question', color: 'hsl(217,91%,60%)' },
@@ -83,7 +91,8 @@ if (typeof document !== 'undefined') {
   function fileLink(doc, depth, showPath) {
     const active = doc.path === cfg.path ? ' is-active' : '';
     const hint = showPath ? `<span class="docs-tree__hint">${esc(doc.path)}</span>` : '';
-    return `<a class="docs-tree__file${active}" style="padding-left:${pad(depth)}px" href="/docs/view?path=${encodeURIComponent(doc.path)}">${esc(doc.title || doc.path)}${hint}</a>`;
+    const href = cfg.repo ? esc(repoViewHref(cfg.repo, doc.path)) : `/docs/view?path=${encodeURIComponent(doc.path)}`;
+    return `<a class="docs-tree__file${active}" style="padding-left:${pad(depth)}px" href="${href}">${esc(doc.title || doc.path)}${hint}</a>`;
   }
 
   function treeHtml(node, depth, prefix) {
@@ -108,7 +117,7 @@ if (typeof document !== 'undefined') {
     if (!host) return;
     const docs = (cfg.docs || []).filter(matchesQuery);
     if (!docs.length) {
-      host.innerHTML = `<div class="docs-tree__empty">${query ? 'No docs match “' + esc(query) + '”.' : 'No documents.'}</div>`;
+      host.innerHTML = `<div class="docs-tree__empty">${query ? 'No docs match "' + esc(query) + '".' : 'No documents.'}</div>`;
       return;
     }
     if (sortMode === 'folders') {
@@ -156,6 +165,79 @@ if (typeof document !== 'undefined') {
     });
   }
 
+  // ---- repo switcher ----
+  function renderRepoSwitcher() {
+    const repEl = document.getElementById('docs-repo');
+    if (!repEl) return;
+    const repos = cfg.repos || [];
+    if (!repos.length) {
+      repEl.style.display = 'none';
+      return;
+    }
+    repEl.innerHTML = repos.map((r) =>
+      `<option value="${esc(r.id)}"${r.id === cfg.repo ? ' selected' : ''}>${esc(r.label || r.url || r.id)}</option>`
+    ).join('');
+    repEl.addEventListener('change', () => {
+      location.href = '/docs?repo=' + encodeURIComponent(repEl.value);
+    });
+
+    // show/hide admin controls
+    const addBtn = document.getElementById('docs-repo-add');
+    if (addBtn) addBtn.style.display = cfg.role === 'admin' ? '' : 'none';
+  }
+
+  // ---- home mode: repo list + empty state ----
+  function renderHome() {
+    const page = document.getElementById('docs-page');
+    if (!page) return;
+    const repos = cfg.repos || [];
+    if (!repos.length) {
+      page.innerHTML = `<div class="docs__banner">
+        ${cfg.role === 'admin'
+          ? 'No repositories configured yet. Use <strong>Add repo</strong> in the top bar to get started.'
+          : 'No repositories configured yet.'}
+      </div>`;
+      return;
+    }
+    page.innerHTML = `<h1 style="margin-bottom:1em">Repositories</h1>` + repos.map((r) => `
+      <div class="docs-repo-item">
+        <a class="docs-repo-item__link" href="/docs?repo=${esc(encodeURIComponent(r.id))}">${esc(r.label || r.url || r.id)}</a>
+        ${cfg.role === 'admin' ? `<button class="docs-btn docs-btn--ghost docs-repo-item__del" data-del-repo="${esc(r.id)}">Remove</button>` : ''}
+      </div>`).join('');
+    page.querySelectorAll('[data-del-repo]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteRepo(btn.getAttribute('data-del-repo')));
+    });
+  }
+
+  // ---- admin: add / remove repos ----
+  async function addRepo() {
+    const url = window.prompt('GitHub repository URL (e.g. https://github.com/org/repo):');
+    if (!url || !url.trim()) return;
+    try {
+      const res = await fetch('/docs/repos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(addRepoPayload(url)),
+      });
+      if (res.status === 201) { location.reload(); return; }
+      const err = await res.json().catch(() => ({ error: String(res.status) }));
+      alert('Could not add repo: ' + (err.error || err.message || res.status));
+    } catch (e) {
+      alert('Network error: ' + (e && e.message));
+    }
+  }
+
+  async function deleteRepo(id) {
+    if (!window.confirm('Remove this repository from the org?')) return;
+    try {
+      const res = await fetch(`/docs/repos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) { location.reload(); return; }
+      alert('Could not remove repo: ' + res.status);
+    } catch (e) {
+      alert('Network error: ' + (e && e.message));
+    }
+  }
+
   // ---- header: path + version switcher ----
   function renderHeader() {
     const pathEl = document.getElementById('docs-top-path');
@@ -167,7 +249,9 @@ if (typeof document !== 'undefined') {
       verEl.innerHTML = `<select id="docs-ver-select" title="View an earlier committed version">${opts}</select>`;
       const sel = document.getElementById('docs-ver-select');
       sel.addEventListener('change', () => {
-        location.href = `/docs/view?path=${encodeURIComponent(cfg.path)}&sha=${encodeURIComponent(sel.value)}`;
+        location.href = cfg.repo
+          ? repoViewHref(cfg.repo, cfg.path, sel.value)
+          : `/docs/view?path=${encodeURIComponent(cfg.path)}&sha=${encodeURIComponent(sel.value)}`;
       });
     }
   }
@@ -227,7 +311,8 @@ if (typeof document !== 'undefined') {
     const count = document.getElementById('docs-count');
     let comments;
     try {
-      const res = await fetch(`/docs/comments?path=${encodeURIComponent(cfg.path)}&sha=${encodeURIComponent(cfg.sha)}`);
+      const repoQ = cfg.repo ? `&repo=${encodeURIComponent(cfg.repo)}` : '';
+      const res = await fetch(`/docs/comments?path=${encodeURIComponent(cfg.path)}&sha=${encodeURIComponent(cfg.sha)}${repoQ}`);
       if (!res.ok) throw new Error(res.status);
       comments = await res.json();
     } catch {
@@ -316,9 +401,11 @@ if (typeof document !== 'undefined') {
     if (!text || !pending) return;
     btn.disabled = true; btn.textContent = 'Posting…';
     try {
+      const payload = commentPayload({ path: cfg.path, sha: cfg.sha, line: pending.line, kind, text, anchor: pending.anchor });
+      if (cfg.repo) payload.repo = cfg.repo;
       const res = await fetch('/docs/comments', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(commentPayload({ path: cfg.path, sha: cfg.sha, line: pending.line, kind, text, anchor: pending.anchor })),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(res.status);
       closeComposer();
@@ -351,6 +438,10 @@ if (typeof document !== 'undefined') {
   // ---- wire ----
   setupNav();
   renderNav();
+  renderRepoSwitcher();
+  const addBtn = document.getElementById('docs-repo-add');
+  if (addBtn) addBtn.addEventListener('click', addRepo);
+
   if (cfg.mode === 'view') {
     renderHeader();
     loadComments();
@@ -384,14 +475,17 @@ if (typeof document !== 'undefined') {
     window.addEventListener('focus', autoRefresh);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
     setInterval(() => { if (!document.hidden) autoRefresh(); }, 25000);
+  } else if (cfg.mode === 'home') {
+    renderHome();
   }
 
   async function deleteComment(id) {
     try {
-      const res = await fetch('/docs/comments/' + encodeURIComponent(id), { method: 'DELETE' });
+      const repoQ = cfg.repo ? `?repo=${encodeURIComponent(cfg.repo)}` : '';
+      const res = await fetch('/docs/comments/' + encodeURIComponent(id) + repoQ, { method: 'DELETE' });
       if (res.ok || res.status === 204) await loadComments();
     } catch { /* ignore */ }
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { nearestSourceLine, buildTree, commentPayload };
+if (typeof module !== 'undefined') module.exports = { nearestSourceLine, buildTree, commentPayload, repoViewHref, addRepoPayload };

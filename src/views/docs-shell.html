@@ -20,8 +20,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .docs-top__logo svg{color:var(--brand)}
 .docs-top__beta{font-size:11px;font-weight:600;color:var(--brand);background:var(--brand-100);padding:2px 7px;border-radius:999px}
 .docs-top__path{margin-left:14px;color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.docs-top__ver{margin-left:auto}
+.docs-top__repo{margin-left:auto;display:flex;align-items:center;gap:6px}
+.docs-top__repo select{font:inherit;font-size:12px;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 8px;background:#fff;max-width:200px}
 .docs-top__ver select{font:inherit;font-size:12px;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 8px;background:#fff}
+.docs-top__add{font:inherit;font-size:12px;font-weight:600;color:var(--brand);background:var(--brand-100);border:1px solid hsl(252,83%,80%);border-radius:7px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+.docs-top__add:hover{background:var(--brand);color:#fff}
+/* home repo list */
+.docs-repo-item{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:#fff}
+.docs-repo-item__link{color:var(--brand);font-weight:600;font-size:14px;text-decoration:none}
+.docs-repo-item__link:hover{text-decoration:underline}
+.docs-repo-item__del{font-size:12px;color:hsl(0,70%,55%);padding:4px 10px}
 
 /* layout */
 .docs{display:grid;grid-template-columns:var(--tree-w,280px) 1fr 340px;height:calc(100vh - 52px)}
@@ -126,6 +134,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
   </span>
   <span class="docs-top__beta">Docs</span>
   <span class="docs-top__path" id="docs-top-path"></span>
+  <span class="docs-top__repo">
+    <select id="docs-repo" title="Switch repository"></select>
+    <button id="docs-repo-add" class="docs-top__add" title="Add a GitHub repository" style="display:none">+ Add repo</button>
+  </span>
   <span class="docs-top__ver" id="docs-top-ver"></span>
 </header>
 <div class="docs">

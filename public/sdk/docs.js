@@ -51,21 +51,27 @@ if (typeof document !== 'undefined') {
   const cfgEl = document.getElementById('docs-cfg');
   const cfg = cfgEl ? JSON.parse(cfgEl.textContent) : { mode: 'list', docs: [] };
 
+  // HTML-escape helper — applied to every value interpolated into innerHTML or attributes.
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
   async function renderList() {
     const tree = buildTree(cfg.docs);
     const host = document.getElementById('docs-tree');
     const render = (node, depth) => node.children.map((c) => c.path
-      ? `<div style="padding-left:${depth * 12}px"><a href="/docs/view?path=${encodeURIComponent(c.path)}">${c.title || c.name}</a></div>`
-      : `<div style="padding-left:${depth * 12}px"><b>${c.name}/</b></div>${render(c, depth + 1)}`).join('');
+      ? `<div style="padding-left:${depth * 12}px"><a href="/docs/view?path=${encodeURIComponent(c.path)}">${esc(c.title || c.name)}</a></div>`
+      : `<div style="padding-left:${depth * 12}px"><b>${esc(c.name)}/</b></div>${render(c, depth + 1)}`).join('');
     if (host) host.innerHTML = render(tree, 0);
   }
 
   async function loadComments() {
-    const res = await fetch(`/docs/comments?path=${encodeURIComponent(cfg.path)}&sha=${encodeURIComponent(cfg.sha)}`);
-    const comments = await res.json();
+    let comments;
+    try {
+      const res = await fetch(`/docs/comments?path=${encodeURIComponent(cfg.path)}&sha=${encodeURIComponent(cfg.sha)}`);
+      comments = await res.json();
+    } catch { return; }
     const side = document.getElementById('docs-side');
     if (side) side.innerHTML = comments.map((c) =>
-      `<div class="docs__comment" data-id="${c.id}"><b>${c.kind}</b> — ${c.author || ''}<br>${c.text}</div>`).join('');
+      `<div class="docs__comment" data-id="${esc(c.id)}"><b>${esc(c.kind)}</b> — ${esc(c.author || '')}<br>${esc(c.text)}</div>`).join('');
     // Re-highlight each anchored comment with FBAnchor if available.
     // Real API: resolveAnchor(anchor, root) → Range, then wrapRange(range, root, makeMark).
     if (window.FBAnchor && window.FBAnchor.resolveAnchor && window.FBAnchor.wrapRange) {
@@ -109,7 +115,8 @@ if (typeof document !== 'undefined') {
   if (cfg.mode === 'list') renderList();
   else {
     loadComments();
-    document.querySelector('.docs__doc').addEventListener('mouseup', onSelect);
+    const docRoot = document.querySelector('.docs__doc');
+    if (docRoot) docRoot.addEventListener('mouseup', onSelect);
   }
 }
 

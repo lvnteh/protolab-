@@ -910,6 +910,7 @@
 
       const showPopover = () => {
         if (popoverEl) return;
+        marker.style.zIndex = '1';
         popoverEl = document.createElement('div');
         popoverEl.className = 'fb-explain-popover';
         popoverEl.innerHTML = `
@@ -928,6 +929,7 @@
 
       const hidePopover = () => {
         if (popoverEl) { popoverEl.remove(); popoverEl = null; }
+        marker.style.zIndex = '';
       };
 
       marker.addEventListener('mouseenter', showPopover);
@@ -1235,6 +1237,7 @@
       cancelHide();
       if (popoverEl) return;
       openPinId = pin.id;
+      btn.style.zIndex = '1';
       popoverEl = document.createElement('div');
       popoverEl.className = 'fb-popover';
       popoverEl.addEventListener('mouseenter', cancelHide);
@@ -1361,6 +1364,7 @@
 
     const hidePopover = () => {
       if (popoverEl) { popoverEl.remove(); popoverEl = null; }
+      btn.style.zIndex = '';
       if (openPinId === pin.id) openPinId = null;
       pinned = false;
       if (unpinActive === doHide) unpinActive = null;

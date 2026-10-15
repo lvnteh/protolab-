@@ -81,16 +81,18 @@
     /* Right-side toolbar cluster: mode switcher + the view-only hide-comments pill. */
     #__fb-toolbar-right { display: flex; align-items: center; gap: 10px; }
     #__fb-hide-toggle {
+      position: fixed; bottom: 24px; right: calc(var(--fb-sidebar-w, 32px) + 12px);
       display: inline-flex; align-items: center; gap: 5px;
-      padding: 4px 12px; height: 26px; border-radius: 8px;
-      border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.15);
-      color: rgba(255,255,255,.9); cursor: pointer;
-      font-size: 12px; font-weight: 500;
+      padding: 6px 14px; height: 32px; border-radius: 20px;
+      border: none; background: hsl(222,47%,11%); color: #fff;
+      cursor: pointer; font-size: 12px; font-weight: 500;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      transition: background .15s, color .15s;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      transition: background .15s, right .2s;
+      z-index: 2147483644;
     }
-    #__fb-hide-toggle:hover { background: rgba(255,255,255,.25); color: #fff; }
-    #__fb-hide-toggle.active { background: #fff; color: hsl(252,83%,57%); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    #__fb-hide-toggle:hover { background: hsl(222,47%,20%); }
+    #__fb-hide-toggle.active { background: hsl(252,83%,57%); }
 
     #__fb-version-switcher {
       appearance: none; -webkit-appearance: none; -moz-appearance: none;
@@ -418,7 +420,6 @@
           Comment
         </button>
       </div>
-      <button id="__fb-hide-toggle" type="button" aria-pressed="false"></button>
     </div>
   `;
   document.body.insertBefore(toolbar, document.body.firstChild);
@@ -495,6 +496,13 @@
 `;
   document.body.appendChild(sidebar);
 
+  /* ── hide-comments toggle ── */
+  const hideToggleEl = document.createElement('button');
+  hideToggleEl.id = '__fb-hide-toggle';
+  hideToggleEl.type = 'button';
+  hideToggleEl.setAttribute('aria-pressed', 'false');
+  document.body.appendChild(hideToggleEl);
+
   /* ── draft card ── */
   const draftCard = document.createElement('div');
   draftCard.id = '__fb-draft-card';
@@ -558,7 +566,7 @@
   setInterval(() => { now = Date.now(); }, 1000);
 
   /* ── mode switching ── */
-  const hideToggle = toolbar.querySelector('#__fb-hide-toggle');
+  const hideToggle = document.getElementById('__fb-hide-toggle');
   const EYE_SVG = '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
   const EYE_OFF_SVG = '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
   // The pill advertises the action it performs: when comments are showing it

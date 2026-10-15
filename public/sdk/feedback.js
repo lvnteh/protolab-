@@ -24,14 +24,15 @@
     return url + (url.indexOf('?') === -1 ? '?' : '&') + 'version=' + VERSION;
   }
 
-  const TAGS = ['bug', 'copy', 'question', 'idea', 'other'];
-  const TAG_LABEL = { bug: 'Bug', copy: 'Copy', question: 'Question', idea: 'Idea', other: 'Other' };
+  const TAGS = ['bug', 'copy', 'question', 'idea', 'explanation', 'other'];
+  const TAG_LABEL = { bug: 'Bug', copy: 'Copy', question: 'Question', idea: 'Idea', explanation: 'Explanation', other: 'Other' };
   const TAG_COLOR = {
-    bug:      'hsl(0,84%,60%)',
-    copy:     'hsl(38,92%,50%)',
-    question: 'hsl(217,91%,60%)',
-    idea:     'hsl(142,71%,45%)',
-    other:    'hsl(252,83%,57%)',
+    bug:         'hsl(0,84%,60%)',
+    copy:        'hsl(38,92%,50%)',
+    question:    'hsl(217,91%,60%)',
+    idea:        'hsl(142,71%,45%)',
+    explanation: 'hsl(271,76%,53%)',
+    other:       'hsl(252,83%,57%)',
   };
   const CLUSTER_PX = 28;
   const EDIT_WINDOW_MS = 5 * 60 * 1000;
@@ -76,7 +77,6 @@
     .fb-mode-btn:hover { color: #fff; }
     .fb-mode-btn.active-view    { background: #fff; color: hsl(252,83%,57%); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
     .fb-mode-btn.active-comment { background: rgba(255,255,255,.25); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .fb-mode-btn.active-explain { background: hsl(38,92%,50%); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 
     /* Right-side toolbar cluster: mode switcher + the view-only hide-comments pill. */
     #__fb-toolbar-right { display: flex; align-items: center; gap: 10px; }
@@ -240,73 +240,6 @@
       box-shadow: 0 4px 12px rgba(0,0,0,.15);
     }
     #__fb-toast.visible { opacity: 1; }
-
-    /* ── explain mode ── */
-    #__fb-explain-banner {
-      position: fixed; top: 44px; left: 0; right: var(--fb-sidebar-w, 32px); z-index: 2147483646;
-      background: hsl(38,92%,50%); color: #fff; text-align: center;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 12px; padding: 6px; pointer-events: none; display: none;
-    }
-    body.__fb-explain-mode #__fb-explain-banner { display: block; }
-
-    #__fb-explains {
-      position: fixed; top: 0; left: 0; width: 0; height: 0;
-      pointer-events: none; z-index: 2147483638;
-    }
-    .fb-explain-marker {
-      position: absolute; width: 26px; height: 26px; border-radius: 50%;
-      background: hsl(38,92%,50%); color: #fff;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 700; font-family: serif;
-      box-shadow: 0 1px 4px rgba(0,0,0,.25), 0 0 0 2px #fff;
-      cursor: pointer; pointer-events: auto;
-      transform: translate(-50%, -50%);
-    }
-    .fb-explain-marker:hover { transform: translate(-50%,-50%) scale(1.15); }
-
-    .fb-explain-popover {
-      position: absolute; left: calc(100% + 8px); top: -4px;
-      width: 260px; background: #fff;
-      border: 1px solid hsl(220,13%,91%); border-radius: 12px;
-      overflow: hidden;
-      font-size: 12px; line-height: 1.5;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      box-shadow: 0 4px 16px rgba(0,0,0,.12);
-      pointer-events: auto; z-index: 10;
-    }
-    .fb-explain-popover__head {
-      display: flex; align-items: center; gap: 6px;
-      background: hsl(38,92%,50%); color: #fff;
-      padding: 6px 10px; font-size: 11px; font-weight: 700;
-    }
-    .fb-explain-popover__body {
-      padding: 10px; color: hsl(222,47%,11%);
-      white-space: pre-wrap; word-break: break-word;
-    }
-
-    #__fb-explain-card {
-      position: fixed; right: 16px; top: 60px; width: 296px;
-      background: #fff; border: 1px solid hsl(220,13%,91%); border-radius: 12px;
-      padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px; z-index: 2147483645; display: none;
-    }
-    #__fb-explain-card.visible { display: block; }
-    .fb-explain-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .fb-explain-card-title { font-weight: 600; font-size: 13px; color: hsl(222,47%,11%); }
-    .fb-explain-card-close { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; border-radius: 6px; cursor: pointer; background: none; color: hsl(220,9%,46%); }
-    .fb-explain-card-close:hover { background: hsl(220,14%,93%); }
-    #__fb-explain-selector { font-size: 11px; color: hsl(220,9%,46%); margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #__fb-explain-textarea {
-      width: 100%; resize: vertical; border: 1px solid hsl(220,13%,87%); border-radius: 8px;
-      padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none;
-      background: #fff; color: hsl(222,47%,11%); line-height: 1.5; min-height: 80px;
-    }
-    #__fb-explain-textarea:focus { border-color: hsl(38,92%,50%); box-shadow: 0 0 0 3px hsl(38,92%,85%); }
-    .fb-explain-foot { margin-top: 10px; display: flex; gap: 6px; justify-content: flex-end; }
-    #__fb-explain-delete { background: none; border: 1px solid #e0c0bd; color: #c0392b; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; margin-right: auto; }
-    #__fb-explain-delete:hover { background: #fdf2f2; }
 
     .fb-popover__replies {
       margin-top: 8px; padding-top: 8px;
@@ -484,10 +417,6 @@
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           Comment
         </button>
-        <button class="fb-mode-btn" data-mode="explain">
-          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Explain
-        </button>
       </div>
       <button id="__fb-hide-toggle" type="button" aria-pressed="false"></button>
     </div>
@@ -522,11 +451,6 @@
   // Tag the body so the markdown-only CSS (text cursor, selection-first) applies.
   if (IS_MARKDOWN) document.body.classList.add('__fb-markdown');
 
-  const explainBanner = document.createElement('div');
-  explainBanner.id = '__fb-explain-banner';
-  explainBanner.textContent = 'Hover any element to see its explanation · Click to add or edit · Esc to exit';
-  document.body.insertBefore(explainBanner, commentBanner.nextSibling);
-
   /* ── pin layer ── */
   const pinContainer = document.createElement('div');
   pinContainer.id = '__fb-pins';
@@ -537,11 +461,6 @@
   rangeLayer.id = '__fb-ranges';
   rangeLayer.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483637';
   document.body.appendChild(rangeLayer);
-
-  /* ── explain layer ── */
-  const explainContainer = document.createElement('div');
-  explainContainer.id = '__fb-explains';
-  document.body.appendChild(explainContainer);
 
   /* ── sidebar ── */
   const sidebar = document.createElement('div');
@@ -595,26 +514,6 @@
   `;
   document.body.appendChild(draftCard);
 
-  /* ── explain edit card ── */
-  const explainCard = document.createElement('div');
-  explainCard.id = '__fb-explain-card';
-  explainCard.innerHTML = `
-    <div class="fb-explain-card-header">
-      <span class="fb-explain-card-title" id="__fb-explain-card-title">Add explanation</span>
-      <button class="fb-explain-card-close" id="__fb-explain-close">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div id="__fb-explain-selector"></div>
-    <textarea id="__fb-explain-textarea" rows="5" placeholder="Describe this element: user story, Gherkin, notes…"></textarea>
-    <div class="fb-explain-foot">
-      <button id="__fb-explain-delete" style="display:none">Delete</button>
-      <button class="fb-btn-sm fb-btn-ghost" id="__fb-explain-cancel">Cancel</button>
-      <button class="fb-btn-sm fb-btn-primary" id="__fb-explain-save" disabled>Save</button>
-    </div>
-  `;
-  document.body.appendChild(explainCard);
-
   /* ── toast ── */
   const toast = document.createElement('div');
   toast.id = '__fb-toast';
@@ -650,10 +549,6 @@
   let unpinActive = null; // callback to close whichever pin is currently pinned open
   let reopenPinId = null; // set before loadPins(); consumed by renderPinEl to reopen the popover after re-render
   let navHistory = [];   // page URLs visited this session, for breadcrumb
-  let explanations = [];       // [{id,element_selector,x_pct,y_pct,page_url,body}]
-  let explainPositions = {};   // {id: {x,y,visible}} — computed each RAF frame
-  let explainMarkerEls = {};   // {id: domElement}
-  let explainDraft = null;     // {selector, xPct, yPct, existingId|null}
   let rangeComments = [];        // [{id,email,comment,tag,anchor_quote,anchor_prefix,anchor_suffix,anchor_start,anchor_end,page_url,replies,created_at, order, __unresolved}]
   let rangeDraft = null;         // { anchor, tagSel } pending selection comment
   let suppressNextClick = false; // swallow the click that ends a selection mouseup
@@ -684,13 +579,9 @@
     // The hide-comments pill only makes sense on the View tab.
     hideToggle.style.display = (m === 'view') ? 'inline-flex' : 'none';
     document.body.classList.toggle('__fb-comment-mode', m === 'comment');
-    document.body.classList.toggle('__fb-explain-mode', m === 'explain');
     if (m !== 'comment') closeDraft();
-    if (m !== 'explain') closeExplainCard();
     renderPinLayer();
     renderRangeLayer();
-    // explain layer is driven by the RAF loop; clear it immediately when leaving explain mode
-    if (m !== 'explain') { explainContainer.innerHTML = ''; explainMarkerEls = {}; }
   }
 
   renderHideToggle();
@@ -710,7 +601,6 @@
       if (openRangePopoverEl) { closeRangePopover(); return; }
       if (unpinActive) { unpinActive(); unpinActive = null; return; }
       if (draft || rangeDraft) { closeDraft(); return; }
-      if (explainDraft) { closeExplainCard(); return; }
       if (mode !== 'view') setMode('view');
     }
   });
@@ -731,15 +621,6 @@
           renderSidebar();
           if (focusId) focusPin(focusId);
         }));
-      }
-    } catch (e) {}
-  }
-
-  async function loadExplanations() {
-    try {
-      const resp = await fetch(withVersion('/api/explanations/' + PROTO_ID), { credentials: 'include' });
-      if (resp.ok) {
-        explanations = await resp.json();
       }
     } catch (e) {}
   }
@@ -799,7 +680,7 @@
           ${repliesHtml}
         `;
         row.addEventListener('click', () => {
-          if (mode === 'comment' || mode === 'explain') setMode('view');
+          if (mode === 'comment') setMode('view');
           focusPin(p.id);
           setTimeout(() => {
             const pinEl = pinElements[p.id];
@@ -832,7 +713,7 @@
           ${unresolvedHtml}
         `;
         row.addEventListener('click', () => {
-          if (mode === 'comment' || mode === 'explain') setMode('view');
+          if (mode === 'comment') setMode('view');
           const mark = document.querySelector(`mark.__fb-mark[data-range-id="${c.id}"]`);
           if (mark) { mark.scrollIntoView({ behavior: 'smooth', block: 'center' }); openRangePopover(c, mark); }
         });
@@ -890,149 +771,6 @@
     }
     submitBtn.disabled = false;
     submitBtn.textContent = 'Post comment';
-  });
-
-  function renderExplainLayer() {
-    explainContainer.innerHTML = '';
-    explainMarkerEls = {};
-    if (mode !== 'explain') return;
-
-    explanations.forEach(ex => {
-      const pos = explainPositions[ex.id];
-      if (!pos?.visible) return;
-
-      const marker = document.createElement('div');
-      marker.className = 'fb-explain-marker';
-      marker.style.cssText = `left:${pos.x}px;top:${pos.y}px`;
-      marker.textContent = 'ℹ';
-
-      let popoverEl = null;
-
-      const showPopover = () => {
-        if (popoverEl) return;
-        marker.style.zIndex = '1';
-        popoverEl = document.createElement('div');
-        popoverEl.className = 'fb-explain-popover';
-        popoverEl.innerHTML = `
-          <div class="fb-explain-popover__head">
-            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            Explanation
-          </div>
-          <div class="fb-explain-popover__body">${escHtml(ex.body)}</div>
-        `;
-        popoverEl.addEventListener('mouseleave', e => {
-          if (e.relatedTarget && marker.contains(e.relatedTarget)) return;
-          hidePopover();
-        });
-        marker.appendChild(popoverEl);
-      };
-
-      const hidePopover = () => {
-        if (popoverEl) { popoverEl.remove(); popoverEl = null; }
-        marker.style.zIndex = '';
-      };
-
-      marker.addEventListener('mouseenter', showPopover);
-      marker.addEventListener('mouseleave', e => {
-        if (e.relatedTarget && (marker.contains(e.relatedTarget) || (popoverEl && popoverEl.contains(e.relatedTarget)))) return;
-        hidePopover();
-      });
-
-      explainContainer.appendChild(marker);
-      explainMarkerEls[ex.id] = marker;
-    });
-  }
-
-  function openExplainCard(selector, xPct, yPct) {
-    const existing = explanations.find(e =>
-      e.element_selector === selector &&
-      (e.page_url ? pageKeyOf(e.page_url) === currentPageKey() : true)
-    );
-    explainDraft = { selector, xPct, yPct, existingId: existing ? existing.id : null };
-    document.getElementById('__fb-explain-card-title').textContent = existing ? 'Edit explanation' : 'Add explanation';
-    document.getElementById('__fb-explain-selector').textContent = selector;
-    document.getElementById('__fb-explain-textarea').value = existing ? existing.body : '';
-    document.getElementById('__fb-explain-save').disabled = !existing;
-    document.getElementById('__fb-explain-delete').style.display = existing ? '' : 'none';
-    explainCard.classList.add('visible');
-    document.getElementById('__fb-explain-textarea').focus();
-  }
-
-  function closeExplainCard() {
-    explainDraft = null;
-    explainCard.classList.remove('visible');
-  }
-
-  document.getElementById('__fb-explain-close').addEventListener('click', closeExplainCard);
-  document.getElementById('__fb-explain-cancel').addEventListener('click', closeExplainCard);
-
-  document.getElementById('__fb-explain-textarea').addEventListener('input', e => {
-    document.getElementById('__fb-explain-save').disabled = !e.target.value.trim();
-  });
-
-  document.getElementById('__fb-explain-save').addEventListener('click', async () => {
-    if (!explainDraft) return;
-    const draft = explainDraft;
-    const body = document.getElementById('__fb-explain-textarea').value.trim();
-    if (!body) return;
-    const saveBtn = document.getElementById('__fb-explain-save');
-    saveBtn.disabled = true;
-    try {
-      if (draft.existingId) {
-        await fetch('/api/explanations/' + draft.existingId, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ body, version: VERSION }),
-          credentials: 'include',
-        });
-        const idx = explanations.findIndex(e => e.id === draft.existingId);
-        if (idx !== -1) explanations[idx].body = body;
-      } else {
-        const resp = await fetch('/api/explanations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prototypeId: PROTO_ID,
-            elementSelector: draft.selector,
-            xPct: draft.xPct,
-            yPct: draft.yPct,
-            pageUrl: location.href,
-            body,
-            version: VERSION,
-          }),
-          credentials: 'include',
-        });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const { id } = await resp.json();
-        explanations.push({
-          id, element_selector: draft.selector,
-          x_pct: draft.xPct, y_pct: draft.yPct,
-          page_url: location.href, body,
-        });
-      }
-      closeExplainCard();
-      showToast('Explanation saved.');
-      renderExplainLayer();
-    } catch (_) {
-      showToast('Failed to save.', true);
-      saveBtn.disabled = false;
-    }
-  });
-
-  document.getElementById('__fb-explain-delete').addEventListener('click', async () => {
-    if (!explainDraft?.existingId) return;
-    const draft = explainDraft;
-    try {
-      await fetch('/api/explanations/' + draft.existingId, {
-        method: 'DELETE', credentials: 'include',
-      });
-      explanations = explanations.filter(e => e.id !== draft.existingId);
-      closeExplainCard();
-      showToast('Explanation deleted.');
-      renderExplainLayer();
-    } catch (_) {
-      showToast('Failed to delete.', true);
-    }
   });
 
   function focusPin(id) {
@@ -1098,39 +836,6 @@
       });
     }
 
-    if (mode === 'explain') {
-      const exMap = {};
-      explanations.forEach(ex => {
-        if (ex.page_url && pageKeyOf(ex.page_url) !== currentPageKey()) { exMap[ex.id] = { x: 0, y: 0, visible: false }; return; }
-        try {
-          const el = document.querySelector(ex.element_selector);
-          if (!el) { exMap[ex.id] = { x: 0, y: 0, visible: false }; return; }
-          const r = el.getBoundingClientRect();
-          const ox = typeof ex.x_pct === 'number' ? ex.x_pct : 0.5;
-          const oy = typeof ex.y_pct === 'number' ? ex.y_pct : 0.5;
-          exMap[ex.id] = { visible: r.width > 0 || r.height > 0, x: r.left + r.width * ox, y: r.top + r.height * oy };
-        } catch (_) { exMap[ex.id] = { x: 0, y: 0, visible: false }; }
-      });
-
-      const prevExVisible = new Set(Object.keys(explainMarkerEls));
-      const nextExVisible = new Set(Object.entries(exMap).filter(([, v]) => v.visible).map(([k]) => k));
-      const exVisibilityChanged = prevExVisible.size !== nextExVisible.size ||
-        [...nextExVisible].some(id => !prevExVisible.has(id));
-
-      explainPositions = exMap;
-
-      if (exVisibilityChanged) {
-        renderExplainLayer();
-      } else {
-        Object.entries(explainMarkerEls).forEach(([id, el]) => {
-          const pos = exMap[id];
-          if (!pos) return;
-          el.style.left = pos.x + 'px';
-          el.style.top = pos.y + 'px';
-          el.style.display = pos.visible ? '' : 'none';
-        });
-      }
-    }
     repositionRangeMarkers();
     rafId = requestAnimationFrame(recomputePositions);
   }
@@ -1166,7 +871,6 @@
     pinContainer.innerHTML = '';
     pinElements = {};
     clusterElements = [];
-    if (mode === 'explain') return;
     if (mode === 'view' && commentsHidden) return;
 
     const visibleItems = pins
@@ -1409,7 +1113,6 @@
       parent.normalize && parent.normalize();
     });
     rangeLayer.innerHTML = '';
-    if (mode === 'explain') return;
     if (mode === 'view' && commentsHidden) return;
 
     rangeComments.forEach(c => {
@@ -1675,26 +1378,6 @@
     openDraftCard(selector);
   }, true);
 
-  /* ── explain mode click ── */
-  document.addEventListener('click', e => {
-    if (mode !== 'explain') return;
-    if (isOwnUi(e.target)) return;
-    e.preventDefault(); e.stopPropagation();
-
-    // Walk up from SVG internals (<path>, <circle>, etc.) to their owning SVG or parent element
-    let el = e.target;
-    while (el && (el.tagName === 'path' || el.tagName === 'circle' || el.tagName === 'rect' || el.tagName === 'line' || el.tagName === 'polyline' || el.tagName === 'polygon' || el.tagName === 'ellipse' || el.tagName === 'use') && el.parentElement) {
-      el = el.parentElement;
-    }
-
-    const selector = getCssSelector(el);
-    const rect = el.getBoundingClientRect();
-    const xPct = rect.width ? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) : 0.5;
-    const yPct = rect.height ? Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)) : 0.5;
-
-    openExplainCard(selector, xPct, yPct);
-  }, true);
-
   function openDraftCard(selector) {
     document.getElementById('__fb-draft-selector').textContent = selector;
     document.getElementById('__fb-draft-textarea').value = '';
@@ -1939,7 +1622,6 @@
   const focusId = new URLSearchParams(location.search).get('focus') || '';
 
   loadPins();
-  loadExplanations();
   rafId = requestAnimationFrame(recomputePositions);
   const _storedSidebar = (() => { try { return localStorage.getItem('__fb_sidebar_' + PROTO_ID); } catch (_) { return null; } })();
   if (_storedSidebar !== null) {

@@ -57,7 +57,7 @@ async function listComments(prototypeId, versionId) {
     `SELECT id, email, type, element_selector, element_label, comment, created_at, tag, x_pct, y_pct, page_url, parent_id,
             anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end
      FROM comments
-     WHERE prototype_id = $1 AND version_id IS NOT DISTINCT FROM $2
+     WHERE prototype_id = $1 AND (version_id IS NOT DISTINCT FROM $2 OR version_id IS NULL)
      ORDER BY created_at ASC`,
     [prototypeId, versionId]);
 

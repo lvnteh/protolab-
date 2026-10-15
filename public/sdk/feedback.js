@@ -362,6 +362,14 @@
       overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
     }
     .fb-sidebar-pin-replies { font-size: 10px; color: hsl(220,9%,46%); margin-top: 3px; }
+    .fb-sidebar-pin-ghost {
+      display: inline-flex; align-items: center; gap: 3px;
+      margin-top: 4px; font-size: 10px; color: hsl(38,92%,38%);
+      background: hsl(38,92%,95%); border: 1px solid hsl(38,92%,80%);
+      border-radius: 4px; padding: 2px 6px; font-weight: 500;
+    }
+    .fb-sidebar-pin-row--ghost { opacity: 0.7; cursor: default; }
+    .fb-sidebar-pin-row--ghost:hover { background: #fff; border-color: hsl(220,13%,91%); }
     .fb-sidebar-empty {
       flex: 1; display: flex; align-items: center; justify-content: center;
       font-size: 12px; color: hsl(220,9%,60%); text-align: center; padding: 16px;
@@ -671,12 +679,15 @@
     } else {
       pagePins.forEach(p => {
         const row = document.createElement('div');
-        row.className = 'fb-sidebar-pin-row';
+        row.className = 'fb-sidebar-pin-row' + (p.__ghost ? ' fb-sidebar-pin-row--ghost' : '');
         const tagHtml = p.tag
           ? `<span class="fb-sidebar-pin-tag" style="background:${TAG_COLOR[p.tag] || TAG_COLOR.other}">${TAG_LABEL[p.tag] || p.tag}</span>`
           : '';
         const repliesHtml = (p.replies && p.replies.length)
           ? `<div class="fb-sidebar-pin-replies">${p.replies.length} repl${p.replies.length === 1 ? 'y' : 'ies'}</div>`
+          : '';
+        const ghostHtml = p.__ghost
+          ? `<div class="fb-sidebar-pin-ghost">⚠ Element no longer in the page</div>`
           : '';
         row.innerHTML = `
           <div class="fb-sidebar-pin-row-head">
@@ -686,15 +697,18 @@
           </div>
           <div class="fb-sidebar-pin-body">${escHtml(p.comment)}</div>
           ${repliesHtml}
+          ${ghostHtml}
         `;
-        row.addEventListener('click', () => {
-          if (mode === 'comment') setMode('view');
-          focusPin(p.id);
-          setTimeout(() => {
-            const pinEl = pinElements[p.id];
-            if (pinEl) pinEl.click();
-          }, 50);
-        });
+        if (!p.__ghost) {
+          row.addEventListener('click', () => {
+            if (mode === 'comment') setMode('view');
+            focusPin(p.id);
+            setTimeout(() => {
+              const pinEl = pinElements[p.id];
+              if (pinEl) pinEl.click();
+            }, 50);
+          });
+        }
         pinsList.appendChild(row);
       });
 
@@ -801,17 +815,26 @@
   /* ── pin position polling ── */
   function recomputePositions() {
     const map = {};
+    let ghostChanged = false;
     pins.forEach(p => {
       if (!p.element_selector) { map[p.id] = { x: 0, y: 0, visible: false }; return; }
       if (p.page_url && pageKeyOf(p.page_url) !== currentPageKey()) { map[p.id] = { x: 0, y: 0, visible: false }; return; }
       try {
         const el = document.querySelector(p.element_selector);
-        if (!el) { map[p.id] = { x: 0, y: 0, visible: false }; return; }
+        if (!el) {
+          map[p.id] = { x: 0, y: 0, visible: false };
+          if (!p.__ghost) { p.__ghost = true; ghostChanged = true; }
+          return;
+        }
+        if (p.__ghost) { p.__ghost = false; ghostChanged = true; }
         const r = el.getBoundingClientRect();
         const ox = typeof p.x_pct === 'number' ? p.x_pct : 0.5;
         const oy = typeof p.y_pct === 'number' ? p.y_pct : 0.5;
         map[p.id] = { visible: r.width > 0 || r.height > 0, x: r.left + r.width * ox, y: r.top + r.height * oy };
-      } catch (_) { map[p.id] = { x: 0, y: 0, visible: false }; }
+      } catch (_) {
+        map[p.id] = { x: 0, y: 0, visible: false };
+        if (!p.__ghost) { p.__ghost = true; ghostChanged = true; }
+      }
     });
     if (draft?.selector) {
       try {
@@ -843,6 +866,8 @@
         el.style.display = pos.visible ? '' : 'none';
       });
     }
+
+    if (ghostChanged) renderSidebar();
 
     repositionRangeMarkers();
     rafId = requestAnimationFrame(recomputePositions);

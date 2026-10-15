@@ -1563,6 +1563,11 @@
         : [];
       if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
       parts.unshift(part);
+      // If this node's parent has an id, anchor the path there and stop walking up
+      if (node.parentElement && node.parentElement !== document.body && node.parentElement.id) {
+        parts.unshift('#' + CSS.escape(node.parentElement.id));
+        return parts.join(' > ');
+      }
       node = node.parentElement;
     }
     return parts.join(' > ');

@@ -234,11 +234,13 @@
     /* draft card */
     #__fb-draft-card {
       position: fixed; right: 16px; top: 60px; width: 296px;
+      transition: width .15s ease;
       background: #fff; border: 1px solid hsl(220,13%,91%); border-radius: 12px;
       padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 13px; z-index: 2147483645; display: none;
     }
+    #__fb-draft-card.has-shot { width: 480px; }
     #__fb-draft-card.visible { display: block; }
     .fb-draft-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
     .fb-draft-title { font-weight: 600; font-size: 13px; color: hsl(222,47%,11%); }
@@ -1648,7 +1650,7 @@
       shotImg.src = '';
       return;
     }
-    shotImg.onload = () => { positionDraftCard(); };
+    shotImg.onload = () => { draftCard.classList.add('has-shot'); positionDraftCard(); };
     shotImg.src = shot.dataUrl;
     shotWrap.className = '';
   }
@@ -1667,7 +1669,7 @@
     } else if (draft && draft.selector) {
       try { const el = document.querySelector(draft.selector); if (el) rect = el.getBoundingClientRect(); } catch (_) {}
     }
-    const cardW = draftCard.offsetWidth || 296;
+    const cardW = draftCard.offsetWidth || (draftCard.classList.contains('has-shot') ? 480 : 296);
     const cardH = draftCard.offsetHeight || 260;
     const sidebarW = sidebarExpanded ? 260 : 32;
     const GAP = 12, TOP_MIN = 52, MARGIN = 8;
@@ -1772,6 +1774,7 @@
     // Reset screenshot preview so it doesn't flash on the next open.
     const shotWrap = document.getElementById('__fb-draft-shot-wrap');
     if (shotWrap) { shotWrap.className = 'no-shot'; document.getElementById('__fb-draft-shot-img').src = ''; }
+    draftCard.classList.remove('has-shot');
     // Drop the text selection now that the draft is resolved (posted or cancelled).
     const sel = window.getSelection && window.getSelection();
     if (sel && sel.removeAllRanges && !sel.isCollapsed) sel.removeAllRanges();

@@ -185,7 +185,7 @@
       font-size: 12px; padding: 6px; pointer-events: none; display: none;
     }
     body.__fb-comment-mode #__fb-comment-banner { display: block; }
-    body.__fb-comment-mode { cursor: crosshair !important; }
+    body.__fb-comment-mode { padding-top: 72px !important; cursor: crosshair !important; }
     body.__fb-comment-mode * { cursor: crosshair !important; }
     body.__fb-comment-mode.__fb-draft-open,
     body.__fb-comment-mode.__fb-draft-open * { cursor: default !important; }
@@ -621,6 +621,8 @@
   hideToggleEl.type = 'button';
   hideToggleEl.setAttribute('aria-pressed', 'false');
   document.body.appendChild(hideToggleEl);
+  // HTML prototypes have no on-canvas pins to show/hide — the toggle is irrelevant.
+  if (IS_HTML_PROTO) hideToggleEl.style.display = 'none';
 
   /* ── draft card ── */
   const draftCard = document.createElement('div');
@@ -757,8 +759,9 @@
       const bm = btn.dataset.mode;
       btn.className = 'fb-mode-btn' + (bm === m ? ` active-${m}` : '');
     });
-    // The hide-comments pill only makes sense on the View tab.
-    hideToggle.style.display = (m === 'view') ? 'inline-flex' : 'none';
+    // The hide-comments pill only makes sense on the View tab, and only for
+    // non-HTML prototypes (HTML protos have no on-canvas pins to show/hide).
+    hideToggle.style.display = (!IS_HTML_PROTO && m === 'view') ? 'inline-flex' : 'none';
     document.body.classList.toggle('__fb-comment-mode', m === 'comment');
     if (m !== 'comment') closeDraft();
     renderPinLayer();

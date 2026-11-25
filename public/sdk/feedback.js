@@ -656,6 +656,13 @@
 
   setInterval(() => { now = Date.now(); }, 1000);
 
+  // HTML prototypes have no element pins — hide the Pins tab and default to General.
+  if (IS_HTML_PROTO) {
+    document.getElementById('__fb-sidebar-tabs').style.display = 'none';
+    document.getElementById('__fb-sidebar-pins').classList.remove('active');
+    document.getElementById('__fb-sidebar-general').classList.add('active');
+  }
+
   /* ── mode switching ── */
   const hideToggle = document.getElementById('__fb-hide-toggle');
   const EYE_SVG = '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -744,7 +751,7 @@
       !c.page_url || pageKeyOf(c.page_url) === currentPage
     );
     const pinsTabCount = pagePins.length + pageRanges.length;
-    const totalCount = pinsTabCount + generalComments.length;
+    const totalCount = IS_HTML_PROTO ? generalComments.length : pinsTabCount + generalComments.length;
 
     const stored = (() => { try { return localStorage.getItem('__fb_sidebar_' + PROTO_ID); } catch (_) { return null; } })();
     if (stored === null) {

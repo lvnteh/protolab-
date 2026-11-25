@@ -312,6 +312,18 @@
     #__fb-draft-shot-wrap img { display: block; width: 100%; height: auto; max-height: 320px; object-fit: cover; object-position: top; }
     #__fb-draft-shot-wrap.no-shot { display: none; }
 
+    /* Click ripple — brief animated ring at click point, HTML proto comment mode */
+    .fb-click-ripple {
+      position: fixed; border-radius: 50%; pointer-events: none;
+      border: 2.5px solid hsl(252,83%,57%); z-index: 2147483646;
+      transform: translate(-50%, -50%) scale(0);
+      animation: fb-ripple .65s ease-out forwards;
+    }
+    @keyframes fb-ripple {
+      0%   { transform: translate(-50%,-50%) scale(0); opacity: 1; width: 20px; height: 20px; }
+      100% { transform: translate(-50%,-50%) scale(1); opacity: 0; width: 72px; height: 72px; }
+    }
+
     /* toast */
     #__fb-toast {
       position: fixed; bottom: 24px; right: 16px; z-index: 2147483647;
@@ -1622,6 +1634,15 @@
     position();
   }
 
+  function spawnRipple(x, y) {
+    const el = document.createElement('div');
+    el.className = 'fb-click-ripple';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    document.body.appendChild(el);
+    setTimeout(() => { try { el.remove(); } catch (_) {} }, 700);
+  }
+
 
   /* ── text-selection → range comment ── */
   document.addEventListener('mouseup', () => {
@@ -1688,7 +1709,8 @@
     if (IS_HTML_PROTO) {
       // Capture the current page state as a screenshot — no DOM selector, no live pin.
       // Opens the draft card showing the screenshot so the reviewer sees what they saw.
-      const shot = captureScreenshot(null, null);
+      spawnRipple(e.clientX, e.clientY);
+      const shot = captureScreenshot(e.clientX, e.clientY);
       draft = { selector: null, xPct: null, yPct: null, tag: null, shot };
       rangeDraft = null;
       openDraftCard(null);
@@ -1844,8 +1866,8 @@
         return;
       }
       closeDraft();
-      showToast('Comment posted.');
       await loadPins();
+      showToast('Comment added.');
     } catch (_) {
       showToast('Failed to post comment.', true);
       btn.disabled = false;
@@ -2027,6 +2049,32 @@
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
       ctx.drawImage(captureVideo, 0, 0, vw, vh);
+
+      // Draw click marker when coordinates are provided
+      if (typeof vx === 'number' && typeof vy === 'number' &&
+          window.innerWidth > 0 && window.innerHeight > 0) {
+        const fx = vx * (vw / window.innerWidth);
+        const fy = vy * (vh / window.innerHeight);
+        // Outer ring
+        ctx.beginPath();
+        ctx.arc(fx, fy, 22, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'hsl(252,83%,57%)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        // Inner filled dot
+        ctx.beginPath();
+        ctx.arc(fx, fy, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = 'hsl(252,83%,57%)';
+        ctx.fill();
+        // Cross hair lines
+        ctx.strokeStyle = 'hsl(252,83%,57%)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(fx - 32, fy); ctx.lineTo(fx - 26, fy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(fx + 26, fy); ctx.lineTo(fx + 32, fy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(fx, fy - 32); ctx.lineTo(fx, fy - 26); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(fx, fy + 26); ctx.lineTo(fx, fy + 32); ctx.stroke();
+      }
+
       const dataUrl = canvas.toDataURL('image/png');
 
       let xPct = null, yPct = null;

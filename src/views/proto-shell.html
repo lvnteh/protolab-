@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prototype</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:hsl(220,14%,96%)}
+  /* The prototype renders inside this iframe. It is pinned below the ProtoLab
+     toolbar and to the left of the sidebar, so the sidebar is a hard viewport
+     boundary the prototype content can never overlap — including the prototype's
+     own position:fixed elements, which are clipped to the iframe's own viewport. */
+  #__fb-proto-frame{
+    position:fixed; top:0; left:0; border:0;
+    width:100vw; height:100vh; display:block; background:#fff;
+    transition:width .2s ease, top .2s ease, height .2s ease;
+  }
+</style>
+</head>
+<body>
+<iframe id="__fb-proto-frame" src="{{rawSrc}}" title="Prototype"></iframe>
+{{sdkTag}}
+</body>
+</html>

@@ -12,6 +12,14 @@
   // HTML prototypes use screenshot-anchored pins (viewport %, no DOM selector).
   // This avoids broken pins on dynamic elements (dialogs, Angular components, etc).
   const IS_HTML_PROTO = !IS_MARKDOWN;
+  // Framed mode: the prototype renders inside a shell iframe and this SDK runs in
+  // the PARENT shell. Prototype clicks/navigation arrive over postMessage (via
+  // frame-bridge.js) instead of on this document. Only HTML prototypes are framed.
+  const IS_FRAMED = script.getAttribute('data-framed') === '1';
+  const PROTO_FRAME = IS_FRAMED ? document.getElementById('__fb-proto-frame') : null;
+  // In framed mode the "current page" is the iframe's URL, reported by the bridge,
+  // not the shell's own location. Seeded on the bridge 'ready'/'page' messages.
+  let framedHref = IS_FRAMED ? '' : null;
 
   // Versioned annotations: the viewed version (null when the delivery view omits
   // the attrs — half-deployed safety: behave exactly as today). VIEW_BASE drives
@@ -514,7 +522,9 @@
   document.head.appendChild(styleEl);
 
   /* ── adjust body to not be hidden behind toolbar ── */
-  document.body.style.paddingTop = '44px';
+  // Framed mode sizes the iframe explicitly (layoutFrame) rather than padding the
+  // shell body, so this padding is only for the in-document (markdown) layout.
+  if (!IS_FRAMED) document.body.style.paddingTop = '44px';
 
   /* ── toolbar ── */
   const toolbar = document.createElement('div');
@@ -696,7 +706,13 @@
   document.body.appendChild(shotPromptBackdrop);
 
   /* ── helpers ── */
+  // The reviewer's current page. In framed mode this is the iframe's URL (from the
+  // bridge); otherwise it is the shell/document's own location.
+  function currentHref() {
+    return IS_FRAMED ? (framedHref || '') : location.href;
+  }
   function currentPageKey() {
+    if (IS_FRAMED) return pageKeyOf(framedHref || '');
     if (location.hash && location.hash.length > 1) return location.hash.slice(1);
     return location.pathname + location.search;
   }
@@ -763,6 +779,9 @@
     // non-HTML prototypes (HTML protos have no on-canvas pins to show/hide).
     hideToggle.style.display = (!IS_HTML_PROTO && m === 'view') ? 'inline-flex' : 'none';
     document.body.classList.toggle('__fb-comment-mode', m === 'comment');
+    // Tell the bridge whether to intercept prototype clicks and show the crosshair.
+    postToFrame({ type: 'commentMode', on: m === 'comment' });
+    if (IS_FRAMED) layoutFrame(); // banner toggles the iframe's top offset
     if (m !== 'comment') closeDraft();
     renderPinLayer();
     renderRangeLayer();
@@ -828,11 +847,30 @@
     sidebarExpanded = expanded;
     sidebar.classList.toggle('expanded', expanded);
     sidebar.classList.toggle('collapsed', !expanded);
-    document.body.style.paddingRight = expanded ? '260px' : '32px';
-    document.body.style.setProperty('--fb-sidebar-w', expanded ? '260px' : '32px');
+    const sidebarW = expanded ? '260px' : '32px';
+    document.body.style.setProperty('--fb-sidebar-w', sidebarW);
+    if (IS_FRAMED) {
+      // Framed: resize the iframe instead of padding the body. This makes the
+      // sidebar (and toolbar/banner) a hard boundary the prototype cannot cross.
+      layoutFrame();
+    } else {
+      document.body.style.paddingRight = sidebarW;
+    }
     if (persist) {
       try { localStorage.setItem('__fb_sidebar_' + PROTO_ID, expanded ? '1' : '0'); } catch (_) {}
     }
+  }
+
+  // Position/size the prototype iframe within the shell so it fills the area below
+  // the toolbar (and banner, in comment mode) and left of the sidebar. Only used
+  // in framed mode.
+  function layoutFrame() {
+    if (!PROTO_FRAME) return;
+    const sidebarW = sidebarExpanded ? 260 : 32;
+    const topOffset = (mode === 'comment') ? 72 : 44; // toolbar (+ banner when commenting)
+    PROTO_FRAME.style.top = topOffset + 'px';
+    PROTO_FRAME.style.height = 'calc(100vh - ' + topOffset + 'px)';
+    PROTO_FRAME.style.width = 'calc(100vw - ' + sidebarW + 'px)';
   }
 
   function renderSidebar() {
@@ -1646,6 +1684,19 @@
     setTimeout(() => { try { el.remove(); } catch (_) {} }, 700);
   }
 
+  // Handle a comment-mode click on an HTML prototype. Coordinates are in this
+  // (shell) document's viewport space. In framed mode the caller has already
+  // translated the iframe-local click point into shell-viewport px. Captures a
+  // screenshot (with a marker at the click point) and opens the draft card.
+  function handleProtoClick(vx, vy) {
+    spawnRipple(vx, vy);
+    const shot = captureScreenshot(vx, vy);
+    draft = { selector: null, xPct: null, yPct: null, tag: null, shot };
+    rangeDraft = null;
+    openDraftCard(null);
+    showDraftShotPreview(shot);
+  }
+
 
   /* ── text-selection → range comment ── */
   document.addEventListener('mouseup', () => {
@@ -1710,14 +1761,9 @@
     e.preventDefault(); e.stopPropagation();
 
     if (IS_HTML_PROTO) {
-      // Capture the current page state as a screenshot — no DOM selector, no live pin.
-      // Opens the draft card showing the screenshot so the reviewer sees what they saw.
-      spawnRipple(e.clientX, e.clientY);
-      const shot = captureScreenshot(e.clientX, e.clientY);
-      draft = { selector: null, xPct: null, yPct: null, tag: null, shot };
-      rangeDraft = null;
-      openDraftCard(null);
-      showDraftShotPreview(shot);
+      // Non-framed HTML proto (legacy path): clientX/Y are already in this
+      // document's viewport space.
+      handleProtoClick(e.clientX, e.clientY);
       return;
     }
 
@@ -1844,7 +1890,7 @@
           payload = {
             type: 'general',
             comment: text,
-            pageUrl: location.href,
+            pageUrl: currentHref(),
             tag: draft.tag,
           };
         } else {
@@ -2015,11 +2061,14 @@
   // Hide ALL of ProtoLab's own chrome (ids start with "__fb-") for a single frame
   // grab so the capture shows the prototype, not our overlay. Mirrors the intent
   // of the commentsHidden toggle but is exhaustive and synchronous. Returns a
-  // restore() that puts every element's inline visibility back.
+  // restore() that puts every element's inline visibility back. The framed-mode
+  // prototype iframe is itself a "__fb-" element but holds the content we WANT in
+  // the shot, so it is explicitly preserved.
   function hideOwnChrome() {
     const nodes = document.querySelectorAll(FB_UI_SELECTOR);
     const restores = [];
     nodes.forEach(n => {
+      if (n === PROTO_FRAME) return; // never hide the prototype itself
       restores.push([n, n.style.visibility]);
       n.style.visibility = 'hidden';
     });
@@ -2273,27 +2322,28 @@
   });
 
   /* ── navigation tracking ── */
-  (function () {
-    let lastUrl = '';
+  let _lastNavUrl = '';
+  function recordNav() {
+    const url = currentPageKey();
+    if (url === _lastNavUrl) return;
+    _lastNavUrl = url;
+    navHistory.push(url);
+    fetch('/api/nav', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prototypeId: PROTO_ID, email: EMAIL || 'local@test.com', pageUrl: url }),
+    }).catch(() => {});
+    // Clear pins from the previous page immediately; the RAF loop will show
+    // pins for the new page once the SPA has rendered its new DOM elements.
+    renderPinLayer();
+    renderRangeLayer();
+    renderSidebar();
+  }
 
-    function recordNav() {
-      const url = currentPageKey();
-      if (url === lastUrl) return;
-      lastUrl = url;
-      navHistory.push(url);
-      fetch('/api/nav', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prototypeId: PROTO_ID, email: EMAIL || 'local@test.com', pageUrl: url }),
-      }).catch(() => {});
-      // Clear pins from the previous page immediately; the RAF loop will show
-      // pins for the new page once the SPA has rendered its new DOM elements.
-      renderPinLayer();
-      renderRangeLayer();
-      renderSidebar();
-    }
-
-    // Patch history methods to fire a custom event
+  if (!IS_FRAMED) {
+    // Non-framed: the prototype shares this document, so patch its history and
+    // listen for its navigation events directly. (In framed mode the bridge
+    // reports navigation over postMessage and drives recordNav from there.)
     ['pushState', 'replaceState'].forEach(method => {
       const orig = history[method];
       history[method] = function (...args) {
@@ -2301,17 +2351,54 @@
         window.dispatchEvent(new Event('fb-nav'));
       };
     });
-
     window.addEventListener('popstate', recordNav);
     window.addEventListener('hashchange', recordNav);
     window.addEventListener('fb-nav', recordNav);
-
-    // Record initial page
-    recordNav();
-  })();
+    recordNav(); // record initial page
+  }
 
   /* ── boot ── */
   const focusId = new URLSearchParams(location.search).get('focus') || '';
+
+  // Framed-mode plumbing: talk to the prototype bridge over postMessage.
+  function postToFrame(msg) {
+    if (!IS_FRAMED || !PROTO_FRAME || !PROTO_FRAME.contentWindow) return;
+    try {
+      PROTO_FRAME.contentWindow.postMessage(Object.assign({ __fb: true }, msg), window.location.origin);
+    } catch (_) {}
+  }
+
+  if (IS_FRAMED) {
+    window.addEventListener('message', (e) => {
+      if (e.origin !== window.location.origin) return;
+      // Only trust messages from our own iframe's window.
+      if (!PROTO_FRAME || e.source !== PROTO_FRAME.contentWindow) return;
+      const d = e.data;
+      if (!d || d.__fb !== true) return;
+      if (d.type === 'click') {
+        // Prototype click in comment mode. Coordinates are iframe-local; translate
+        // to shell-viewport space by adding the iframe's on-screen offset (it sits
+        // below the toolbar/banner and flush-left), since the screenshot frame and
+        // the ripple/marker geometry are all in shell-viewport px.
+        if (mode === 'comment') {
+          const r = PROTO_FRAME.getBoundingClientRect();
+          handleProtoClick(d.x + r.left, d.y + r.top);
+        }
+      } else if (d.type === 'ready' || d.type === 'page') {
+        if (typeof d.href === 'string') {
+          framedHref = d.href;
+          recordNav();
+        }
+        if (d.type === 'ready') {
+          // Bridge just (re)loaded — resend current comment-mode state so a
+          // navigation inside the iframe doesn't lose the crosshair/intercept.
+          postToFrame({ type: 'commentMode', on: mode === 'comment' });
+        }
+      }
+    });
+    layoutFrame();
+    window.addEventListener('resize', layoutFrame);
+  }
 
   loadPins();
   rafId = requestAnimationFrame(recomputePositions);
@@ -2320,7 +2407,8 @@
     setSidebarExpanded(_storedSidebar === '1');
   } else {
     sidebar.classList.add('collapsed');
-    document.body.style.paddingRight = '32px';
     document.body.style.setProperty('--fb-sidebar-w', '32px');
+    if (IS_FRAMED) layoutFrame();
+    else document.body.style.paddingRight = '32px';
   }
 })();

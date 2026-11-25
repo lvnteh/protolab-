@@ -20,6 +20,13 @@ function sdkScript(protoId, email, contentType, versionCtx) {
     + `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"${ctAttr}${vAttrs}></script>`;
 }
 
+// The tiny bridge injected into an HTML prototype served inside the shell iframe.
+// Forwards clicks/navigation/geometry to the parent shell; carries no proto-id or
+// email (the full SDK in the shell owns all state and API calls).
+function bridgeScript() {
+  return `<script src="/sdk/frame-bridge.js"></script>`;
+}
+
 function previewScript(protoId, highlightId, commentsJson) {
   return `<script src="/sdk/anchor.js"></script>\n`
     + `<script src="/sdk/preview.js" data-proto-id="${escAttr(protoId)}" data-highlight-comment="${escAttr(highlightId)}" data-comments="${escAttr(commentsJson)}"></script>`;
@@ -96,6 +103,23 @@ function injectSdk(html, protoId, email, contentType, versionCtx) {
   return html + `\n${sdkTag}\n`;
 }
 
+function injectBridge(html) {
+  const { lastBodyClose } = scanHtml(html);
+  const tag = bridgeScript();
+  if (lastBodyClose !== -1) {
+    return html.slice(0, lastBodyClose) + `\n${tag}\n` + html.slice(lastBodyClose);
+  }
+  return html + `\n${tag}\n`;
+}
+
+// Build the SDK <script> tag(s) for the shell page. Same attributes as the
+// in-document injection, plus data-framed="1" so the SDK listens for prototype
+// clicks over postMessage instead of on its own document.
+function shellSdkTag(protoId, email, versionCtx) {
+  const base = sdkScript(protoId, email, 'html', versionCtx);
+  return base.replace('<script src="/sdk/feedback.js"', '<script src="/sdk/feedback.js" data-framed="1"');
+}
+
 function injectPreview(html, protoId, highlightId, commentsJson) {
   const { lastBodyClose } = scanHtml(html);
   const tag = previewScript(protoId, highlightId, commentsJson);
@@ -105,4 +129,4 @@ function injectPreview(html, protoId, highlightId, commentsJson) {
   return html + `\n${tag}\n`;
 }
 
-module.exports = { injectSdk, injectPreview };
+module.exports = { injectSdk, injectBridge, injectPreview, shellSdkTag };

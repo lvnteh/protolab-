@@ -65,13 +65,20 @@ let app, protoId, shareToken;
     const v = await versions.createDraft(protoId, v2file, 'v2');
     await versions.publish(protoId, v.version);
 
-    // Establish an authorized reviewer session, then fetch the view.
+    // Establish an authorized reviewer session. HTML prototypes are served in a
+    // shell iframe: /view returns the shell (pointing at /raw), and /raw returns
+    // the actual published bytes. Verify the published version flows through /raw.
     const agent = request.agent(app);
     await agent.post(`/p/${shareToken}/enter`).send('email=allowed@example.com');
-    const res = await agent.get(`/p/${shareToken}/view`);
+    const viewRes = await agent.get(`/p/${shareToken}/view`);
+    expect(viewRes.status).toBe(200);
+    expect(viewRes.text).toContain(`/p/${shareToken}/raw`); // shell references the raw route
+    expect(viewRes.text).toContain('/sdk/feedback.js');
 
-    expect(res.status).toBe(200);
-    expect(res.text).toContain('PUBLISHED-V2');
+    const rawRes = await agent.get(`/p/${shareToken}/raw`);
+    expect(rawRes.status).toBe(200);
+    expect(rawRes.text).toContain('PUBLISHED-V2');
+    expect(rawRes.text).toContain('/sdk/frame-bridge.js'); // bridge injected, not the full SDK
   });
 
   test('GET /p/:token/view renders a Markdown version to sanitized, SDK-injected HTML', async () => {
@@ -106,11 +113,16 @@ let app, protoId, shareToken;
 
     const agent = request.agent(app);
     await agent.post(`/p/${shareToken}/enter`).send('email=allowed@example.com');
+    // The shell (/view) and the raw content (/raw) are both served without the
+    // markdown CSP. The prototype bytes live at /raw.
     const res = await agent.get(`/p/${shareToken}/view`);
-
     expect(res.status).toBe(200);
-    expect(res.text).toContain('HTML AGAIN');
     expect(res.headers['content-security-policy']).toBeUndefined();
+
+    const rawRes = await agent.get(`/p/${shareToken}/raw`);
+    expect(rawRes.status).toBe(200);
+    expect(rawRes.text).toContain('HTML AGAIN');
+    expect(rawRes.headers['content-security-policy']).toBeUndefined();
   });
 
   test('a draft or unknown ?version redirects to the live view (Review Focus #1)', async () => {

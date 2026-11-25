@@ -9,6 +9,9 @@
   // data-content-type="markdown" only for the former. This flips comment mode to
   // selection-only and keeps the text (I-beam) cursor instead of the crosshair.
   const IS_MARKDOWN = script.getAttribute('data-content-type') === 'markdown';
+  // HTML prototypes use screenshot-anchored pins (viewport %, no DOM selector).
+  // This avoids broken pins on dynamic elements (dialogs, Angular components, etc).
+  const IS_HTML_PROTO = !IS_MARKDOWN;
 
   // Versioned annotations: the viewed version (null when the delivery view omits
   // the attrs — half-deployed safety: behave exactly as today). VIEW_BASE drives
@@ -262,6 +265,11 @@
     }
     #__fb-draft-submit:hover { background: hsl(252,83%,48%); }
     #__fb-draft-submit:disabled { opacity: .5; cursor: default; }
+    /* Draft screenshot preview (HTML prototypes) */
+    #__fb-draft-shot-wrap { margin-bottom: 10px; border-radius: 8px; overflow: hidden; border: 1px solid hsl(220,13%,91%); background: hsl(220,14%,96%); position: relative; line-height: 0; }
+    #__fb-draft-shot-wrap img { display: block; width: 100%; height: auto; max-height: 160px; object-fit: cover; object-position: top; }
+    #__fb-draft-shot-wrap.capturing { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 10px; font-size: 11px; color: hsl(220,9%,56%); text-align: center; }
+    #__fb-draft-shot-wrap.no-shot { display: none; }
 
     /* toast */
     #__fb-toast {
@@ -572,6 +580,10 @@
       </button>
     </div>
     <div class="fb-draft-selector" id="__fb-draft-selector"></div>
+    <div id="__fb-draft-shot-wrap" class="no-shot">
+      <img id="__fb-draft-shot-img" alt="" />
+      <span id="__fb-draft-shot-hint"></span>
+    </div>
     <div class="fb-tag-row" id="__fb-tag-row">
       ${TAGS.map(t => `<button class="fb-tag-pill" data-tag="${t}" style="border-color:${TAG_COLOR[t]};color:${TAG_COLOR[t]}">${TAG_LABEL[t]}</button>`).join('')}
     </div>
@@ -1588,6 +1600,17 @@
 
     e.preventDefault(); e.stopPropagation();
 
+    if (IS_HTML_PROTO) {
+      // Capture the current page state as a screenshot — no DOM selector, no live pin.
+      // Opens the draft card showing the screenshot so the reviewer sees what they saw.
+      const shot = captureScreenshot(null, null);
+      draft = { selector: null, xPct: null, yPct: null, tag: null, shot };
+      rangeDraft = null;
+      openDraftCard(null);
+      showDraftShotPreview(shot);
+      return;
+    }
+
     const el = e.target;
     const selector = getCssSelector(el);
     const rect = el.getBoundingClientRect();
@@ -1600,7 +1623,13 @@
   }, true);
 
   function openDraftCard(selector) {
-    document.getElementById('__fb-draft-selector').textContent = selector;
+    const selectorEl = document.getElementById('__fb-draft-selector');
+    selectorEl.textContent = selector || '';
+    selectorEl.style.display = selector ? '' : 'none';
+    // Reset screenshot preview — will be populated by showDraftShotPreview if applicable.
+    const shotWrap = document.getElementById('__fb-draft-shot-wrap');
+    shotWrap.className = 'no-shot';
+    document.getElementById('__fb-draft-shot-img').src = '';
     document.getElementById('__fb-draft-textarea').value = '';
     document.getElementById('__fb-draft-submit').disabled = true;
     // reset tags
@@ -1610,6 +1639,23 @@
     draftCard.classList.add('visible');
     positionDraftCard();
     document.getElementById('__fb-draft-textarea').focus();
+  }
+
+  // Show the screenshot thumbnail in the draft card, or a hint to enable screenshots.
+  function showDraftShotPreview(shot) {
+    const shotWrap = document.getElementById('__fb-draft-shot-wrap');
+    const shotImg  = document.getElementById('__fb-draft-shot-img');
+    const shotHint = document.getElementById('__fb-draft-shot-hint');
+    if (!shot || !shot.dataUrl) {
+      shotHint.textContent = 'Enable screenshots to capture what you see.';
+      shotWrap.className = 'capturing';
+      shotImg.src = '';
+      return;
+    }
+    shotHint.textContent = '';
+    shotImg.onload = () => { positionDraftCard(); };
+    shotImg.src = shot.dataUrl;
+    shotWrap.className = '';
   }
 
   // Place the draft card next to what's being annotated instead of pinned to the
@@ -1683,20 +1729,30 @@
       if (rangeDraft) {
         await postComment({ type: 'range', comment: text, pageUrl: location.href, tag: rangeDraft.tagSel || null, anchor: rangeDraft.anchor, breadcrumb: navHistory });
       } else if (draft) {
-        // Grab a screenshot (if capture is enabled) at submit time, anchored at
-        // the pinned element. captureForElement hides our chrome for the one grab
-        // and never throws; a null result means "no screenshot" → field omitted.
-        const shot = captureForElement(draft.selector, draft.xPct, draft.yPct);
-        const payload = {
-          type: 'element',
-          element: { selector: draft.selector, label: '', tagName: '' },
-          comment: text,
-          pageUrl: location.href,
-          tag: draft.tag,
-          xPct: draft.xPct,
-          yPct: draft.yPct,
-          breadcrumb: navHistory,
-        };
+        let shot, payload;
+        if (IS_HTML_PROTO) {
+          // HTML proto: general comment with screenshot, no DOM selector or pin.
+          shot = draft.shot;
+          payload = {
+            type: 'general',
+            comment: text,
+            pageUrl: location.href,
+            tag: draft.tag,
+          };
+        } else {
+          // Non-HTML prototype: capture at submit time anchored to the element.
+          shot = captureForElement(draft.selector, draft.xPct, draft.yPct);
+          payload = {
+            type: 'element',
+            element: { selector: draft.selector, label: '', tagName: '' },
+            comment: text,
+            pageUrl: location.href,
+            tag: draft.tag,
+            xPct: draft.xPct,
+            yPct: draft.yPct,
+            breadcrumb: navHistory,
+          };
+        }
         if (shot) payload.screenshot = shot;
         await postComment(payload);
       } else {
@@ -1718,8 +1774,10 @@
     draft = null;
     rangeDraft = null;
     draftCard.classList.remove('visible');
+    // Reset screenshot preview so it doesn't flash on the next open.
+    const shotWrap = document.getElementById('__fb-draft-shot-wrap');
+    if (shotWrap) { shotWrap.className = 'no-shot'; document.getElementById('__fb-draft-shot-img').src = ''; }
     // Drop the text selection now that the draft is resolved (posted or cancelled).
-    // Kept live until this point so the user sees what they're annotating.
     const sel = window.getSelection && window.getSelection();
     if (sel && sel.removeAllRanges && !sel.isCollapsed) sel.removeAllRanges();
   }
@@ -1963,11 +2021,40 @@
     return null;
   }
 
+  // Returns the most distinctive single class from a node's classList, or null.
+  // Skips Angular-generated, utility, and very-short classes.
+  function pickDistinctiveClass(node) {
+    const rawClass = typeof node.className === 'string'
+      ? node.className
+      : (node.className && node.className.baseVal) || '';
+    return rawClass.trim().split(/\s+/).find(c =>
+      c.length >= 4 && c.length < 60 &&
+      !/^(ng-|cdk-|mat-|p-|v-|data-v-|css-|sc-|_)/.test(c)
+    ) || null;
+  }
+
+  // Heuristic: is this element an ephemeral overlay (dialog / modal / popover /
+  // drawer / tooltip) that may not be in the DOM when the page is at rest?
+  function isOverlayRoot(node) {
+    const tag = node.tagName && node.tagName.toLowerCase();
+    if (tag === 'dialog') return true;
+    const rawClass = typeof node.className === 'string'
+      ? node.className
+      : (node.className && node.className.baseVal) || '';
+    return /modal|dialog|overlay|drawer|popover|lightbox|tooltip|flyout|panel--open/i.test(rawClass) ||
+      node.getAttribute('role') === 'dialog' ||
+      node.getAttribute('aria-modal') === 'true';
+  }
+
   function getCssSelector(el) {
     const self = stableAnchor(el);
     if (self) return self;
     const parts = [];
     let node = el;
+    // Track the nearest overlay ancestor so we can anchor to it when no stable
+    // id exists — this prevents the selector matching a different element once
+    // the overlay is removed from the DOM.
+    let overlayAnchor = null;
     while (node && node !== document.body) {
       let part = node.tagName.toLowerCase();
       const rawClass = typeof node.className === 'string' ? node.className : (node.className && node.className.baseVal) || '';
@@ -1986,8 +2073,22 @@
           parts.unshift(anchor);
           return parts.join(' > ');
         }
+        // Record the nearest overlay ancestor we pass through.
+        if (!overlayAnchor && isOverlayRoot(parent)) {
+          overlayAnchor = parent;
+        }
       }
       node = parent;
+    }
+    // If we're inside an overlay but found no stable anchor, prepend the overlay
+    // node as an extra ancestor segment. The selector then only resolves while
+    // that overlay element exists in the DOM, preventing false matches on the
+    // base page after the overlay is closed/destroyed.
+    if (overlayAnchor) {
+      let overlayPart = overlayAnchor.tagName.toLowerCase();
+      const cls = pickDistinctiveClass(overlayAnchor);
+      if (cls) overlayPart += '.' + CSS.escape(cls);
+      parts.unshift(overlayPart);
     }
     return parts.join(' > ');
   }

@@ -94,12 +94,17 @@ async function createComment(prototypeId, versionId, fields) {
     return { id };
   }
   const anchorCols = serializeAnchorCols(fields.type, fields.anchor);
+  // Screenshot columns are pre-computed by the ROUTE (decode + putImage + thumb
+  // sizing live there, keeping storage concerns out of this persistence helper).
+  // All six are null for a no-capture / legacy comment. We only persist what the
+  // caller already resolved — this helper never touches object storage.
   await getDb().query(
     `INSERT INTO comments
        (id, prototype_id, email, type, element_selector, element_label, element_tag,
         breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct, version_id,
-        anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+        anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end,
+        screenshot_key, screenshot_thumb, screenshot_w, screenshot_h, screenshot_x_pct, screenshot_y_pct)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
     [
       id, prototypeId, email, fields.type,
       fields.element?.selector || null,
@@ -114,6 +119,12 @@ async function createComment(prototypeId, versionId, fields) {
       typeof fields.yPct === 'number' ? fields.yPct : null,
       versionId,
       anchorCols.quote, anchorCols.prefix, anchorCols.suffix, anchorCols.start, anchorCols.end,
+      fields.screenshotKey || null,
+      fields.screenshotThumb || null,
+      Number.isInteger(fields.screenshotW) ? fields.screenshotW : null,
+      Number.isInteger(fields.screenshotH) ? fields.screenshotH : null,
+      typeof fields.screenshotXPct === 'number' ? fields.screenshotXPct : null,
+      typeof fields.screenshotYPct === 'number' ? fields.screenshotYPct : null,
     ]);
   return { id };
 }

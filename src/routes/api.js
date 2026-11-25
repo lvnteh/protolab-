@@ -1,9 +1,67 @@
 // src/routes/api.js
 const express = require('express');
 const { getDb } = require('../db');
+const { nanoid } = require('nanoid');
 const annotations = require('../services/annotations');
+const storage = require('../services/storage');
 
 const router = express.Router();
+
+// Max decoded screenshot size we accept (8MB). Larger payloads are dropped
+// (comment still posts without a screenshot) so a reviewer can't push huge
+// blobs into storage.
+const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
+// Inline-thumbnail budget. There is NO image library in this app (no sharp/jimp)
+// and we must not add one, so we cannot downscale server-side. Instead we store
+// the ORIGINAL data URL as the "thumbnail" ONLY when it is small enough to live
+// on the row cheaply (~60KB of base64 text); otherwise the thumb is null and the
+// admin UI fetches the full image on demand via the screenshot route. The check
+// is on the base64 character length (what actually gets stored).
+const MAX_THUMB_BASE64 = 60 * 1024;
+
+// Decode + store a pin screenshot, returning the computed columns for
+// createComment, or null to persist no screenshot. NEVER throws: any bad data or
+// storage failure is logged and swallowed so comment creation always proceeds.
+async function handleScreenshot(screenshot) {
+  try {
+    if (!screenshot || typeof screenshot !== 'object') return null;
+    const { dataUrl, w, h, xPct, yPct } = screenshot;
+    // Only accept PNG data URLs; anything else is skipped (never a 500).
+    if (typeof dataUrl !== 'string' || !/^data:image\/png;base64,/.test(dataUrl)) return null;
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length || buffer.length > MAX_SCREENSHOT_BYTES) return null;
+
+    // When the image is small enough to inline as the thumb, the thumb IS the
+    // whole image — storing the object too would be dead weight the admin UI
+    // never fetches (it prefers the thumb). So: small → inline thumb only, no
+    // object; large → object in storage + null thumb (admin fetches on demand).
+    const fitsInline = base64.length <= MAX_THUMB_BASE64;
+    let key = null;
+    if (!fitsInline) {
+      key = `${storage.SCREENSHOT_PREFIX}${nanoid()}.png`;
+      await storage.putImage(key, buffer);
+    }
+    const thumb = fitsInline ? dataUrl : null;
+
+    // The SDK clamps, but never trust the client: bound the pin fraction to
+    // [0,1] and keep only sane positive dimensions so the owner's lightbox can't
+    // be fed an out-of-range pin or absurd dimensions.
+    const frac = (v) => (typeof v === 'number' && isFinite(v)) ? Math.min(1, Math.max(0, v)) : null;
+    const dim = (v) => (Number.isInteger(v) && v > 0 && v <= 100000) ? v : null;
+    return {
+      screenshotKey: key,
+      screenshotThumb: thumb,
+      screenshotW: dim(w),
+      screenshotH: dim(h),
+      screenshotXPct: frac(xPct),
+      screenshotYPct: frac(yPct),
+    };
+  } catch (e) {
+    console.error('screenshot handling failed (comment proceeds without it):', e);
+    return null;
+  }
+}
 
 // Authorize the current request to read/mutate data belonging to `prototypeId`.
 // These /api routes are the reviewer-facing SDK endpoints (no auth middleware),
@@ -52,7 +110,7 @@ async function authorizeResource(req, table, id) {
 
 router.post('/comments', async (req, res) => {
   try {
-    const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email, parentId, anchor } = req.body;
+    const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email, parentId, anchor, screenshot } = req.body;
     const commentEmail = email || 'local@test.com';
     if (!comment || !comment.trim()) return res.status(400).json({ error: 'Comment is required.' });
     if (!prototypeId) return res.status(400).json({ error: 'prototypeId is required.' });
@@ -73,8 +131,12 @@ router.post('/comments', async (req, res) => {
         if (!['general', 'element', 'range'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
         ({ versionId } = await annotations.resolveViewedVersion(prototypeId, req.body.version));
       }
+      // Screenshots only ride along on NEW parent pins — never on replies (a
+      // reply inherits context from its parent). Failure here is swallowed by
+      // handleScreenshot, so the comment always posts.
+      const shot = parentId ? null : await handleScreenshot(screenshot);
       const { id } = await annotations.createComment(prototypeId, versionId,
-        { email: commentEmail, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, parentId, anchor });
+        { email: commentEmail, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, parentId, anchor, ...(shot || {}) });
       return res.status(201).json({ ok: true, id });
     } catch (e) {
       if (e.code === 'ANCHOR_REQUIRED') return res.status(400).json({ error: 'Range comment requires an anchor quote.' });
@@ -112,7 +174,12 @@ router.patch('/comments/:commentId', async (req, res) => {
 router.delete('/comments/:commentId', async (req, res) => {
   const auth = await authorizeResource(req, 'comments', req.params.commentId);
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  // Best-effort: remove the stored screenshot (if any) before the row goes. A
+  // storage failure must never block the DB delete, so we swallow it.
+  const { rows } = await getDb().query('SELECT screenshot_key FROM comments WHERE id = $1', [req.params.commentId]);
+  const key = rows[0] && rows[0].screenshot_key;
   await getDb().query('DELETE FROM comments WHERE id = $1', [req.params.commentId]);
+  if (key) await storage.deleteImage(key).catch(() => {});
   res.json({ ok: true });
 });
 

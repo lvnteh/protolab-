@@ -1,0 +1,8 @@
+{
+  "src/routes/delivery.js": "3615e20fef31abc5a37957933b678e5caeb07fde50f17aeea9b664344f0f42d0",
+  "src/server.js": "4804f05489cce0036464a301920cdaffacd687357c81aca5818f6f2c71c6aad9",
+  "src/services/annotations.js": "ca23f290ac7006c29d8151d3f62f9958e09dcf6a0c098134741500d8ebecfa08",
+  "public/sdk/feedback.js": "a27674f778f7ac893d5510ded39db586fa9c168e5ce270a2ee257db4755974d1",
+  "src/views/admin-prototype-detail.html": "c91d459a81180ff2a5830c4f76b366aee44459d08efc1bda30351419ad5a2471",
+  "mcp/lib/handlers.cjs": "ae1679ae83e77d2d8fe10b756fe4d9aa2d8c0ccafc9304f170eb96bb9239a6d3"
+}

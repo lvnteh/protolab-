@@ -80,6 +80,36 @@
 
     /* Right-side toolbar cluster: mode switcher + the view-only hide-comments pill. */
     #__fb-toolbar-right { display: flex; align-items: center; gap: 10px; }
+
+    /* Screenshot opt-in button (toolbar-right). Matches the pill styling of the
+       mode switcher / hide toggle so it reads as native chrome. */
+    #__fb-shot-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; height: 26px; border-radius: 6px;
+      border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.15);
+      color: #fff; cursor: pointer; font-size: 12px; font-weight: 500;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      transition: background .15s, opacity .15s; white-space: nowrap;
+    }
+    #__fb-shot-btn:hover { background: rgba(255,255,255,.25); }
+    #__fb-shot-btn.active { background: #fff; color: hsl(252,83%,57%); }
+    #__fb-shot-btn:disabled { opacity: .45; cursor: default; }
+
+    /* Screenshot opt-in notice: a small styled inline panel (not window.confirm),
+       anchored under the toolbar on the right, explaining what capture does. */
+    #__fb-shot-notice {
+      position: fixed; top: 52px; right: 16px; z-index: 2147483646;
+      width: 300px; background: #fff; border: 1px solid hsl(220,13%,91%);
+      border-radius: 12px; padding: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.16);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 12px; line-height: 1.5; color: hsl(222,47%,11%); display: none;
+    }
+    #__fb-shot-notice.visible { display: block; }
+    #__fb-shot-notice h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+    #__fb-shot-notice p { margin: 0 0 8px; color: hsl(220,9%,40%); }
+    #__fb-shot-notice ul { margin: 0 0 10px; padding-left: 16px; color: hsl(220,9%,40%); }
+    #__fb-shot-notice li { margin-bottom: 3px; }
+    #__fb-shot-notice .fb-shot-actions { display: flex; gap: 6px; justify-content: flex-end; }
     #__fb-hide-toggle {
       position: fixed; bottom: 24px; right: calc(var(--fb-sidebar-w, 32px) + 12px);
       display: inline-flex; align-items: center; gap: 5px;
@@ -362,14 +392,30 @@
       overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
     }
     .fb-sidebar-pin-replies { font-size: 10px; color: hsl(220,9%,46%); margin-top: 3px; }
-    .fb-sidebar-pin-ghost {
+    .fb-sidebar-pin-avail {
       display: inline-flex; align-items: center; gap: 3px;
       margin-top: 4px; font-size: 10px; color: hsl(38,92%,38%);
       background: hsl(38,92%,95%); border: 1px solid hsl(38,92%,80%);
       border-radius: 4px; padding: 2px 6px; font-weight: 500;
     }
-    .fb-sidebar-pin-row--ghost { opacity: 0.7; cursor: default; }
-    .fb-sidebar-pin-row--ghost:hover { background: #fff; border-color: hsl(220,13%,91%); }
+    .fb-sidebar-pin-row--unavailable { opacity: 0.85; }
+    /* Inline thread shown in the sidebar when the target isn't on screen. */
+    .fb-inline-thread { margin-top: 6px; border-top: 1px solid hsl(220,13%,91%); padding-top: 6px; }
+    .fb-inline-thread__reply { font-size: 11px; line-height: 1.45; margin-top: 4px; }
+    .fb-inline-thread__reply-email { font-weight: 600; color: hsl(252,83%,50%); margin-right: 4px; }
+    .fb-inline-thread__reply-date { color: hsl(220,9%,46%); font-size: 10px; margin-left: 4px; }
+    .fb-inline-thread textarea {
+      width: 100%; box-sizing: border-box; margin-top: 6px; resize: vertical;
+      font: inherit; font-size: 11px; border: 1px solid hsl(220,13%,87%);
+      border-radius: 4px; padding: 4px 6px;
+    }
+    .fb-inline-thread textarea:focus { outline: none; border-color: hsl(252,83%,57%); box-shadow: 0 0 0 3px hsl(252,83%,90%); }
+    .fb-inline-thread__btn {
+      margin-top: 4px; font-size: 10px; font-weight: 600; cursor: pointer;
+      color: #fff; background: hsl(252,83%,57%); border: none;
+      border-radius: 4px; padding: 3px 10px;
+    }
+    .fb-inline-thread__btn:disabled { opacity: 0.5; cursor: default; }
     .fb-sidebar-empty {
       flex: 1; display: flex; align-items: center; justify-content: center;
       font-size: 12px; color: hsl(220,9%,60%); text-align: center; padding: 16px;
@@ -418,6 +464,10 @@
       <span id="__fb-toolbar-title">ProtoLab</span>
     </div>
     <div id="__fb-toolbar-right">
+      <button id="__fb-shot-btn" type="button" title="Capture a screenshot of the shared view when you place a comment">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <span id="__fb-shot-label">Enable screenshots</span>
+      </button>
       <div id="__fb-mode-switcher">
         <button class="fb-mode-btn active-view" data-mode="view">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -534,6 +584,27 @@
   const toast = document.createElement('div');
   toast.id = '__fb-toast';
   document.body.appendChild(toast);
+
+  /* ── screenshot opt-in notice panel ── */
+  // A styled inline panel (preferred over window.confirm) shown once, before the
+  // first getDisplayMedia prompt, explaining what capture does. The Enable button
+  // handler calls getDisplayMedia directly so the user gesture is preserved.
+  const shotNotice = document.createElement('div');
+  shotNotice.id = '__fb-shot-notice';
+  shotNotice.innerHTML = `
+    <h4>Enable screenshots?</h4>
+    <p>When you place a comment, ProtoLab will capture a screenshot of the view you're sharing, so the prototype owner sees exactly what you saw.</p>
+    <ul>
+      <li>Your browser will ask what to share — pick <strong>this tab</strong>, not your whole screen.</li>
+      <li>A recording indicator stays visible while sharing is on.</li>
+      <li>Avoid entering anything into the prototype you don't want preserved.</li>
+    </ul>
+    <div class="fb-shot-actions">
+      <button class="fb-btn-sm fb-btn-ghost" id="__fb-shot-cancel">Not now</button>
+      <button class="fb-btn-sm fb-btn-primary" id="__fb-shot-ok">Enable</button>
+    </div>
+  `;
+  document.body.appendChild(shotNotice);
 
   /* ── helpers ── */
   function currentPageKey() {
@@ -678,17 +749,23 @@
       pinsList.innerHTML = '<div class="fb-sidebar-empty">No pins on this page yet.</div>';
     } else {
       pagePins.forEach(p => {
+        const avail = p.__avail || 'located';
         const row = document.createElement('div');
-        row.className = 'fb-sidebar-pin-row' + (p.__ghost ? ' fb-sidebar-pin-row--ghost' : '');
+        row.className = 'fb-sidebar-pin-row' + (avail !== 'located' ? ' fb-sidebar-pin-row--unavailable' : '');
+        row.setAttribute('data-pin-id', p.id);
         const tagHtml = p.tag
           ? `<span class="fb-sidebar-pin-tag" style="background:${TAG_COLOR[p.tag] || TAG_COLOR.other}">${TAG_LABEL[p.tag] || p.tag}</span>`
           : '';
         const repliesHtml = (p.replies && p.replies.length)
           ? `<div class="fb-sidebar-pin-replies">${p.replies.length} repl${p.replies.length === 1 ? 'y' : 'ies'}</div>`
           : '';
-        const ghostHtml = p.__ghost
-          ? `<div class="fb-sidebar-pin-ghost">⚠ Element no longer in the page</div>`
-          : '';
+        // Honest availability messaging: absence is not deletion, and a hidden
+        // target is distinguished from one that isn't in this view at all.
+        const availHtml = avail === 'hidden'
+          ? `<div class="fb-sidebar-pin-avail">⚠ Target is hidden in this view</div>`
+          : avail === 'absent'
+            ? `<div class="fb-sidebar-pin-avail">⚠ Target isn't available in this view</div>`
+            : '';
         row.innerHTML = `
           <div class="fb-sidebar-pin-row-head">
             <div class="fb-sidebar-pin-dot" style="background:${TAG_COLOR[p.tag] || TAG_COLOR.other}">${p.order}</div>
@@ -697,18 +774,13 @@
           </div>
           <div class="fb-sidebar-pin-body">${escHtml(p.comment)}</div>
           ${repliesHtml}
-          ${ghostHtml}
+          ${availHtml}
         `;
-        if (!p.__ghost) {
-          row.addEventListener('click', () => {
-            if (mode === 'comment') setMode('view');
-            focusPin(p.id);
-            setTimeout(() => {
-              const pinEl = pinElements[p.id];
-              if (pinEl) pinEl.click();
-            }, 50);
-          });
-        }
+        // Clicking the row opens the thread. When the target is on screen this
+        // also locates the live pin (prior behaviour); when it isn't, the thread
+        // opens inline in the sidebar — so reading/replying never depends on
+        // reproducing the interaction that reveals the element.
+        row.addEventListener('click', () => openThread(p.id));
         pinsList.appendChild(row);
       });
 
@@ -785,7 +857,12 @@
     submitBtn.disabled = true;
     submitBtn.textContent = 'Posting…';
     try {
-      await postComment({ type: 'general', comment: text });
+      // General comments have no element anchor, so capture with no pin point
+      // (frame-relative xPct/yPct sent as null → owner-side draws at centre).
+      const shot = captureScreenshot(null, null);
+      const payload = { type: 'general', comment: text };
+      if (shot) payload.screenshot = shot;
+      await postComment(payload);
       input.value = '';
       await loadPins();
     } catch (_) {
@@ -795,9 +872,89 @@
     submitBtn.textContent = 'Post comment';
   });
 
-  function focusPin(id) {
+  // Open a comment's thread. When its target is on screen we reuse the live
+  // pin popover (full edit/delete/reply). When the target is hidden or absent
+  // there is no pin to anchor to, so we expand a read + reply view inline in
+  // the sidebar row — the thread stays usable regardless of the target state.
+  function openThread(id) {
+    const pin = pins.find(p => p.id === id);
+    if (!pin) return;
+    const avail = pin.__avail || 'located';
+    if (avail === 'located' && pinElements[id]) {
+      if (mode === 'comment') setMode('view');
+      focusPin(id);
+      setTimeout(() => {
+        const pinEl = pinElements[id];
+        if (pinEl) pinEl.click();
+      }, 50);
+      return;
+    }
+    renderInlineThread(id);
+  }
+
+  // Expand/collapse an inline read+reply thread inside a sidebar row. Scoped to
+  // read and reply; edit/delete stay on the live pin (reached via Locate once
+  // the target is on screen), so we don't duplicate the edit-window UI here.
+  // forceOpen=false toggles (sidebar row click); forceOpen=true always (re-)opens,
+  // used after a reply reload so the thread doesn't toggle shut on the fresh row.
+  function renderInlineThread(id, forceOpen = false) {
+    const row = document.querySelector(`.fb-sidebar-pin-row[data-pin-id="${id}"]`);
+    if (!row) return;
+    const existing = row.querySelector('.fb-inline-thread');
+    if (existing) {
+      if (forceOpen) existing.remove(); // rebuild below with the latest replies
+      else { existing.remove(); return; } // plain toggle off
+    }
+    const pin = pins.find(p => p.id === id);
+    if (!pin) return;
+
+    const repliesHtml = (pin.replies || []).map(r => {
+      const rDate = new Date(r.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+      return `<div class="fb-inline-thread__reply">
+        <span class="fb-inline-thread__reply-email">${escHtml(r.email)}</span>
+        <span>${escHtml(r.comment)}</span>
+        <span class="fb-inline-thread__reply-date">· ${rDate}</span>
+      </div>`;
+    }).join('');
+
+    const wrap = document.createElement('div');
+    wrap.className = 'fb-inline-thread';
+    wrap.innerHTML = `
+      ${repliesHtml}
+      <textarea rows="2" placeholder="Reply…"></textarea>
+      <button class="fb-inline-thread__btn" disabled>Reply</button>
+    `;
+    wrap.addEventListener('click', e => e.stopPropagation());
+    const ta = wrap.querySelector('textarea');
+    const btn = wrap.querySelector('.fb-inline-thread__btn');
+    ta.addEventListener('input', () => { btn.disabled = !ta.value.trim(); });
+    btn.addEventListener('click', async () => {
+      const text = ta.value.trim();
+      if (!text) return;
+      btn.disabled = true;
+      btn.textContent = 'Posting…';
+      try {
+        await postComment({ type: 'reply', comment: text, parentId: id });
+        showToast('Reply posted.');
+        await loadPins();
+        // loadPins defers its renderSidebar by a double rAF, so re-open the
+        // thread after that rebuild (matching nesting) and force it open — the
+        // fresh row has no thread yet, and we must not toggle it shut.
+        requestAnimationFrame(() => requestAnimationFrame(() => renderInlineThread(id, true)));
+      } catch (_) {
+        showToast('Failed to post reply.', true);
+        btn.disabled = false;
+        btn.textContent = 'Reply';
+      }
+    });
+    row.appendChild(wrap);
+  }
+
+  function focusPin(id, attempts = 0) {
     const pin = pinElements[id];
-    if (!pin) { requestAnimationFrame(() => focusPin(id)); return; }
+    // Bounded retry: if the pin never materialises (target not rendered), give
+    // up rather than reschedule forever.
+    if (!pin) { if (attempts < 60) requestAnimationFrame(() => focusPin(id, attempts + 1)); return; }
     Object.entries(pinElements).forEach(([pid, el]) => {
       if (pid !== id) el.classList.add('fb-pin--dim');
     });
@@ -813,27 +970,58 @@
   }
 
   /* ── pin position polling ── */
+  // A pin's target can be in one of three states, which the sidebar renders
+  // differently and which govern whether a live pin is drawn:
+  //   'located' — resolved and actually rendered (a pin is shown)
+  //   'hidden'  — resolved but not rendered (display:none, collapsed, zero-box)
+  //   'absent'  — selector resolves to nothing (or throws)
+  // Absence is NOT treated as deletion: the element may simply not exist in the
+  // current interaction state. The thread stays openable in every state.
+  function isRendered(el) {
+    // offsetParent is null for display:none (and fixed-position edge cases,
+    // which we then confirm via the box). visibility:hidden keeps layout boxes
+    // but must not count as rendered. Resolve computed style once — this runs
+    // for every pin on every animation frame, so avoid duplicate style reads.
+    const cs = getComputedStyle(el);
+    if (el.offsetParent === null && cs.position !== 'fixed') return false;
+    if (cs.visibility === 'hidden' || cs.display === 'none') return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 || r.height > 0;
+  }
+
   function recomputePositions() {
     const map = {};
-    let ghostChanged = false;
+    let availChanged = false;
+    const setAvail = (p, next) => {
+      if (p.__avail !== next) { p.__avail = next; availChanged = true; }
+    };
     pins.forEach(p => {
-      if (!p.element_selector) { map[p.id] = { x: 0, y: 0, visible: false }; return; }
-      if (p.page_url && pageKeyOf(p.page_url) !== currentPageKey()) { map[p.id] = { x: 0, y: 0, visible: false }; return; }
+      if (!p.element_selector) { map[p.id] = { x: 0, y: 0, visible: false }; setAvail(p, 'absent'); return; }
+      if (p.page_url && pageKeyOf(p.page_url) !== currentPageKey()) {
+        // Off-page: not a target-availability judgement, so leave __avail as-is.
+        map[p.id] = { x: 0, y: 0, visible: false };
+        return;
+      }
       try {
         const el = document.querySelector(p.element_selector);
         if (!el) {
           map[p.id] = { x: 0, y: 0, visible: false };
-          if (!p.__ghost) { p.__ghost = true; ghostChanged = true; }
+          setAvail(p, 'absent');
           return;
         }
-        if (p.__ghost) { p.__ghost = false; ghostChanged = true; }
+        if (!isRendered(el)) {
+          map[p.id] = { x: 0, y: 0, visible: false };
+          setAvail(p, 'hidden');
+          return;
+        }
+        setAvail(p, 'located');
         const r = el.getBoundingClientRect();
         const ox = typeof p.x_pct === 'number' ? p.x_pct : 0.5;
         const oy = typeof p.y_pct === 'number' ? p.y_pct : 0.5;
-        map[p.id] = { visible: r.width > 0 || r.height > 0, x: r.left + r.width * ox, y: r.top + r.height * oy };
+        map[p.id] = { visible: true, x: r.left + r.width * ox, y: r.top + r.height * oy };
       } catch (_) {
         map[p.id] = { x: 0, y: 0, visible: false };
-        if (!p.__ghost) { p.__ghost = true; ghostChanged = true; }
+        setAvail(p, 'absent');
       }
     });
     if (draft?.selector) {
@@ -867,7 +1055,7 @@
       });
     }
 
-    if (ghostChanged) renderSidebar();
+    if (availChanged) renderSidebar();
 
     repositionRangeMarkers();
     rafId = requestAnimationFrame(recomputePositions);
@@ -1495,7 +1683,11 @@
       if (rangeDraft) {
         await postComment({ type: 'range', comment: text, pageUrl: location.href, tag: rangeDraft.tagSel || null, anchor: rangeDraft.anchor, breadcrumb: navHistory });
       } else if (draft) {
-        await postComment({
+        // Grab a screenshot (if capture is enabled) at submit time, anchored at
+        // the pinned element. captureForElement hides our chrome for the one grab
+        // and never throws; a null result means "no screenshot" → field omitted.
+        const shot = captureForElement(draft.selector, draft.xPct, draft.yPct);
+        const payload = {
           type: 'element',
           element: { selector: draft.selector, label: '', tagName: '' },
           comment: text,
@@ -1504,7 +1696,9 @@
           xPct: draft.xPct,
           yPct: draft.yPct,
           breadcrumb: navHistory,
-        });
+        };
+        if (shot) payload.screenshot = shot;
+        await postComment(payload);
       } else {
         btn.disabled = false;
         btn.textContent = 'Post comment';
@@ -1573,9 +1767,205 @@
     setTimeout(() => toast.classList.remove('visible'), 2500);
   }
 
+  /* ── screenshot capture (opt-in, consented getDisplayMedia) ── */
+  // Completely inert unless the reviewer opts in. We ask for the display stream
+  // ONCE (from the Enable button's click handler — a user gesture is required),
+  // keep the MediaStream alive for the session, and grab a still frame per pin by
+  // drawing the live video to a canvas. On decline/stop/unsupported we silently
+  // fall back to posting comments with no screenshot field.
+  const SHOT_SUPPORTED = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  let captureStream = null;      // the live MediaStream once enabled (null = off)
+  let captureVideo = null;       // hidden <video> fed by captureStream
+  let shotNoticeShown = false;   // only show the explanatory notice once per session
+  const shotBtn = document.getElementById('__fb-shot-btn');
+  const shotLabel = document.getElementById('__fb-shot-label');
+
+  function captureEnabled() { return !!captureStream; }
+
+  function renderShotBtn() {
+    if (!SHOT_SUPPORTED) {
+      shotBtn.disabled = true;
+      shotBtn.title = 'Screenshots not supported in this browser.';
+      shotLabel.textContent = 'Screenshots off';
+      return;
+    }
+    const on = captureEnabled();
+    shotBtn.classList.toggle('active', on);
+    shotLabel.textContent = on ? 'Screenshots on' : 'Enable screenshots';
+    shotBtn.title = on
+      ? 'Screenshots on — comments capture the shared view. Stop sharing from the browser bar to turn off.'
+      : 'Capture a screenshot of the shared view when you place a comment';
+  }
+
+  // Tear down the session capture: called when the user stops the share from the
+  // browser bar (track 'ended'), or if the stream dies. Leaves commenting intact.
+  function teardownCapture() {
+    try {
+      if (captureStream) captureStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+    } catch (_) {}
+    captureStream = null;
+    if (captureVideo) { try { captureVideo.srcObject = null; captureVideo.remove(); } catch (_) {} captureVideo = null; }
+    renderShotBtn();
+  }
+
+  // Must be invoked synchronously from a user gesture (click handler) — do not
+  // await anything before calling getDisplayMedia or the gesture is lost.
+  async function enableCapture() {
+    if (!SHOT_SUPPORTED || captureEnabled()) return;
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 5 },
+        audio: false,
+      });
+    } catch (_) {
+      // Decline (NotAllowedError) or any failure: gentle toast, stay off, no re-prompt loop.
+      showToast('Screenshots not enabled.');
+      renderShotBtn();
+      return;
+    }
+    captureStream = stream;
+    // When the user stops sharing from the browser bar, the track ends — drop the
+    // stream so subsequent pins post without a screenshot. No error surfaced.
+    stream.getVideoTracks().forEach(t => { t.onended = teardownCapture; });
+
+    captureVideo = document.createElement('video');
+    captureVideo.id = '__fb-shot-video';
+    captureVideo.muted = true;
+    captureVideo.playsInline = true;
+    captureVideo.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px;top:-9999px';
+    captureVideo.srcObject = stream;
+    document.body.appendChild(captureVideo);
+    try { await captureVideo.play(); } catch (_) {}
+    renderShotBtn();
+    showToast('Screenshots on.');
+  }
+
+  // Hide ALL of ProtoLab's own chrome (ids start with "__fb-") for a single frame
+  // grab so the capture shows the prototype, not our overlay. Mirrors the intent
+  // of the commentsHidden toggle but is exhaustive and synchronous. Returns a
+  // restore() that puts every element's inline visibility back.
+  function hideOwnChrome() {
+    const nodes = document.querySelectorAll(FB_UI_SELECTOR);
+    const restores = [];
+    nodes.forEach(n => {
+      restores.push([n, n.style.visibility]);
+      n.style.visibility = 'hidden';
+    });
+    return function restore() {
+      restores.forEach(([n, v]) => { n.style.visibility = v; });
+    };
+  }
+
+  // Grab a still frame from the live capture stream and map a viewport point to
+  // frame coordinates. `vx`/`vy` are the pin anchor in viewport (client) px, or
+  // null for a general comment (frame-relative pin position then sent as null).
+  //
+  // Returns the screenshot payload field, or null on any failure / capture-off.
+  // NEVER throws — the caller must be able to post the comment regardless.
+  //
+  // Coordinate mapping (approximate, documented assumption): getDisplayMedia of a
+  // tab yields a frame whose intrinsic size (videoWidth/Height) corresponds to the
+  // shared surface ≈ the viewport. We scale viewport px by
+  // (videoWidth / innerWidth, videoHeight / innerHeight) to land in frame space.
+  function captureScreenshot(vx, vy) {
+    if (!captureEnabled() || !captureVideo) return null;
+    const restore = hideOwnChrome();
+    try {
+      const vw = captureVideo.videoWidth;
+      const vh = captureVideo.videoHeight;
+      if (!vw || !vh) return null;
+      const canvas = document.createElement('canvas');
+      canvas.width = vw;
+      canvas.height = vh;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(captureVideo, 0, 0, vw, vh);
+      const dataUrl = canvas.toDataURL('image/png');
+
+      let xPct = null, yPct = null;
+      if (typeof vx === 'number' && typeof vy === 'number' &&
+          window.innerWidth > 0 && window.innerHeight > 0) {
+        // Viewport px → frame px (scale) → 0..1 within the frame.
+        const fx = vx * (vw / window.innerWidth);
+        const fy = vy * (vh / window.innerHeight);
+        xPct = Math.max(0, Math.min(1, fx / vw));
+        yPct = Math.max(0, Math.min(1, fy / vh));
+      }
+      return { dataUrl, w: vw, h: vh, xPct, yPct };
+    } catch (_) {
+      return null;
+    } finally {
+      restore();
+    }
+  }
+
+  // Compute the pin's viewport-anchor (client px) from an element selector plus
+  // the within-element xPct/yPct, then capture. Returns the screenshot field or
+  // null. Used for element pins.
+  function captureForElement(selector, elXPct, elYPct) {
+    if (!captureEnabled()) return null;
+    let vx = null, vy = null;
+    try {
+      const el = selector ? document.querySelector(selector) : null;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const ox = typeof elXPct === 'number' ? elXPct : 0.5;
+        const oy = typeof elYPct === 'number' ? elYPct : 0.5;
+        vx = r.left + r.width * ox;
+        vy = r.top + r.height * oy;
+      }
+    } catch (_) {}
+    return captureScreenshot(vx, vy);
+  }
+
+  if (!SHOT_SUPPORTED) {
+    renderShotBtn();
+  } else {
+    renderShotBtn();
+    // Button click: first time, show the explanatory notice; thereafter the
+    // notice's Enable button (still a user gesture) runs getDisplayMedia.
+    shotBtn.addEventListener('click', () => {
+      if (captureEnabled()) {
+        // Already on — let the user turn it off from the toolbar too.
+        teardownCapture();
+        showToast('Screenshots off.');
+        return;
+      }
+      if (!shotNoticeShown) {
+        shotNoticeShown = true;
+        shotNotice.classList.add('visible');
+        return;
+      }
+      // Notice already seen earlier this session: enable directly from this gesture.
+      enableCapture();
+    });
+    document.getElementById('__fb-shot-ok').addEventListener('click', () => {
+      shotNotice.classList.remove('visible');
+      enableCapture(); // still synchronous from this click → gesture preserved
+    });
+    document.getElementById('__fb-shot-cancel').addEventListener('click', () => {
+      shotNotice.classList.remove('visible');
+    });
+  }
+
   /* ── helpers ── */
+  // Build the most stable selector we can for `el`. Preference order, most to
+  // least stable: an author-provided data-protolab-id, a native id, then a
+  // structural path anchored at the nearest id'd / data-protolab-id'd ancestor,
+  // falling back to tag + first class + :nth-of-type. The positional fallback
+  // can match a different element after dynamic insertion/reordering, which is
+  // why the stable anchors are tried first.
+  function stableAnchor(node) {
+    const pid = node.getAttribute && node.getAttribute('data-protolab-id');
+    if (pid) return '[data-protolab-id="' + CSS.escape(pid) + '"]';
+    if (node.id) return '#' + CSS.escape(node.id);
+    return null;
+  }
+
   function getCssSelector(el) {
-    if (el.id) return '#' + CSS.escape(el.id);
+    const self = stableAnchor(el);
+    if (self) return self;
     const parts = [];
     let node = el;
     while (node && node !== document.body) {
@@ -1588,12 +1978,16 @@
         : [];
       if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
       parts.unshift(part);
-      // If this node's parent has an id, anchor the path there and stop walking up
-      if (node.parentElement && node.parentElement !== document.body && node.parentElement.id) {
-        parts.unshift('#' + CSS.escape(node.parentElement.id));
-        return parts.join(' > ');
+      // If this node's parent has a stable anchor, anchor the path there and stop.
+      const parent = node.parentElement;
+      if (parent && parent !== document.body) {
+        const anchor = stableAnchor(parent);
+        if (anchor) {
+          parts.unshift(anchor);
+          return parts.join(' > ');
+        }
       }
-      node = node.parentElement;
+      node = parent;
     }
     return parts.join(' > ');
   }

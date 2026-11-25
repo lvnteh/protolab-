@@ -98,4 +98,69 @@ async function deletePrototype(filename) {
   if (error && !/not.?found/i.test(error.message || '')) throw error;
 }
 
-module.exports = { putPrototype, getPrototype, deletePrototype };
+// ── Comment screenshots ──────────────────────────────────────────────────
+// Full-resolution comment screenshots live in the SAME bucket as prototype
+// files, under a `screenshots/` key prefix so they are easy to tell apart and
+// clean up. `key` is always a nanoid-derived value from the caller (no user
+// input, no separators), so it cannot escape the directory. Images are binary
+// (PNG), so these verbs deal in Buffers, unlike the UTF-8 HTML verbs above.
+const SCREENSHOT_PREFIX = 'screenshots/';
+
+function screenshotLocalPath(key) {
+  // Flatten the prefix for the local-disk fallback so we never need nested dirs.
+  return path.join(config.uploadsPath, path.basename(key));
+}
+
+// Store a screenshot PNG. `key` is the storage key (e.g. "screenshots/<id>.png").
+async function putImage(key, body, contentType = 'image/png') {
+  if (!useSupabase) {
+    await fs.promises.mkdir(config.uploadsPath, { recursive: true });
+    await fs.promises.writeFile(screenshotLocalPath(key), body);
+    return;
+  }
+  const { error } = await client()
+    .storage.from(config.storageBucket)
+    .upload(key, body, { contentType, upsert: true });
+  if (error) throw error;
+}
+
+// Read a screenshot back as a Buffer, or null when the object doesn't exist.
+async function getImage(key) {
+  if (!useSupabase) {
+    try {
+      return await fs.promises.readFile(screenshotLocalPath(key));
+    } catch (e) {
+      if (e.code === 'ENOENT') return null;
+      throw e;
+    }
+  }
+  const { data, error } = await client()
+    .storage.from(config.storageBucket)
+    .download(key);
+  if (error) {
+    if (/not.?found/i.test(error.message || '')) return null;
+    throw error;
+  }
+  return Buffer.from(await data.arrayBuffer());
+}
+
+// Best-effort delete of a screenshot (same semantics as deletePrototype).
+async function deleteImage(key) {
+  if (!useSupabase) {
+    try {
+      await fs.promises.unlink(screenshotLocalPath(key));
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
+    }
+    return;
+  }
+  const { error } = await client()
+    .storage.from(config.storageBucket)
+    .remove([key]);
+  if (error && !/not.?found/i.test(error.message || '')) throw error;
+}
+
+module.exports = {
+  putPrototype, getPrototype, deletePrototype,
+  putImage, getImage, deleteImage, SCREENSHOT_PREFIX,
+};

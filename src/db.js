@@ -253,6 +253,20 @@ async function initDb() {
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_start  INTEGER`);
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_end    INTEGER`);
 
+  // Screenshot context (consented screen-capture). All nullable — legacy comments
+  // and comments placed without capture have none. See plans/comment-screenshot-context.md.
+  //   screenshot_key   : object-storage key for the full-resolution image (null = no capture)
+  //   screenshot_thumb : small inline thumbnail (data URL) for the owner/admin preview
+  //   screenshot_w/h   : captured frame dimensions (px)
+  //   screenshot_x_pct/y_pct : pin position WITHIN the captured image (0..1); distinct from
+  //                            x_pct/y_pct which are the pin's position within the ELEMENT.
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS screenshot_key   TEXT`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS screenshot_thumb TEXT`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS screenshot_w     INTEGER`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS screenshot_h     INTEGER`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS screenshot_x_pct REAL`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS screenshot_y_pct REAL`);
+
   // K. schema_migrations marker table. Lets us skip the expensive backfill scan on
   //    normal boots once it has run and no legacy (unversioned) prototypes remain.
   await _pool.query(`

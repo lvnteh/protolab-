@@ -1,0 +1,41 @@
+{
+  "method": "Actual route and handler code; mocked storage, database, and sessions; no live network",
+  "summaries": [
+    {
+      "case": "comment-link-through-entry",
+      "formAction": "/p/alpha/enter",
+      "redirect": "/p/alpha/view"
+    },
+    {
+      "case": "two-prototype-tabs",
+      "currentSessionPrototype": "proto-b",
+      "firstPrototypeViewStatus": 403,
+      "firstPrototypeCommentsStatus": 403
+    },
+    {
+      "case": "current-server-json-limit",
+      "configuredLimit": "12mb",
+      "bytes": 150092,
+      "status": 200,
+      "errorType": null
+    },
+    {
+      "case": "explanation-tag-roundtrip",
+      "persistedTag": null
+    },
+    {
+      "case": "ai-feedback-identifiers",
+      "commentIdIncluded": false,
+      "manifestAfterReadingFeedback": {
+        "id": "proto-a",
+        "lastPulled": 3
+      },
+      "output": "Feedback for \"Audit prototype\" [proto-a] — published v2, draft v3\n\nComments (1 open / 1 total):\n  • (open, v2) Please clarify this field @ #field — reviewer@example.com\n\nExplanations (0):"
+    },
+    {
+      "case": "ai-status-with-multiple-published-versions",
+      "output": "Status for sample.html:\n  Local:  lastPulled v3, lastPushed v—\n  Remote: latest v3, published v3",
+      "note": "Status derives published version from first historical published entry; the versions response does not identify the live pointer."
+    }
+  ]
+}

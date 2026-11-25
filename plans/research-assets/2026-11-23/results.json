@@ -1,0 +1,70 @@
+{
+  "method": "Actual templates and SDK with intercepted synthetic API fixtures; no production backend or user data",
+  "summaries": [
+    {
+      "case": "admin-comment-links",
+      "hrefs": [
+        "/p/audit?focus=c-visible",
+        "/p/audit?focus=c-hidden",
+        "/p/audit?focus=c-other"
+      ]
+    },
+    {
+      "case": "version-actions",
+      "text": "v3\tdraft\tSimpler advanced settings\t24 Nov 2026, 08:28\tPublish\nv2\tlive\tFirst stakeholder review\t24 Nov 2026, 08:28\t\nv1\tpublished\tInitial concept\t24 Nov 2026, 08:28\tSet live"
+    },
+    {
+      "case": "viewer-role-actions",
+      "publishShown": true,
+      "uploadShown": false
+    },
+    {
+      "case": "initial-targets",
+      "sidebar": "1\nreviewer@example.com\nIDEA\nMake the primary action easier to find.\n2\nreviewer@example.com\nQUESTION\nExplain how the retry limit works.\n1 reply\n⚠ Target is hidden in this view",
+      "pinCount": 1,
+      "visibleSidebarRows": 2,
+      "loadedComments": 3
+    },
+    {
+      "case": "hidden-thread",
+      "replyVisible": true
+    },
+    {
+      "case": "revealed-target",
+      "pinCount": 2
+    },
+    {
+      "case": "refresh-on-focus",
+      "fetchesBefore": 1,
+      "fetchesAfter": 1
+    },
+    {
+      "case": "draft-after-mode-switch",
+      "value": ""
+    },
+    {
+      "case": "mobile-review",
+      "metrics": {
+        "viewport": 390,
+        "bodyPaddingRight": "260px",
+        "sidebarWidth": 260,
+        "contentWidth": 130,
+        "scrollWidth": 390,
+        "toolbarWidth": 390
+      }
+    },
+    {
+      "case": "same-version-comment-link-page-identity",
+      "url": "https://protolab.test/p/audit/view?version=2&focus=c-visible",
+      "readsBefore": 2,
+      "readsAfter": 3,
+      "visibleSidebarRows": 0,
+      "sidebar": "No pins on this page yet."
+    }
+  ],
+  "errors": [],
+  "counters": {
+    "commentGets": 3,
+    "commentPosts": 0
+  }
+}

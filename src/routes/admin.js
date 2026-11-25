@@ -313,7 +313,13 @@ router.delete('/prototypes/:id', orgs.requireAdmin, async (req, res) => {
     await storage.deletePrototype(filename);
   }
 
+  // Comment screenshots are not prototype files — gather and remove them too
+  // (the comment rows themselves go via ON DELETE CASCADE below). Best-effort.
+  const { rows: shotRows } = await getDb().query(
+    'SELECT screenshot_key FROM comments WHERE prototype_id = $1 AND screenshot_key IS NOT NULL', [proto.id]);
+
   await getDb().query('DELETE FROM prototypes WHERE id = $1', [proto.id]);
+  for (const r of shotRows) await storage.deleteImage(r.screenshot_key).catch(() => {});
   res.json({ ok: true });
 });
 
@@ -340,10 +346,19 @@ router.post('/prototypes/:id/comments', orgs.requireOrg, async (req, res) => {
     [...base, parseInt(pageSize, 10), parseInt(offset, 10)]);
 
   const total = parseInt(totalResult.rows[0].n, 10);
-  const rows = rowsResult.rows.map(r => ({
-    ...r,
-    breadcrumb_display: (() => { try { return r.breadcrumb ? JSON.parse(r.breadcrumb).join(' → ') : ''; } catch { return ''; } })(),
-  }));
+  const rows = rowsResult.rows.map(r => {
+    // Expose the screenshot PREVIEW fields (thumb + dims + pin position) and a
+    // derived hasScreenshot boolean, but NEVER leak the storage key to the
+    // client — the full image is only reachable through the gated screenshot
+    // route below. Strip screenshot_key here. A screenshot exists if EITHER an
+    // inline thumb (small images) OR a stored object key (large ones) is present.
+    const { screenshot_key, ...rest } = r;
+    return {
+      ...rest,
+      hasScreenshot: screenshot_key != null || r.screenshot_thumb != null,
+      breadcrumb_display: (() => { try { return r.breadcrumb ? JSON.parse(r.breadcrumb).join(' → ') : ''; } catch { return ''; } })(),
+    };
+  });
 
   // Fetch replies for the returned page of parent comments
   const parentIds = rows.filter(r => r.type !== 'reply').map(r => r.id);
@@ -367,17 +382,46 @@ router.post('/prototypes/:id/comments', orgs.requireOrg, async (req, res) => {
   res.json({ data: rowsWithReplies, totalCount: total });
 });
 
+// Full-resolution screenshot for a single comment. OWNER/ADMIN-ONLY — gated by
+// requireOrg (reviewers have no userId/org membership, so they get 401/403, not
+// 200). Beyond membership we re-check tenancy: the comment must belong to :id
+// AND :id must be a prototype in the caller's active org. 404 hides a missing
+// comment / prototype / screenshot; 403 is reserved for a prototype that exists
+// but sits in another org (getOrgPrototype returns null → 404 there too, so the
+// cross-org case is indistinguishable from missing, matching the rest of admin).
+router.get('/prototypes/:id/comments/:commentId/screenshot', orgs.requireOrg, async (req, res) => {
+  if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).send('Not found.');
+  const { rows } = await getDb().query(
+    'SELECT screenshot_key FROM comments WHERE id = $1 AND prototype_id = $2',
+    [req.params.commentId, req.params.id]);
+  const key = rows[0] && rows[0].screenshot_key;
+  if (!key) return res.status(404).send('Not found.');
+  const buffer = await storage.getImage(key);
+  if (!buffer) return res.status(404).send('Not found.');
+  res.setHeader('Content-Type', 'image/png');
+  // Owner-only content: never let a shared/proxy cache retain it.
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(buffer);
+});
+
 router.delete('/prototypes/:id/comments', orgs.requireAdmin, async (req, res) => {
   if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
+  // Gather every stored screenshot for this prototype first, then delete the
+  // rows, then best-effort remove each image (a storage failure never blocks
+  // the DB delete).
+  const { rows: shotRows } = await getDb().query(
+    'SELECT screenshot_key FROM comments WHERE prototype_id = $1 AND screenshot_key IS NOT NULL', [req.params.id]);
   await getDb().query('DELETE FROM comments WHERE prototype_id = $1', [req.params.id]);
+  for (const r of shotRows) await storage.deleteImage(r.screenshot_key).catch(() => {});
   res.json({ ok: true });
 });
 
 router.delete('/prototypes/:id/comments/:commentId', orgs.requireAdmin, async (req, res) => {
   if (!await getOrgPrototype(req.params.id, req.orgId, 'id')) return res.status(404).json({ error: 'Not found.' });
-  const { rows } = await getDb().query('SELECT id FROM comments WHERE id = $1 AND prototype_id = $2', [req.params.commentId, req.params.id]);
+  const { rows } = await getDb().query('SELECT id, screenshot_key FROM comments WHERE id = $1 AND prototype_id = $2', [req.params.commentId, req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Not found.' });
   await getDb().query('DELETE FROM comments WHERE id = $1', [req.params.commentId]);
+  if (rows[0].screenshot_key) await storage.deleteImage(rows[0].screenshot_key).catch(() => {});
   res.json({ ok: true });
 });
 

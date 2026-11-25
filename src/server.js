@@ -30,7 +30,12 @@ app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+// Comment-screenshot dataUrls (base64 PNG) ride in the JSON body of POST
+// /api/comments, so the default 100KB limit would 413 them before the route
+// runs. Allow up to 12MB — base64 inflates the 8MB raw cap in handleScreenshot
+// (~33%) plus JSON overhead, so the route's own MAX_SCREENSHOT_BYTES stays the
+// effective boundary (oversized images are dropped there, the comment still posts).
+app.use(express.json({ limit: '12mb' }));
 
 // Session store. In-process MemoryStore does not survive redeploys and is not
 // shared across instances (a user logged in on instance A is logged out when

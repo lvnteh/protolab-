@@ -78,6 +78,15 @@ textarea.input{resize:vertical;line-height:1.5}
 .modal h3{font-size:16px;font-weight:700;color:hsl(222,47%,11%);margin-bottom:8px}
 .modal p{font-size:13px;color:hsl(220,9%,46%);line-height:1.6;margin-bottom:22px}
 .modal__actions{display:flex;gap:10px;justify-content:flex-end}
+/* Screenshot lightbox */
+.shot-box{background:#fff;border-radius:16px;padding:16px;max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);box-shadow:0 8px 40px rgba(0,0,0,.18);display:flex;flex-direction:column;transform:translateY(8px) scale(.98);transition:transform .15s,opacity .15s;opacity:0}
+.modal-backdrop.open .shot-box{transform:none;opacity:1}
+.shot-box__head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;font-size:13px;font-weight:600;color:hsl(222,47%,11%)}
+.shot-box__frame{position:relative;display:inline-block;overflow:hidden;border:1px solid hsl(220,13%,91%);border-radius:8px;background:hsl(220,14%,96%);align-self:center;line-height:0}
+.shot-box__frame img{display:block;max-width:calc(100vw - 96px);max-height:calc(100vh - 160px);width:auto;height:auto}
+.shot-box__note{font-size:11px;color:hsl(220,9%,56%);margin-top:10px;max-width:520px}
+.shot-pin{position:absolute;width:22px;height:22px;border-radius:50%;background:hsl(252,83%,57%);border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);transform:translate(-50%,-50%);pointer-events:none}
+.shot-btn{font-size:11px;padding:4px 8px;line-height:1;white-space:nowrap}
 .reply-row td { background: hsl(252,83%,98%); border-left: 3px solid hsl(252,83%,57%); padding-left: 32px; font-size: 12px; }
 .reply-row:hover td { background: hsl(252,83%,95%); }
 .reply-badge { display:inline-block; padding:1px 7px; border-radius:20px; font-size:10px; font-weight:700; background:hsl(252,83%,95%); color:hsl(252,83%,40%); margin-left:6px; cursor:pointer; }
@@ -328,6 +337,23 @@ textarea.input{resize:vertical;line-height:1.5}
   </div>
 </div>
 
+<!-- Screenshot lightbox: shows the saved capture for a comment with the pin drawn on it.
+     Image is loaded lazily — thumbnail inline when small, else the gated full-image route. -->
+<div class="modal-backdrop" id="shot-modal" style="display:none" onclick="if(event.target===this)closeShot()">
+  <div class="shot-box">
+    <div class="shot-box__head">
+      <span id="shot-caption">Screenshot</span>
+      <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px" onclick="closeShot()">Close</button>
+    </div>
+    <div class="shot-box__frame" id="shot-frame">
+      <img id="shot-img" alt="Comment screenshot" />
+      <div id="shot-pin" class="shot-pin" style="display:none"></div>
+    </div>
+    <p class="shot-box__note">The reviewer saw this view when placing the comment. Capture is approximate; some content may not render.</p>
+  </div>
+</div>
+
+
 <script>
 const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
 const PROTO_ID = '{{id}}';
@@ -387,6 +413,8 @@ function renderPager(containerId, infoId, total, page, onPage) {
 
 // Comments
 let commentsPage = 1;
+// commentId -> { thumb, xPct, yPct, label } for comments that have a screenshot.
+const shotMeta = {};
 let commentType = '';
 let commentVersion = '';
 
@@ -403,6 +431,18 @@ async function loadComments(page) {
     if (!resp.ok) { window.location.href = '/admin/login'; return; }
     const {data, totalCount} = await resp.json();
     document.getElementById('stat-comments').textContent = totalCount;
+
+    // Stash per-comment screenshot metadata so openShot() can look it up by id
+    // (the row object `r` is only in scope during the map below).
+    data.forEach(r => {
+      if (r.hasScreenshot) {
+        shotMeta[r.id] = {
+          thumb: r.screenshot_thumb || null,
+          xPct: r.screenshot_x_pct, yPct: r.screenshot_y_pct,
+          label: r.element_label || r.comment || 'Comment',
+        };
+      }
+    });
 
     const tbody = document.getElementById('comments-body');
     if (!data.length) {
@@ -438,6 +478,7 @@ async function loadComments(page) {
           <td class="ts">${fmtDate(r.created_at)}</td>
           <td style="white-space:nowrap;display:flex;gap:6px;align-items:center">
             ${r.type === 'element' ? `<a href="/p/${SHARE_TOKEN}?focus=${r.id}" target="_blank" class="btn btn-secondary" style="font-size:11px;padding:4px 8px;white-space:nowrap">View</a>` : ''}
+            ${r.hasScreenshot ? `<button class="btn btn-secondary shot-btn" title="View screenshot" onclick="openShot('${r.id}')">📷</button>` : ''}
             <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="deleteComment('${r.id}')">Delete</button>
           </td>
         </tr>
@@ -692,6 +733,47 @@ document.getElementById('modal-confirm').addEventListener('click', async () => {
   if (_modalCallback) await _modalCallback();
   _modalCallback = null;
 });
+
+// ── Screenshot lightbox ──
+// Opens the saved capture for a comment with the pin drawn on top. Uses the
+// inline thumbnail when the backend sent one (small images), otherwise loads
+// the full image from the owner/admin-gated route. Pin position is stored as a
+// fraction of the captured frame, so we place it as a percentage of the
+// rendered image box (works regardless of the display scaling).
+function openShot(commentId) {
+  const meta = shotMeta[commentId];
+  if (!meta) return;
+  const backdrop = document.getElementById('shot-modal');
+  const img = document.getElementById('shot-img');
+  const pin = document.getElementById('shot-pin');
+  document.getElementById('shot-caption').textContent = meta.label;
+  pin.style.display = 'none';
+
+  const placePin = () => {
+    if (meta.xPct == null || meta.yPct == null) { pin.style.display = 'none'; return; }
+    pin.style.left = (meta.xPct * 100) + '%';
+    pin.style.top = (meta.yPct * 100) + '%';
+    pin.style.display = '';
+  };
+  img.onload = placePin;
+  img.onerror = () => { document.getElementById('shot-caption').textContent = meta.label + ' — image unavailable'; };
+  // Prefer the inline thumbnail; fall back to the gated full-image route.
+  img.src = meta.thumb || ('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId + '/screenshot');
+  // A cached / data-URL image can be decoded synchronously, so `load` may have
+  // already fired (or won't) — place the pin immediately in that case.
+  if (img.complete && img.naturalWidth > 0) placePin();
+
+  backdrop.style.display = 'flex';
+  requestAnimationFrame(() => backdrop.classList.add('open'));
+}
+function closeShot() {
+  const el = document.getElementById('shot-modal');
+  el.classList.remove('open');
+  el.addEventListener('transitionend', () => {
+    el.style.display = 'none';
+    document.getElementById('shot-img').src = '';
+  }, { once: true });
+}
 
 async function loadFunnels() {
   if (funnelsLoaded) return;

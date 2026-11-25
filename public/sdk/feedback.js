@@ -151,6 +151,10 @@
     body.__fb-comment-mode #__fb-comment-banner { display: block; }
     body.__fb-comment-mode { cursor: crosshair !important; }
     body.__fb-comment-mode * { cursor: crosshair !important; }
+    body.__fb-comment-mode.__fb-draft-open,
+    body.__fb-comment-mode.__fb-draft-open * { cursor: default !important; }
+    body.__fb-comment-mode.__fb-draft-open [id^="__fb-"],
+    body.__fb-comment-mode.__fb-draft-open [id^="__fb-"] * { cursor: auto !important; }
     /* Markdown docs annotate by selecting text, so keep the text (I-beam) cursor
        over the document body — but our own chrome keeps its normal pointer. */
     body.__fb-markdown.__fb-comment-mode,
@@ -1644,6 +1648,7 @@
     if (draft) draft.tag = null;
     if (rangeDraft) rangeDraft.tagSel = null;
     draftCard.classList.add('visible');
+    document.body.classList.add('__fb-draft-open');
     positionDraftCard();
     document.getElementById('__fb-draft-textarea').focus();
   }
@@ -1778,6 +1783,7 @@
     draft = null;
     rangeDraft = null;
     draftCard.classList.remove('visible');
+    document.body.classList.remove('__fb-draft-open');
     // Reset screenshot preview so it doesn't flash on the next open.
     const shotWrap = document.getElementById('__fb-draft-shot-wrap');
     if (shotWrap) { shotWrap.className = 'no-shot'; document.getElementById('__fb-draft-shot-img').src = ''; }

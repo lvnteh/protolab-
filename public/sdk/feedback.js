@@ -2077,9 +2077,9 @@
     };
   }
 
-  // Grab a still frame from the live capture stream and map a viewport point to
-  // frame coordinates. `vx`/`vy` are the pin anchor in viewport (client) px, or
-  // null for a general comment (frame-relative pin position then sent as null).
+  // Grab a still frame from the live capture stream, optionally cropped to the
+  // prototype iframe (framed mode), with a marker drawn at the click point.
+  // `vx`/`vy` are the click anchor in shell-viewport (client) px, or null.
   //
   // Returns the screenshot payload field, or null on any failure / capture-off.
   // NEVER throws — the caller must be able to post the comment regardless.
@@ -2087,7 +2087,9 @@
   // Coordinate mapping (approximate, documented assumption): getDisplayMedia of a
   // tab yields a frame whose intrinsic size (videoWidth/Height) corresponds to the
   // shared surface ≈ the viewport. We scale viewport px by
-  // (videoWidth / innerWidth, videoHeight / innerHeight) to land in frame space.
+  // (videoWidth / innerWidth, videoHeight / innerHeight) to land in frame space,
+  // then (framed mode) crop that frame to the iframe's on-screen rectangle so the
+  // saved image is the prototype alone.
   function captureScreenshot(vx, vy) {
     if (!captureEnabled() || !captureVideo) return null;
     const restore = hideOwnChrome();
@@ -2095,50 +2097,62 @@
       const vw = captureVideo.videoWidth;
       const vh = captureVideo.videoHeight;
       if (!vw || !vh) return null;
+      if (!(window.innerWidth > 0) || !(window.innerHeight > 0)) return null;
+
+      // Viewport px → frame px scale. getDisplayMedia of a tab yields a frame whose
+      // intrinsic size corresponds to the shared surface ≈ the viewport.
+      const sx = vw / window.innerWidth;
+      const sy = vh / window.innerHeight;
+
+      // In framed mode, crop the captured frame to just the prototype iframe's
+      // on-screen rectangle so the screenshot is the prototype alone — no toolbar
+      // strip, no sidebar, no blank margin. Non-framed capture keeps the full frame.
+      let cropX = 0, cropY = 0, cropW = vw, cropH = vh;
+      if (IS_FRAMED && PROTO_FRAME) {
+        const r = PROTO_FRAME.getBoundingClientRect();
+        cropX = Math.max(0, Math.round(r.left * sx));
+        cropY = Math.max(0, Math.round(r.top * sy));
+        cropW = Math.max(1, Math.min(vw - cropX, Math.round(r.width * sx)));
+        cropH = Math.max(1, Math.min(vh - cropY, Math.round(r.height * sy)));
+      }
+
       const canvas = document.createElement('canvas');
-      canvas.width = vw;
-      canvas.height = vh;
+      canvas.width = cropW;
+      canvas.height = cropH;
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
-      ctx.drawImage(captureVideo, 0, 0, vw, vh);
+      // Draw only the crop region of the source frame onto the (crop-sized) canvas.
+      ctx.drawImage(captureVideo, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-      // Draw click marker when coordinates are provided
-      if (typeof vx === 'number' && typeof vy === 'number' &&
-          window.innerWidth > 0 && window.innerHeight > 0) {
-        const fx = vx * (vw / window.innerWidth);
-        const fy = vy * (vh / window.innerHeight);
+      // Marker coordinates, relative to the crop origin.
+      let xPct = null, yPct = null;
+      if (typeof vx === 'number' && typeof vy === 'number') {
+        const fx = vx * sx - cropX;
+        const fy = vy * sy - cropY;
         // Outer ring
         ctx.beginPath();
-        ctx.arc(fx, fy, 22, 0, 2 * Math.PI);
+        ctx.arc(fx, fy, 36, 0, 2 * Math.PI);
         ctx.strokeStyle = 'hsl(252,83%,57%)';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;
         ctx.stroke();
         // Inner filled dot
         ctx.beginPath();
-        ctx.arc(fx, fy, 6, 0, 2 * Math.PI);
+        ctx.arc(fx, fy, 9, 0, 2 * Math.PI);
         ctx.fillStyle = 'hsl(252,83%,57%)';
         ctx.fill();
-        // Cross hair lines
+        // Cross hair lines — long arms reaching toward the ring from each side.
         ctx.strokeStyle = 'hsl(252,83%,57%)';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(fx - 32, fy); ctx.lineTo(fx - 26, fy); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(fx + 26, fy); ctx.lineTo(fx + 32, fy); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(fx, fy - 32); ctx.lineTo(fx, fy - 26); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(fx, fy + 26); ctx.lineTo(fx, fy + 32); ctx.stroke();
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(fx - 54, fy); ctx.lineTo(fx - 42, fy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(fx + 42, fy); ctx.lineTo(fx + 54, fy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(fx, fy - 54); ctx.lineTo(fx, fy - 42); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(fx, fy + 42); ctx.lineTo(fx, fy + 54); ctx.stroke();
+        xPct = Math.max(0, Math.min(1, fx / cropW));
+        yPct = Math.max(0, Math.min(1, fy / cropH));
       }
 
       const dataUrl = canvas.toDataURL('image/png');
-
-      let xPct = null, yPct = null;
-      if (typeof vx === 'number' && typeof vy === 'number' &&
-          window.innerWidth > 0 && window.innerHeight > 0) {
-        // Viewport px → frame px (scale) → 0..1 within the frame.
-        const fx = vx * (vw / window.innerWidth);
-        const fy = vy * (vh / window.innerHeight);
-        xPct = Math.max(0, Math.min(1, fx / vw));
-        yPct = Math.max(0, Math.min(1, fy / vh));
-      }
-      return { dataUrl, w: vw, h: vh, xPct, yPct };
+      return { dataUrl, w: cropW, h: cropH, xPct, yPct };
     } catch (_) {
       return null;
     } finally {

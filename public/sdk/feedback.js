@@ -1873,8 +1873,10 @@
     let stream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 5 },
+        video: { frameRate: 5, displaySurface: 'browser' },
         audio: false,
+        preferCurrentTab: true,
+        selfBrowserSurface: 'include',
       });
     } catch (_) {
       // Decline (NotAllowedError) or any failure: gentle toast, stay off, no re-prompt loop.

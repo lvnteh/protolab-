@@ -98,6 +98,42 @@
     #__fb-shot-btn.active { background: #fff; color: hsl(252,83%,57%); }
     #__fb-shot-btn:disabled { opacity: .45; cursor: default; }
 
+    /* Screenshot prompt: shown once when entering comment mode without screenshots
+       enabled. Centered modal overlay so it reads as a deliberate gate, not a
+       sidebar nudge. The reviewer can enable screenshots or skip. */
+    #__fb-shot-prompt-backdrop {
+      position: fixed; inset: 0; z-index: 2147483647;
+      background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center;
+    }
+    #__fb-shot-prompt-backdrop.visible { display: flex; }
+    #__fb-shot-prompt {
+      width: 360px; background: #fff; border-radius: 16px;
+      padding: 24px; box-shadow: 0 16px 48px rgba(0,0,0,.22);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px; line-height: 1.55; color: hsl(222,47%,11%);
+    }
+    #__fb-shot-prompt-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: hsl(252,83%,95%); display: flex; align-items: center; justify-content: center;
+      margin-bottom: 14px;
+    }
+    #__fb-shot-prompt h4 { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+    #__fb-shot-prompt p { margin: 0 0 18px; color: hsl(220,9%,40%); font-size: 13px; }
+    #__fb-shot-prompt .fb-shot-prompt-actions { display: flex; flex-direction: column; gap: 8px; }
+    #__fb-shot-prompt-enable {
+      width: 100%; padding: 10px; border-radius: 8px; border: none;
+      background: hsl(252,83%,57%); color: #fff; font-size: 13px; font-weight: 600;
+      cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    #__fb-shot-prompt-enable:hover { background: hsl(252,83%,48%); }
+    #__fb-shot-prompt-skip {
+      width: 100%; padding: 9px; border-radius: 8px;
+      border: 1px solid hsl(220,13%,87%); background: none;
+      color: hsl(220,9%,46%); font-size: 13px; font-weight: 500;
+      cursor: pointer; font-family: inherit;
+    }
+    #__fb-shot-prompt-skip:hover { background: hsl(220,14%,96%); color: hsl(222,47%,11%); }
+
     /* Screenshot opt-in notice: a small styled inline panel (not window.confirm),
        anchored under the toolbar on the right, explaining what capture does. */
     #__fb-shot-notice {
@@ -622,6 +658,29 @@
   `;
   document.body.appendChild(shotNotice);
 
+  // Centered modal prompt shown the first time a reviewer switches to comment mode
+  // without screenshots enabled. Welcoming, not alarming — explains the value and
+  // lets them opt in or skip. Only shown once per session.
+  const shotPromptBackdrop = document.createElement('div');
+  shotPromptBackdrop.id = '__fb-shot-prompt-backdrop';
+  shotPromptBackdrop.innerHTML = `
+    <div id="__fb-shot-prompt">
+      <div id="__fb-shot-prompt-icon">
+        <svg width="22" height="22" fill="none" stroke="hsl(252,83%,57%)" stroke-width="2" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      </div>
+      <h4>Add a screenshot to your comment?</h4>
+      <p>Enabling screenshots lets the prototype owner see the exact context of your feedback — what was on screen when you wrote it. This makes comments much easier to understand, especially on complex flows.</p>
+      <div class="fb-shot-prompt-actions">
+        <button id="__fb-shot-prompt-enable" type="button">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Enable screenshots
+        </button>
+        <button id="__fb-shot-prompt-skip" type="button">Continue without screenshots</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(shotPromptBackdrop);
+
   /* ── helpers ── */
   function currentPageKey() {
     if (location.hash && location.hash.length > 1) return location.hash.slice(1);
@@ -703,11 +762,26 @@
   });
 
   toolbar.querySelectorAll('.fb-mode-btn').forEach(btn => {
-    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.mode;
+      // First time switching to comment mode without screenshots: show a welcoming
+      // prompt explaining the value. The user can enable (then enter comment mode)
+      // or skip (enter comment mode directly). After the first time, don't re-ask.
+      if (target === 'comment' && SHOT_SUPPORTED && !captureEnabled() && !shotPromptShown) {
+        shotPromptShown = true;
+        shotPromptBackdrop.classList.add('visible');
+        return;
+      }
+      setMode(target);
+    });
   });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (shotPromptBackdrop.classList.contains('visible')) {
+        shotPromptBackdrop.classList.remove('visible');
+        return;
+      }
       if (openRangePopoverEl) { closeRangePopover(); return; }
       if (unpinActive) { unpinActive(); unpinActive = null; return; }
       if (draft || rangeDraft) { closeDraft(); return; }
@@ -1846,6 +1920,7 @@
   let captureStream = null;      // the live MediaStream once enabled (null = off)
   let captureVideo = null;       // hidden <video> fed by captureStream
   let shotNoticeShown = false;   // only show the explanatory notice once per session
+  let shotPromptShown = false;   // only prompt once when first entering comment mode
   const shotBtn = document.getElementById('__fb-shot-btn');
   const shotLabel = document.getElementById('__fb-shot-label');
 
@@ -2017,6 +2092,26 @@
     });
     document.getElementById('__fb-shot-cancel').addEventListener('click', () => {
       shotNotice.classList.remove('visible');
+    });
+
+    // Comment-mode screenshot prompt handlers. The Enable button runs
+    // enableCapture() synchronously (preserving the user gesture), then enters
+    // comment mode. Skip closes the modal and enters comment mode without screenshots.
+    // Clicking the backdrop (outside the card) also skips and enters comment mode.
+    document.getElementById('__fb-shot-prompt-enable').addEventListener('click', () => {
+      shotPromptBackdrop.classList.remove('visible');
+      enableCapture(); // synchronous gesture — getDisplayMedia fires immediately
+      setMode('comment');
+    });
+    document.getElementById('__fb-shot-prompt-skip').addEventListener('click', () => {
+      shotPromptBackdrop.classList.remove('visible');
+      setMode('comment');
+    });
+    shotPromptBackdrop.addEventListener('click', (e) => {
+      if (e.target === shotPromptBackdrop) {
+        shotPromptBackdrop.classList.remove('visible');
+        setMode('comment');
+      }
     });
   }
 

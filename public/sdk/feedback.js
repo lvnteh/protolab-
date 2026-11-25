@@ -267,8 +267,7 @@
     #__fb-draft-submit:disabled { opacity: .5; cursor: default; }
     /* Draft screenshot preview (HTML prototypes) */
     #__fb-draft-shot-wrap { margin-bottom: 10px; border-radius: 8px; overflow: hidden; border: 1px solid hsl(220,13%,91%); background: hsl(220,14%,96%); position: relative; line-height: 0; }
-    #__fb-draft-shot-wrap img { display: block; width: 100%; height: auto; max-height: 160px; object-fit: cover; object-position: top; }
-    #__fb-draft-shot-wrap.capturing { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 10px; font-size: 11px; color: hsl(220,9%,56%); text-align: center; }
+    #__fb-draft-shot-wrap img { display: block; width: 100%; height: auto; max-height: 320px; object-fit: cover; object-position: top; }
     #__fb-draft-shot-wrap.no-shot { display: none; }
 
     /* toast */
@@ -582,7 +581,6 @@
     <div class="fb-draft-selector" id="__fb-draft-selector"></div>
     <div id="__fb-draft-shot-wrap" class="no-shot">
       <img id="__fb-draft-shot-img" alt="" />
-      <span id="__fb-draft-shot-hint"></span>
     </div>
     <div class="fb-tag-row" id="__fb-tag-row">
       ${TAGS.map(t => `<button class="fb-tag-pill" data-tag="${t}" style="border-color:${TAG_COLOR[t]};color:${TAG_COLOR[t]}">${TAG_LABEL[t]}</button>`).join('')}
@@ -1645,14 +1643,11 @@
   function showDraftShotPreview(shot) {
     const shotWrap = document.getElementById('__fb-draft-shot-wrap');
     const shotImg  = document.getElementById('__fb-draft-shot-img');
-    const shotHint = document.getElementById('__fb-draft-shot-hint');
     if (!shot || !shot.dataUrl) {
-      shotHint.textContent = 'Enable screenshots to capture what you see.';
-      shotWrap.className = 'capturing';
+      shotWrap.className = 'no-shot';
       shotImg.src = '';
       return;
     }
-    shotHint.textContent = '';
     shotImg.onload = () => { positionDraftCard(); };
     shotImg.src = shot.dataUrl;
     shotWrap.className = '';

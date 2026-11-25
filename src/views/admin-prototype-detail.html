@@ -82,10 +82,25 @@ textarea.input{resize:vertical;line-height:1.5}
 .shot-box{background:#fff;border-radius:16px;padding:16px;max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);box-shadow:0 8px 40px rgba(0,0,0,.18);display:flex;flex-direction:column;transform:translateY(8px) scale(.98);transition:transform .15s,opacity .15s;opacity:0}
 .modal-backdrop.open .shot-box{transform:none;opacity:1}
 .shot-box__head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;font-size:13px;font-weight:600;color:hsl(222,47%,11%)}
-.shot-box__frame{position:relative;display:inline-block;overflow:hidden;border:1px solid hsl(220,13%,91%);border-radius:8px;background:hsl(220,14%,96%);align-self:center;line-height:0}
-.shot-box__frame img{display:block;max-width:calc(100vw - 96px);max-height:calc(100vh - 160px);width:auto;height:auto}
-.shot-box__note{font-size:11px;color:hsl(220,9%,56%);margin-top:10px;max-width:520px}
+/* Side-by-side: screenshot on the left, comment detail on the right. */
+.shot-box__body{display:flex;gap:16px;align-items:stretch;min-height:0;overflow:hidden}
+.shot-box__frame-wrap{flex:1 1 auto;min-width:0;display:flex;align-items:flex-start;justify-content:center;overflow:auto}
+.shot-box__frame{position:relative;display:inline-block;overflow:hidden;border:1px solid hsl(220,13%,91%);border-radius:8px;background:hsl(220,14%,96%);line-height:0}
+.shot-box__frame img{display:block;max-width:calc(100vw - 420px);max-height:calc(100vh - 160px);width:auto;height:auto}
+.shot-box__side{flex:0 0 300px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-right:2px}
+.shot-side__meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.shot-side__email{font-size:12px;font-weight:600;color:hsl(252,83%,50%)}
+.shot-side__element{font-size:11px;color:hsl(220,9%,46%);word-break:break-word}
+.shot-side__comment{font-size:14px;line-height:1.55;color:hsl(222,47%,11%);white-space:pre-wrap;word-break:break-word;background:hsl(220,14%,97%);border:1px solid hsl(220,13%,91%);border-radius:10px;padding:12px}
+.shot-side__date{font-size:11px;color:hsl(220,9%,56%)}
 .shot-pin{position:absolute;width:22px;height:22px;border-radius:50%;background:hsl(252,83%,57%);border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);transform:translate(-50%,-50%);pointer-events:none}
+.shot-box__note{font-size:11px;color:hsl(220,9%,56%);margin:auto 0 0}
+/* Narrow screens: stack the comment detail under the screenshot. */
+@media (max-width:720px){
+  .shot-box__body{flex-direction:column;overflow:auto}
+  .shot-box__side{flex:0 0 auto}
+  .shot-box__frame img{max-width:calc(100vw - 96px)}
+}
 .shot-btn{font-size:11px;padding:4px 8px;line-height:1;white-space:nowrap}
 .reply-row td { background: hsl(252,83%,98%); border-left: 3px solid hsl(252,83%,57%); padding-left: 32px; font-size: 12px; }
 .reply-row:hover td { background: hsl(252,83%,95%); }
@@ -337,19 +352,33 @@ textarea.input{resize:vertical;line-height:1.5}
   </div>
 </div>
 
-<!-- Screenshot lightbox: shows the saved capture for a comment with the pin drawn on it.
-     Image is loaded lazily — thumbnail inline when small, else the gated full-image route. -->
+<!-- Screenshot lightbox: the saved capture (with the click marker) shown side-by-side
+     with the comment text, author, tag and timestamp, so the comment is readable
+     even when the screenshot is large. Image loads lazily (inline thumb or gated route). -->
 <div class="modal-backdrop" id="shot-modal" style="display:none" onclick="if(event.target===this)closeShot()">
   <div class="shot-box">
     <div class="shot-box__head">
-      <span id="shot-caption">Screenshot</span>
+      <span id="shot-caption">Comment</span>
       <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px" onclick="closeShot()">Close</button>
     </div>
-    <div class="shot-box__frame" id="shot-frame">
-      <img id="shot-img" alt="Comment screenshot" />
-      <div id="shot-pin" class="shot-pin" style="display:none"></div>
+    <div class="shot-box__body">
+      <div class="shot-box__frame-wrap">
+        <div class="shot-box__frame" id="shot-frame">
+          <img id="shot-img" alt="Comment screenshot" />
+          <div id="shot-pin" class="shot-pin" style="display:none"></div>
+        </div>
+      </div>
+      <aside class="shot-box__side">
+        <div class="shot-side__meta">
+          <span id="shot-side-email" class="shot-side__email"></span>
+          <span id="shot-side-tag"></span>
+        </div>
+        <div id="shot-side-element" class="shot-side__element" style="display:none"></div>
+        <div id="shot-side-comment" class="shot-side__comment"></div>
+        <div id="shot-side-date" class="shot-side__date"></div>
+        <p class="shot-box__note">The reviewer saw this view when placing the comment. Capture is approximate; some content may not render.</p>
+      </aside>
     </div>
-    <p class="shot-box__note">The reviewer saw this view when placing the comment. Capture is approximate; some content may not render.</p>
   </div>
 </div>
 
@@ -440,6 +469,11 @@ async function loadComments(page) {
           thumb: r.screenshot_thumb || null,
           xPct: r.screenshot_x_pct, yPct: r.screenshot_y_pct,
           label: r.element_label || r.comment || 'Comment',
+          comment: r.comment || '',
+          email: r.email || '',
+          tag: r.tag || null,
+          createdAt: r.created_at || null,
+          elementLabel: r.element_label || null,
         };
       }
     });
@@ -746,8 +780,20 @@ function openShot(commentId) {
   const backdrop = document.getElementById('shot-modal');
   const img = document.getElementById('shot-img');
   const pin = document.getElementById('shot-pin');
-  document.getElementById('shot-caption').textContent = meta.label;
+  document.getElementById('shot-caption').textContent = 'Comment';
   pin.style.display = 'none';
+
+  // Populate the side panel with the comment text, author, tag and timestamp.
+  document.getElementById('shot-side-email').textContent = meta.email || '';
+  document.getElementById('shot-side-tag').innerHTML = tagBadge(meta.tag);
+  const elEl = document.getElementById('shot-side-element');
+  if (meta.elementLabel) { elEl.textContent = meta.elementLabel; elEl.style.display = ''; }
+  else { elEl.style.display = 'none'; }
+  const commentEl = document.getElementById('shot-side-comment');
+  commentEl.textContent = meta.comment || '(no comment text)';
+  if (!meta.comment) commentEl.style.fontStyle = 'italic';
+  else commentEl.style.fontStyle = '';
+  document.getElementById('shot-side-date').textContent = meta.createdAt ? fmtDate(meta.createdAt) : '';
 
   const placePin = () => {
     if (meta.xPct == null || meta.yPct == null) { pin.style.display = 'none'; return; }
@@ -756,7 +802,7 @@ function openShot(commentId) {
     pin.style.display = '';
   };
   img.onload = placePin;
-  img.onerror = () => { document.getElementById('shot-caption').textContent = meta.label + ' — image unavailable'; };
+  img.onerror = () => { document.getElementById('shot-caption').textContent = 'Comment — image unavailable'; };
   // Prefer the inline thumbnail; fall back to the gated full-image route.
   img.src = meta.thumb || ('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId + '/screenshot');
   // A cached / data-URL image can be decoded synchronously, so `load` may have

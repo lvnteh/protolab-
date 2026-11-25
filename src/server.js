@@ -52,14 +52,23 @@ const sessionOptions = {
   cookie: { httpOnly: true, sameSite: 'lax', secure: config.isProduction },
 };
 const usePgSessions = (config.isProduction || process.env.SESSION_STORE === 'pg') && config.databaseUrl;
-if (usePgSessions) {
-  const pgSession = require('connect-pg-simple')(session);
-  sessionOptions.store = new pgSession({
-    conObject: config.pgConnectionConfig(),
-    createTableIfMissing: true, // self-provisions the "session" table on first use
-  });
+
+// buildSessionMiddleware is called after initDb() so connect-pg-simple receives
+// the already-warmed pool rather than opening its own connection against a
+// potentially still-waking Postgres (the root cause of cold-start ETIMEDOUT).
+function buildSessionMiddleware(pool) {
+  if (usePgSessions && pool) {
+    const pgSession = require('connect-pg-simple')(session);
+    sessionOptions.store = new pgSession({ pool, createTableIfMissing: true });
+  }
+  return session(sessionOptions);
 }
-app.use(session(sessionOptions));
+
+// Placeholder — replaced before the server starts accepting requests when
+// running as main (see initDb().then below). In test/import mode this is
+// registered immediately with MemoryStore so existing suites work unchanged.
+let sessionMiddleware = session(sessionOptions);
+app.use((req, res, next) => sessionMiddleware(req, res, next));
 
 // Dev mode: auto-authenticate to bypass login (localhost only).
 // In production, always require login. In dev, hitting /admin/* without a session
@@ -118,8 +127,13 @@ if (require.main === module) {
     console.error('DATABASE_URL environment variable is required');
     process.exit(1);
   }
-  initDb().then(async () => {
+  initDb().then(async (pool) => {
     await seedDevUser();
+
+    // Swap the session middleware to use the already-warmed pool so
+    // connect-pg-simple never races against a slow-waking Postgres.
+    sessionMiddleware = buildSessionMiddleware(pool);
+
     const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`Proto Share running on http://0.0.0.0:${config.port}`);
     });

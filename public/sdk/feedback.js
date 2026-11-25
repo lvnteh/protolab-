@@ -1626,6 +1626,7 @@
   /* ── text-selection → range comment ── */
   document.addEventListener('mouseup', () => {
     if (mode !== 'comment') return;
+    if (IS_HTML_PROTO) return; // HTML prototypes use click-to-comment, not text selection
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
@@ -1659,27 +1660,26 @@
     // an element pin). Only consumed for document clicks, never the UI clicks above.
     if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
 
-    // A text selection (range comment) always wins over dropping an element pin.
-    // If a range draft is pending, or the user clicked inside a live selection,
-    // keep/adopt the range and leave its draft card open — never overwrite it
-    // with an element draft. This is what makes "select, then click the
-    // selection to pin it" work, and keeps the selection intact until Post/Cancel.
-    const sel = window.getSelection();
-    const inLiveSelection = sel && !sel.isCollapsed && sel.rangeCount &&
-      !isOwnUi((sel.anchorNode && sel.anchorNode.nodeType === 1 ? sel.anchorNode : (sel.anchorNode && sel.anchorNode.parentElement)));
-    if (rangeDraft || inLiveSelection) {
-      e.preventDefault(); e.stopPropagation();
-      if (!rangeDraft && inLiveSelection) {
-        // No draft yet (e.g. selection carried over from view mode without a
-        // mouseup in comment mode): build the range draft from the live selection.
-        const anchor = window.FBAnchor && window.FBAnchor.serializeSelection(sel.getRangeAt(0), document.body);
-        if (anchor) { rangeDraft = { anchor, tagSel: null }; draft = null; openDraftCard('“' + anchor.quote.slice(0, 60) + (anchor.quote.length > 60 ? '…' : '') + '”'); }
+    // A text selection (range comment) always wins over dropping an element pin —
+    // but only for markdown docs. HTML prototypes ignore text selections entirely.
+    if (!IS_HTML_PROTO) {
+      const sel = window.getSelection();
+      const inLiveSelection = sel && !sel.isCollapsed && sel.rangeCount &&
+        !isOwnUi((sel.anchorNode && sel.anchorNode.nodeType === 1 ? sel.anchorNode : (sel.anchorNode && sel.anchorNode.parentElement)));
+      if (rangeDraft || inLiveSelection) {
+        e.preventDefault(); e.stopPropagation();
+        if (!rangeDraft && inLiveSelection) {
+          // No draft yet (e.g. selection carried over from view mode without a
+          // mouseup in comment mode): build the range draft from the live selection.
+          const anchor = window.FBAnchor && window.FBAnchor.serializeSelection(sel.getRangeAt(0), document.body);
+          if (anchor) { rangeDraft = { anchor, tagSel: null }; draft = null; openDraftCard('”' + anchor.quote.slice(0, 60) + (anchor.quote.length > 60 ? '…' : '') + '”'); }
+        }
+        return;
       }
-      return;
     }
 
     // Markdown documents annotate by selection only — a bare click never drops a
-    // free-floating element pin (which would "float" while scrolling since the
+    // free-floating element pin (which would “float” while scrolling since the
     // rendered doc has no meaningful element to anchor to).
     if (IS_MARKDOWN) { e.preventDefault(); e.stopPropagation(); return; }
 

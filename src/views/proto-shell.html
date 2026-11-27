@@ -19,7 +19,17 @@
 </style>
 </head>
 <body>
-<iframe id="__fb-proto-frame" src="{{rawSrc}}" title="Prototype"></iframe>
+<!-- The uploaded prototype is UNTRUSTED. It runs with an opaque origin via the
+     sandbox: allow-scripts lets its own JS run (prototypes need it), but the
+     DELIBERATE omission of allow-same-origin means it cannot reach the ProtoLab
+     app origin — no document.cookie, no same-origin fetch of authenticated
+     endpoints, no reading the parent shell's DOM. allow-forms keeps in-prototype
+     form UX working; top navigation is NOT allowed (no allow-top-navigation), so
+     the prototype can never break out of the frame. The matching
+     `Content-Security-Policy: sandbox allow-scripts` header on /raw governs the
+     raw URL when opened directly and all of its descendants. -->
+<iframe id="__fb-proto-frame" src="{{rawSrc}}" title="Prototype"
+        sandbox="allow-scripts allow-forms"></iframe>
 {{sdkTag}}
 </body>
 </html>

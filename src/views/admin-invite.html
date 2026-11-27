@@ -7,59 +7,83 @@
 <title>Invitation — ProtoLab (Beta!)</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh;display:flex;align-items:center;justify-content:center}
-.card{background:#fff;border-radius:16px;border:1px solid hsl(220,13%,91%);padding:36px 40px;width:100%;max-width:440px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
-.logo{font-size:20px;font-weight:800;color:hsl(252,83%,57%);margin-bottom:18px}
-h1{font-size:18px;margin-bottom:8px}
-.sub{color:hsl(220,9%,46%);margin-bottom:20px;line-height:1.6}
-.role{font-size:12px;font-weight:600;padding:2px 8px;border-radius:20px;background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
-.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;background:#fff0f0;color:#c0392b;border:1px solid #f8c8c8}
-.btn{display:inline-block;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;background:hsl(252,83%,57%);color:#fff;text-decoration:none}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+/* overflow:hidden lets the purple top bar fill the card's rounded top corners */
+.card{background:#fff;border-radius:16px;border:1px solid hsl(220,13%,91%);width:100%;max-width:400px;box-shadow:0 4px 24px rgba(0,0,0,.08);overflow:hidden}
+/* ProtoLab app header bar — matches the admin pages' purple topbar */
+.topbar{background:hsl(252,83%,57%);height:52px;display:flex;align-items:center;gap:9px;padding:0 24px;color:#fff;font-size:16px;font-weight:800;letter-spacing:-.3px}
+.topbar svg{flex:none}
+.body{padding:28px 32px 32px}
+h1{font-size:19px;margin-bottom:10px;letter-spacing:-.3px}
+.sub{color:hsl(220,9%,46%);line-height:1.65;font-size:14px}
+.sub strong{color:hsl(222,47%,20%)}
+.role{display:inline-block;font-size:11px;font-weight:700;padding:1px 9px;border-radius:20px;background:hsl(252,83%,95%);color:hsl(252,83%,45%);text-transform:uppercase;letter-spacing:.4px;vertical-align:baseline}
+.meta{margin-top:18px;padding-top:16px;border-top:1px solid hsl(220,13%,93%);color:hsl(220,9%,46%);font-size:13px;line-height:1.6}
+.meta strong{color:hsl(222,47%,20%)}
+.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:18px;background:#fdf2f2;color:#c0392b;border:1px solid #f5c0c0}
+.actions{margin-top:22px;display:flex;flex-direction:column;gap:10px}
+.btn{display:block;width:100%;padding:11px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;text-align:center;text-decoration:none;background:hsl(252,83%,57%);color:#fff}
+.btn:hover{background:hsl(252,83%,48%)}
 .btn-secondary{background:#fff;color:hsl(222,47%,11%);border:1px solid hsl(220,13%,87%)}
-.row{display:flex;gap:10px;align-items:center;margin-top:8px}
-.mut{color:hsl(220,9%,46%);font-size:13px}
+.btn-secondary:hover{background:hsl(220,14%,97%)}
+/* A reset-styled button that reads as a plain text link, for the low-emphasis
+   "different account" escape hatch — no third button box competing for weight. */
+.linkbtn{background:none;border:none;padding:0;margin:16px auto 0;display:block;font:inherit;font-size:13px;font-weight:600;color:hsl(252,83%,57%);cursor:pointer}
+.linkbtn:hover{text-decoration:underline}
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="logo">ProtoLab (Beta!)</div>
+  <div class="topbar">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M13.13 22.19L11.5 18.36C13.07 17.78 14.54 17 15.9 16.09L13.13 22.19M5.64 12.5L1.81 10.87L7.91 8.1C7 9.46 6.22 10.93 5.64 12.5M21.61 2.39C21.61 2.39 16.66 .269 11 5.93C8.81 8.12 7.5 10.53 6.65 12.64C6.37 13.39 6.56 14.21 7.11 14.77L9.24 16.89C9.79 17.45 10.61 17.63 11.36 17.35C13.5 16.53 15.88 15.19 18.07 13C23.73 7.34 21.61 2.39 21.61 2.39M14.54 9.46C13.76 8.68 13.76 7.41 14.54 6.63S16.59 5.85 17.37 6.63C18.14 7.41 18.15 8.68 17.37 9.46C16.59 10.24 15.32 10.24 14.54 9.46M8.88 16.53L7.47 15.12L8.88 16.53M6.24 22L9.88 18.36C9.54 18.27 9.21 18.12 8.91 17.91L4.83 22H6.24M2 22H3.41L8.18 17.24L6.76 15.83L2 20.59V22M2 19.17L6.09 15.09C5.88 14.79 5.73 14.46 5.64 14.12L2 17.76V19.17Z"/></svg>
+    ProtoLab (Beta!)
+  </div>
+  <div class="body">
 
   <div id="invalid" style="display:{{#invalid}}">
     <h1>Invitation unavailable</h1>
     <div class="alert">{{message}}</div>
-    <a class="btn btn-secondary" href="/admin/home">Go to your organizations</a>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/admin/home">Go to your organizations</a>
+    </div>
   </div>
 
   <div id="terminal" style="display:{{#terminal}}">
     <h1>Invitation to {{orgName}}</h1>
     <div class="alert">{{message}}</div>
-    <a class="btn btn-secondary" href="/admin/home">Go home</a>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/admin/home">Go to your organizations</a>
+    </div>
   </div>
 
   <div id="ok" style="display:{{#ok}}">
     <h1>Join {{orgName}}</h1>
-    <p class="sub">You've been invited to join <strong>{{orgName}}</strong> as a <span class="role">{{role}}</span>.<br>This invitation was issued to <strong>{{inviteEmail}}</strong>.</p>
+    <p class="sub">You've been invited to join <strong>{{orgName}}</strong> as a <span class="role">{{role}}</span>.</p>
+    <p class="meta">Invitation sent to <strong>{{inviteEmail}}</strong>.</p>
 
     <div id="logged-in" style="display:{{#loggedIn}}">
-      <p class="mut">Signed in as <strong>{{accountEmail}}</strong>. Joining is an explicit action — confirm below.</p>
-      <form method="POST" action="/admin/invite/{{token}}/accept" class="row">
-        <input type="hidden" name="_csrf" value="{{csrfToken}}">
-        <button type="submit" class="btn">Join organization</button>
+      <p class="meta">Signed in as <strong>{{accountEmail}}</strong>.</p>
+      <div class="actions">
+        <form method="POST" action="/admin/invite/{{token}}/accept">
+          <input type="hidden" name="_csrf" value="{{csrfToken}}">
+          <button type="submit" class="btn">Join organization</button>
+        </form>
         <a class="btn btn-secondary" href="/admin/home">Not now</a>
-      </form>
-      <form method="post" action="/admin/logout" style="margin-top:14px">
+      </div>
+      <form method="post" action="/admin/logout">
         <input type="hidden" name="_csrf" value="{{csrfToken}}">
-        <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:6px 12px">Sign in with a different account</button>
+        <button type="submit" class="linkbtn">Sign in with a different account</button>
       </form>
     </div>
 
     <div id="logged-out" style="display:{{#loggedOut}}">
-      <p class="mut">Sign in or create an account to accept this invitation. You'll be brought back here to confirm.</p>
-      <div class="row">
+      <p class="meta">Sign in or create an account to accept. You'll come back here to confirm.</p>
+      <div class="actions">
         <a class="btn" href="/admin/login?next=/admin/invite/{{token}}">Sign in</a>
         <a class="btn btn-secondary" href="/admin/signup?next=/admin/invite/{{token}}">Create account</a>
       </div>
     </div>
+  </div>
   </div>
 </div>
 <script>

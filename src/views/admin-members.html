@@ -27,15 +27,23 @@ h1{font-size:22px}
 .badge-pending{background:hsl(38,92%,92%);color:hsl(38,92%,30%)}
 .badge-accepted{background:#e6f9f0;color:#1a7f4b}
 .badge-revoked,.badge-expired{background:hsl(0,84%,93%);color:hsl(0,84%,40%)}
-.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;white-space:nowrap;line-height:1}
 .btn-primary{background:hsl(252,83%,57%);color:#fff}
 .btn-secondary{background:#fff;color:hsl(222,47%,11%);border:1px solid hsl(220,13%,87%)}
 .btn-danger{background:#fff;color:#c0392b;border:1px solid #e0c0bd}
+/* Small, dense buttons for in-table row actions (Reissue, Revoke, Copy,
+   Promote, Remove) so they don't tower over the row text. */
+.btn-sm{height:30px;padding:0 11px;font-size:12px}
+/* Row-action cluster: keeps buttons on one line and vertically centered within
+   the table row, without turning the <td> itself into a flex container. */
+.row-actions{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
 .form-pad{padding:16px 18px}
-.input{padding:8px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:13px;outline:none;height:38px}
-/* Native select needs extra right padding for its chevron and an explicit
-   height so it lines up with the text input and the Send-invite button. */
-select.input{height:38px;padding:0 34px 0 12px;line-height:36px;background:#fff;cursor:pointer}
+.input{padding:8px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:13px;outline:none;height:38px;font-family:inherit}
+/* Native select: match the text input's 38px box exactly. Vertically center
+   the label with padding (not line-height, which over-tall some engines), and
+   leave room on the right for the native chevron. appearance:none would let us
+   draw our own, but keeping the native chevron is fine once the box lines up. */
+select.input{height:38px;padding:0 34px 0 12px;background:#fff;cursor:pointer;line-height:normal}
 .msg{font-size:12px;margin-left:8px}
 .msg.err{color:#c0392b}.msg.ok{color:#1a7f4b}
 .danger-zone{border:1px solid #fccfcf;background:#fffafa}
@@ -162,14 +170,14 @@ function renderMembers(list){
   b.innerHTML = list.map(m => {
     const isSelf = m.user_id === SELF;
     const toggle = m.role === 'admin'
-      ? `<button class="btn btn-secondary" onclick="setRole('${esc(m.user_id)}','viewer')">Demote to viewer</button>`
-      : `<button class="btn btn-secondary" onclick="setRole('${esc(m.user_id)}','admin')">Promote to admin</button>`;
+      ? `<button class="btn btn-secondary btn-sm" onclick="setRole('${esc(m.user_id)}','viewer')">Demote to viewer</button>`
+      : `<button class="btn btn-secondary btn-sm" onclick="setRole('${esc(m.user_id)}','admin')">Promote to admin</button>`;
     return `<tr id="m-${esc(m.user_id)}">
       <td>${esc(m.email)}${isSelf?' <span class="role">you</span>':''}</td>
       <td><span class="role">${esc(m.role)}</span></td>
       <td>${fmt(m.created_at)}</td>
-      <td style="white-space:nowrap;display:flex;gap:6px">${toggle}
-        <button class="btn btn-danger" onclick="removeMember('${esc(m.user_id)}')">Remove</button></td>
+      <td><div class="row-actions">${toggle}
+        <button class="btn btn-danger btn-sm" onclick="removeMember('${esc(m.user_id)}')">Remove</button></div></td>
     </tr>`;
   }).join('');
 }
@@ -178,17 +186,17 @@ function renderInvites(list){
   if(!list.length){ b.innerHTML='<tr><td colspan="5">No invitations.</td></tr>'; return; }
   b.innerHTML = list.map(i => {
     const actions = i.status === 'pending' || i.status === 'expired'
-      ? `<button class="btn btn-secondary" onclick="reissue('${esc(i.id)}')">Reissue</button>
-         <button class="btn btn-danger" onclick="revoke('${esc(i.id)}')">Revoke</button>`
+      ? `<button class="btn btn-secondary btn-sm" onclick="reissue('${esc(i.id)}')">Reissue</button>
+         <button class="btn btn-danger btn-sm" onclick="revoke('${esc(i.id)}')">Revoke</button>`
       : '';
     const link = i.link
-      ? `<div class="invite-link"><a class="link" href="${esc(i.link)}" title="${esc(i.link)}">${esc(i.link)}</a><button class="btn btn-secondary" onclick="copyLink('${esc(i.link)}')">Copy</button></div>`
+      ? `<div class="invite-link"><a class="link" href="${esc(i.link)}" title="${esc(i.link)}">${esc(i.link)}</a><button class="btn btn-secondary btn-sm" onclick="copyLink('${esc(i.link)}')">Copy</button></div>`
       : '—';
     return `<tr id="i-${esc(i.id)}">
       <td>${esc(i.email)}</td><td><span class="role">${esc(i.role)}</span></td>
       <td><span class="badge badge-${esc(i.status)}">${esc(i.status)}</span></td>
       <td>${link}</td>
-      <td style="white-space:nowrap;display:flex;gap:6px">${actions}</td>
+      <td><div class="row-actions">${actions}</div></td>
     </tr>`;
   }).join('');
 }
@@ -260,7 +268,7 @@ async function loadTokens(){
       <td><strong>${esc(t.name)}</strong> <span class="mono ts">${esc(t.id)}</span></td>
       <td class="ts">${fmtDateTime(t.created_at)}</td>
       <td class="ts">${fmtDateTime(t.last_used_at)}</td>
-      <td style="text-align:right"><button class="btn btn-danger" onclick="revokeToken('${esc(t.id)}','${esc(t.name)}')">Revoke</button></td>
+      <td style="text-align:right"><button class="btn btn-danger btn-sm" onclick="revokeToken('${esc(t.id)}','${esc(t.name)}')">Revoke</button></td>
     </tr>`).join('');
 }
 document.getElementById('token-gen-btn').addEventListener('click', async () => {

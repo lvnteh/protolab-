@@ -4,8 +4,18 @@ const { getDb } = require('../db');
 const { nanoid } = require('nanoid');
 const annotations = require('../services/annotations');
 const storage = require('../services/storage');
+const reviewerCsrf = require('../middleware/reviewerCsrf');
 
 const router = express.Router();
+
+// CSRF + same-origin / opaque-origin guard for these cookie-authenticated
+// reviewer mutations. Applied router-wide: it is a no-op for safe methods and
+// (in test/dev) for token-less same-origin requests, but ALWAYS rejects a
+// mutation carrying `Origin: null` (the sandboxed prototype's opaque origin) or
+// a cross-origin Origin — so a sandboxed prototype can never ride the reviewer's
+// session cookie into a state change, and a forged frame message can't make the
+// shell issue an accepted authenticated request from a foreign context.
+router.use(reviewerCsrf);
 
 // Max decoded screenshot size we accept (8MB). Larger payloads are dropped
 // (comment still posts without a screenshot) so a reviewer can't push huge

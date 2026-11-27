@@ -70,10 +70,11 @@ function buildSessionMiddleware(pool) {
 let sessionMiddleware = session(sessionOptions);
 app.use((req, res, next) => sessionMiddleware(req, res, next));
 
-// Dev mode: auto-authenticate to bypass login (localhost only).
-// In production, always require login. In dev, hitting /admin/* without a session
-// automatically creates a session with a fake userId so you skip the login form.
-if (process.env.NODE_ENV !== 'production') {
+// Dev mode: auto-authenticate to bypass login (localhost only). OPT-IN only —
+// set DEV_AUTH_BYPASS=1 to enable. It is OFF by default (even in dev) so the real
+// signup/login/invite/zero-org journeys can be exercised locally; a blanket
+// bypass would mask every one of them. Never active in production.
+if (process.env.NODE_ENV !== 'production' && process.env.DEV_AUTH_BYPASS === '1') {
   app.use('/admin', (req, res, next) => {
     if (!req.session.userId) {
       req.session.userId = 'dev-user-12345';

@@ -14,5 +14,9 @@ module.exports = {
   globalSetup: '<rootDir>/jest.globalSetup.js',
   setupFiles: ['<rootDir>/jest.setup-env.js'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
+  // Never scan agent worktrees under .claude/worktrees — they are isolated repo
+  // copies whose duplicate test files would otherwise run against the one shared
+  // test database and collide with the main checkout's suites.
+  testPathIgnorePatterns: ['/node_modules/', '/.claude/worktrees/'],
   collectCoverageFrom: ['src/**/*.js', 'mcp/lib/**/*.cjs', '!**/node_modules/**'],
 };

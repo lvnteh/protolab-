@@ -117,8 +117,10 @@ let app, protoId, shareToken;
 
     const agent = request.agent(app);
     await agent.post(`/p/${shareToken}/enter`).send('email=allowed@example.com');
-    // The shell (/view) and the raw content (/raw) are both served without the
-    // markdown CSP. The prototype bytes live at /raw.
+    // The shell (/view) is the TRUSTED app-origin page and carries no CSP of its
+    // own. The prototype bytes live at /raw and are now isolated: they carry the
+    // sandbox CSP (opaque-origin, scripts allowed) but NEVER the strict markdown
+    // CSP (script-src 'self'), since HTML prototypes may run inline scripts.
     const res = await agent.get(`/p/${shareToken}/view`);
     expect(res.status).toBe(200);
     expect(res.headers['content-security-policy']).toBeUndefined();
@@ -126,7 +128,8 @@ let app, protoId, shareToken;
     const rawRes = await agent.get(`/p/${shareToken}/raw`);
     expect(rawRes.status).toBe(200);
     expect(rawRes.text).toContain('HTML AGAIN');
-    expect(rawRes.headers['content-security-policy']).toBeUndefined();
+    expect(rawRes.headers['content-security-policy']).toBe('sandbox allow-scripts');
+    expect(rawRes.headers['content-security-policy']).not.toMatch(/script-src 'self'/);
   });
 
   test('a draft or unknown ?version redirects to the live view (Review Focus #1)', async () => {

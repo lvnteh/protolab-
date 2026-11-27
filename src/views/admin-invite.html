@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{csrfToken}}">
+<title>Invitation — ProtoLab (Beta!)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:#fff;border-radius:16px;border:1px solid hsl(220,13%,91%);padding:36px 40px;width:100%;max-width:440px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.logo{font-size:20px;font-weight:800;color:hsl(252,83%,57%);margin-bottom:18px}
+h1{font-size:18px;margin-bottom:8px}
+.sub{color:hsl(220,9%,46%);margin-bottom:20px;line-height:1.6}
+.role{font-size:12px;font-weight:600;padding:2px 8px;border-radius:20px;background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
+.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;background:#fff0f0;color:#c0392b;border:1px solid #f8c8c8}
+.btn{display:inline-block;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;background:hsl(252,83%,57%);color:#fff;text-decoration:none}
+.btn-secondary{background:#fff;color:hsl(222,47%,11%);border:1px solid hsl(220,13%,87%)}
+.row{display:flex;gap:10px;align-items:center;margin-top:8px}
+.mut{color:hsl(220,9%,46%);font-size:13px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">ProtoLab (Beta!)</div>
+
+  <div id="invalid" style="display:{{#invalid}}">
+    <h1>Invitation unavailable</h1>
+    <div class="alert">{{message}}</div>
+    <a class="btn btn-secondary" href="/admin/home">Go to your organizations</a>
+  </div>
+
+  <div id="terminal" style="display:{{#terminal}}">
+    <h1>Invitation to {{orgName}}</h1>
+    <div class="alert">{{message}}</div>
+    <a class="btn btn-secondary" href="/admin/home">Go home</a>
+  </div>
+
+  <div id="ok" style="display:{{#ok}}">
+    <h1>Join {{orgName}}</h1>
+    <p class="sub">You've been invited to join <strong>{{orgName}}</strong> as a <span class="role">{{role}}</span>.<br>This invitation was issued to <strong>{{inviteEmail}}</strong>.</p>
+
+    <div id="logged-in" style="display:{{#loggedIn}}">
+      <p class="mut">Signed in as <strong>{{accountEmail}}</strong>. Joining is an explicit action — confirm below.</p>
+      <form method="POST" action="/admin/invite/{{token}}/accept" class="row">
+        <input type="hidden" name="_csrf" value="{{csrfToken}}">
+        <button type="submit" class="btn">Join organization</button>
+        <a class="btn btn-secondary" href="/admin/home">Not now</a>
+      </form>
+      <form method="post" action="/admin/logout" style="margin-top:14px">
+        <input type="hidden" name="_csrf" value="{{csrfToken}}">
+        <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:6px 12px">Sign in with a different account</button>
+      </form>
+    </div>
+
+    <div id="logged-out" style="display:{{#loggedOut}}">
+      <p class="mut">Sign in or create an account to accept this invitation. You'll be brought back here to confirm.</p>
+      <div class="row">
+        <a class="btn" href="/admin/login?next=/admin/invite/{{token}}">Sign in</a>
+        <a class="btn btn-secondary" href="/admin/signup?next=/admin/invite/{{token}}">Create account</a>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// The server renders a `state` of ok|terminal|invalid and a loggedIn flag via
+// the {{#...}} display toggles; normalize those placeholder leftovers to CSS.
+(function(){
+  document.querySelectorAll('[style*="display:{{"]').forEach(el => { el.style.display='none'; });
+  const STATE = "{{state}}";
+  const LOGGED_IN = "{{loggedIn}}" === '1';
+  const show = id => { const e = document.getElementById(id); if(e) e.style.display=''; };
+  if (STATE === 'invalid') show('invalid');
+  else if (STATE === 'terminal') show('terminal');
+  else { show('ok'); show(LOGGED_IN ? 'logged-in' : 'logged-out'); }
+})();
+</script>
+</body>
+</html>

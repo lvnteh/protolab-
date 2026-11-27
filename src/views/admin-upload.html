@@ -40,7 +40,7 @@ textarea.input{resize:vertical;line-height:1.5}
 </head>
 <body>
 <div class="topbar">
-  <a href="/admin/prototypes" class="topbar__back">
+  <a href="/admin/orgs/{{orgId}}/prototypes" class="topbar__back">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"/></svg>
     All Prototypes
   </a>
@@ -58,8 +58,9 @@ textarea.input{resize:vertical;line-height:1.5}
 <div class="page">
   <div class="card">
     <h2 class="card__title">New Prototype</h2>
-    {{success}}
-    <form method="POST" action="/admin/prototypes" enctype="multipart/form-data" id="upload-form">
+    <div class="alert alert-success" id="success-banner" style="display:none"></div>
+    <div class="alert" id="error-banner" style="display:none;background:#fff0f0;color:#c0392b;border-color:#f8c8c8"></div>
+    <form id="upload-form">
       <div class="field">
         <label for="proto-name">Name</label>
         <input class="input" id="proto-name" name="name" type="text" placeholder="e.g. Onboarding v2" required>
@@ -83,6 +84,8 @@ textarea.input{resize:vertical;line-height:1.5}
 </div>
 
 <script>
+const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
+const ORG_ID = "{{orgId}}";
 const fileInput = document.getElementById('proto-file');
 const fileZone = document.getElementById('file-zone');
 const fileName = document.getElementById('file-name');
@@ -99,9 +102,42 @@ fileZone.addEventListener('dragover', e => { e.preventDefault(); fileZone.classL
 fileZone.addEventListener('dragleave', () => fileZone.classList.remove('drag'));
 fileZone.addEventListener('drop', e => { e.preventDefault(); fileZone.classList.remove('drag'); });
 
-document.getElementById('upload-form').addEventListener('submit', () => {
-  document.getElementById('submit-btn').disabled = true;
-  document.getElementById('submit-btn').textContent = 'Uploading…';
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// Protected multipart fetch flow (Task 3): the standalone native form submit is
+// replaced by a fetch that carries the CSRF token and the expected-org header
+// BEFORE the file is parsed/stored, posting to the canonical org URL.
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const okEl = document.getElementById('success-banner');
+  const errEl = document.getElementById('error-banner');
+  okEl.style.display = 'none'; errEl.style.display = 'none';
+  if (!fileInput.files[0]) { errEl.textContent = 'Please select a file.'; errEl.style.display = 'block'; return; }
+  const fd = new FormData();
+  fd.append('name', document.getElementById('proto-name').value.trim());
+  fd.append('file', fileInput.files[0]);
+  fd.append('allowlist', document.getElementById('proto-allowlist').value);
+  fd.append('expectedOrgId', ORG_ID);
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  try {
+    const resp = await fetch(`/admin/orgs/${ORG_ID}/prototypes`, {
+      method: 'POST', headers: { Accept: 'application/json', 'x-csrf-token': CSRF, 'x-expected-org': ORG_ID },
+      body: fd, credentials: 'include',
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const { shareLink, id } = await resp.json();
+    okEl.innerHTML = `Uploaded. Share link: <a href="${esc(shareLink)}" target="_blank">${esc(shareLink)}</a> — <a href="/admin/orgs/${encodeURIComponent(ORG_ID)}/prototypes/${esc(id)}">Open</a>`;
+    okEl.style.display = 'block';
+    document.getElementById('upload-form').reset();
+    fileName.style.display = 'none';
+    fileZone.querySelector('.file-zone__label').style.display = '';
+  } catch (err) {
+    errEl.textContent = 'Upload failed. Please try again.';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload & Generate Link';
+  }
 });
 </script>
 </body>

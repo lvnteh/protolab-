@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{csrfToken}}">
+<title>Your organizations — ProtoLab (Beta!)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh}
+a{color:hsl(252,83%,57%);text-decoration:none}
+.topbar{background:hsl(252,83%,57%);height:52px;display:flex;align-items:center;padding:0 24px;gap:16px}
+.topbar__title{font-weight:700;font-size:16px;color:#fff}
+.page{max-width:720px;margin:0 auto;padding:40px 24px}
+.card{background:#fff;border-radius:12px;border:1px solid hsl(220,13%,91%);padding:24px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+h1{font-size:22px;margin-bottom:6px}
+.sub{color:hsl(220,9%,46%);margin-bottom:20px}
+.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;background:#fff0f0;color:#c0392b;border:1px solid #f8c8c8}
+.org-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid hsl(220,14%,96%)}
+.org-row:last-child{border-bottom:none}
+.org-name{font-weight:600}
+.org-id{font-size:11px;color:hsl(220,9%,56%);font-family:monospace}
+.role{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+.btn-primary{background:hsl(252,83%,57%);color:#fff}
+.btn-secondary{background:#fff;color:hsl(222,47%,11%);border:1px solid hsl(220,13%,87%)}
+.input{width:100%;padding:9px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:14px;outline:none;margin-bottom:12px}
+.empty{color:hsl(220,9%,46%);padding:8px 0}
+</style>
+</head>
+<body>
+<div class="topbar"><span class="topbar__title">ProtoLab (Beta!)</span>
+  <form method="post" action="/admin/logout" style="margin-left:auto">
+    <input type="hidden" name="_csrf" value="{{csrfToken}}">
+    <button type="submit" class="btn btn-secondary" style="padding:5px 12px">Log out</button>
+  </form>
+</div>
+<div class="page">
+  <h1>Welcome</h1>
+  <p class="sub">Signed in as <strong>{{email}}</strong>. Create an organization or open one you belong to. To join an existing organization, open the invite link an admin shared with you.</p>
+  {{reason}}
+
+  <div class="card">
+    <h2 style="font-size:15px;margin-bottom:12px">Your organizations</h2>
+    <div id="org-list"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:15px;margin-bottom:12px">Create an organization</h2>
+    <p class="sub" style="margin-bottom:12px">Whoever creates an organization becomes its admin.</p>
+    <form method="POST" action="/admin/orgs">
+      <input type="hidden" name="_csrf" value="{{csrfToken}}">
+      <input class="input" name="name" type="text" placeholder="Organization name" required>
+      <button type="submit" class="btn btn-primary">Create organization</button>
+    </form>
+  </div>
+</div>
+<script>
+const ORGS = {{orgsJson}};
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+(function render(){
+  const el = document.getElementById('org-list');
+  if(!ORGS.length){ el.innerHTML = '<div class="empty">You are not a member of any organization yet.</div>'; return; }
+  el.innerHTML = ORGS.map(o => `
+    <div class="org-row">
+      <div>
+        <div class="org-name">${esc(o.name)}</div>
+        <div class="org-id">${esc(o.id)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="role">${esc(o.role)}</span>
+        <a class="btn btn-secondary" href="/admin/orgs/${encodeURIComponent(o.id)}/prototypes">Open</a>
+      </div>
+    </div>`).join('');
+})();
+</script>
+</body>
+</html>

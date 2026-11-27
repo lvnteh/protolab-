@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{csrfToken}}">
+<title>Members — {{orgName}} — ProtoLab (Beta!)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh}
+a{color:hsl(252,83%,57%);text-decoration:none}
+.topbar{background:hsl(252,83%,57%);height:52px;display:flex;align-items:center;padding:0 24px;gap:16px}
+.topbar__title{font-weight:700;font-size:15px;color:#fff}
+.topbar a{color:rgba(255,255,255,.9);font-size:13px;font-weight:600}
+.page{max-width:900px;margin:0 auto;padding:28px 24px}
+.org-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+h1{font-size:22px}
+.org-id{font-size:11px;color:hsl(220,9%,56%);font-family:monospace}
+.card{background:#fff;border-radius:12px;border:1px solid hsl(220,13%,91%);margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.04);overflow:hidden}
+.card__head{padding:14px 18px;border-bottom:1px solid hsl(220,13%,91%);font-weight:700;font-size:14px}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:hsl(220,9%,46%);padding:10px 18px;border-bottom:1px solid hsl(220,13%,91%)}
+.tbl td{padding:12px 18px;border-bottom:1px solid hsl(220,14%,96%);font-size:13px}
+.tbl tr:last-child td{border-bottom:none}
+.role{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:hsl(252,83%,95%);color:hsl(252,83%,40%)}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+.badge-pending{background:hsl(38,92%,92%);color:hsl(38,92%,30%)}
+.badge-accepted{background:#e6f9f0;color:#1a7f4b}
+.badge-revoked,.badge-expired{background:hsl(0,84%,93%);color:hsl(0,84%,40%)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+.btn-primary{background:hsl(252,83%,57%);color:#fff}
+.btn-secondary{background:#fff;color:hsl(222,47%,11%);border:1px solid hsl(220,13%,87%)}
+.btn-danger{background:#fff;color:#c0392b;border:1px solid #e0c0bd}
+.form-pad{padding:16px 18px}
+.input,select.input{padding:8px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:13px;outline:none}
+.msg{font-size:12px;margin-left:8px}
+.msg.err{color:#c0392b}.msg.ok{color:#1a7f4b}
+.danger-zone{border:1px solid #fccfcf;background:#fffafa}
+.danger-zone .card__head{color:#c0392b}
+.link{display:inline-block;max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-family:monospace;font-size:11px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a href="/admin/orgs/{{orgId}}/prototypes">← Prototypes</a>
+  <span class="topbar__title">Members</span>
+  <form method="post" action="/admin/logout" style="margin-left:auto">
+    <input type="hidden" name="_csrf" value="{{csrfToken}}">
+    <button type="submit" class="btn btn-secondary">Log out</button>
+  </form>
+</div>
+<div class="page">
+  <div class="org-head"><h1>{{orgName}}</h1><span class="org-id">{{orgId}}</span></div>
+  <p style="color:hsl(220,9%,46%);margin-bottom:20px">Admins have full control: managing members, invitations, tokens, settings, and uploading/publishing prototypes. Viewers can read and comment only.</p>
+
+  <div class="card">
+    <div class="card__head">Members</div>
+    <table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead>
+      <tbody id="members-body"><tr><td colspan="4">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card__head">Invite a person</div>
+    <div class="form-pad">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input class="input" id="invite-email" type="email" placeholder="person@sap.com" style="flex:1;min-width:220px">
+        <select class="input" id="invite-role"><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
+        <button class="btn btn-primary" id="invite-btn">Send invite</button>
+        <span class="msg" id="invite-msg"></span>
+      </div>
+      <p style="color:hsl(220,9%,46%);font-size:12px;margin-top:10px">Invites are per-email, single-use, and expire after seven days. Copy the generated link and share it.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">Invitations</div>
+    <table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Link</th><th></th></tr></thead>
+      <tbody id="invites-body"><tr><td colspan="5">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card__head">Organization settings</div>
+    <div class="form-pad">
+      <div style="display:flex;gap:10px;align-items:center">
+        <input class="input" id="rename-name" type="text" value="{{orgName}}" style="flex:1">
+        <button class="btn btn-secondary" id="rename-btn">Rename</button>
+        <span class="msg" id="rename-msg"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card danger-zone">
+    <div class="card__head">Danger zone — delete organization</div>
+    <div class="form-pad">
+      <p style="font-size:13px;margin-bottom:10px" id="delete-counts">Deleting removes every prototype, version, comment, token, and membership in this organization. This cannot be undone.</p>
+      <p style="font-size:13px;margin-bottom:8px">Type the organization name <strong>{{orgName}}</strong> to confirm:</p>
+      <div style="display:flex;gap:10px;align-items:center">
+        <input class="input" id="delete-confirm" type="text" placeholder="{{orgName}}" style="flex:1">
+        <button class="btn btn-danger" id="delete-btn">Delete organization</button>
+        <span class="msg" id="delete-msg"></span>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const CSRF = document.querySelector('meta[name=csrf-token]').content || '';
+const ORG_ID = "{{orgId}}";
+const ORG_NAME = {{orgNameJson}};
+const SELF = "{{selfUserId}}";
+const MEMBERS = {{membersJson}};
+const INVITES = {{invitesJson}};
+const COUNTS = {{counts}};
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmt(iso){return iso?new Date(iso).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'—';}
+
+document.getElementById('delete-counts').textContent =
+  `Deleting removes ${COUNTS.prototypes} prototype(s), ${COUNTS.tokens} API token(s), and ${COUNTS.members} membership(s), plus every version, comment, and screenshot. This cannot be undone.`;
+
+function renderMembers(list){
+  const b = document.getElementById('members-body');
+  if(!list.length){ b.innerHTML='<tr><td colspan="4">No members.</td></tr>'; return; }
+  b.innerHTML = list.map(m => {
+    const isSelf = m.user_id === SELF;
+    const toggle = m.role === 'admin'
+      ? `<button class="btn btn-secondary" onclick="setRole('${esc(m.user_id)}','viewer')">Demote to viewer</button>`
+      : `<button class="btn btn-secondary" onclick="setRole('${esc(m.user_id)}','admin')">Promote to admin</button>`;
+    return `<tr id="m-${esc(m.user_id)}">
+      <td>${esc(m.email)}${isSelf?' <span class="role">you</span>':''}</td>
+      <td><span class="role">${esc(m.role)}</span></td>
+      <td>${fmt(m.created_at)}</td>
+      <td style="white-space:nowrap;display:flex;gap:6px">${toggle}
+        <button class="btn btn-danger" onclick="removeMember('${esc(m.user_id)}')">Remove</button></td>
+    </tr>`;
+  }).join('');
+}
+function renderInvites(list){
+  const b = document.getElementById('invites-body');
+  if(!list.length){ b.innerHTML='<tr><td colspan="5">No invitations.</td></tr>'; return; }
+  b.innerHTML = list.map(i => {
+    const actions = i.status === 'pending' || i.status === 'expired'
+      ? `<button class="btn btn-secondary" onclick="reissue('${esc(i.id)}')">Reissue</button>
+         <button class="btn btn-danger" onclick="revoke('${esc(i.id)}')">Revoke</button>`
+      : '';
+    const link = i.link ? `<a class="link" href="${esc(i.link)}">${esc(i.link)}</a> <button class="btn btn-secondary" onclick="copyLink('${esc(i.link)}')">Copy</button>` : '—';
+    return `<tr id="i-${esc(i.id)}">
+      <td>${esc(i.email)}</td><td><span class="role">${esc(i.role)}</span></td>
+      <td><span class="badge badge-${esc(i.status)}">${esc(i.status)}</span></td>
+      <td>${link}</td>
+      <td style="white-space:nowrap;display:flex;gap:6px">${actions}</td>
+    </tr>`;
+  }).join('');
+}
+renderMembers(MEMBERS); renderInvites(INVITES);
+
+function copyLink(l){ navigator.clipboard.writeText(l); }
+async function post(url, body){
+  const r = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json','x-csrf-token':CSRF},
+    body: JSON.stringify({ ...body, expectedOrgId: ORG_ID })});
+  return r;
+}
+async function setRole(userId, role){
+  const r = await post(`/admin/orgs/${ORG_ID}/members/${userId}/role`, { role });
+  if(r.ok){ location.reload(); }
+  else { const e = await r.json().catch(()=>({})); alert(e.error || ('HTTP '+r.status)); }
+}
+async function removeMember(userId){
+  if(!confirm('Remove this member? Their API tokens for this org are revoked.')) return;
+  const r = await post(`/admin/orgs/${ORG_ID}/members/${userId}/remove`, {});
+  if(r.ok){ const j = await r.json(); if(j.redirect){ location.href=j.redirect; return; } location.reload(); }
+  else { const e = await r.json().catch(()=>({})); alert(e.error || ('HTTP '+r.status)); }
+}
+document.getElementById('invite-btn').addEventListener('click', async () => {
+  const email = document.getElementById('invite-email').value.trim();
+  const role = document.getElementById('invite-role').value;
+  const msg = document.getElementById('invite-msg');
+  msg.className='msg'; msg.textContent='';
+  const r = await post(`/admin/orgs/${ORG_ID}/members/invite`, { email, role });
+  const j = await r.json().catch(()=>({}));
+  if(r.ok){ msg.className='msg ok'; msg.textContent='Invite created.'; setTimeout(()=>location.reload(), 700); }
+  else { msg.className='msg err'; msg.textContent = j.error || ('HTTP '+r.status); }
+});
+async function revoke(id){
+  const r = await post(`/admin/orgs/${ORG_ID}/members/invite/${id}/revoke`, {});
+  if(r.ok) location.reload(); else alert('Failed');
+}
+async function reissue(id){
+  const r = await post(`/admin/orgs/${ORG_ID}/members/invite/${id}/reissue`, {});
+  if(r.ok) location.reload(); else { const e = await r.json().catch(()=>({})); alert(e.error||'Failed'); }
+}
+document.getElementById('rename-btn').addEventListener('click', async () => {
+  const name = document.getElementById('rename-name').value.trim();
+  const msg = document.getElementById('rename-msg'); msg.className='msg'; msg.textContent='';
+  const r = await post(`/admin/orgs/${ORG_ID}/rename`, { name });
+  const j = await r.json().catch(()=>({}));
+  if(r.ok){ msg.className='msg ok'; msg.textContent='Saved.'; }
+  else { msg.className='msg err'; msg.textContent=j.error||('HTTP '+r.status); }
+});
+document.getElementById('delete-btn').addEventListener('click', async () => {
+  const confirmName = document.getElementById('delete-confirm').value;
+  const msg = document.getElementById('delete-msg'); msg.className='msg'; msg.textContent='';
+  const r = await fetch(`/admin/orgs/${ORG_ID}`, {method:'DELETE',headers:{'Content-Type':'application/json','x-csrf-token':CSRF},
+    body: JSON.stringify({ confirmName, expectedOrgId: ORG_ID })});
+  const j = await r.json().catch(()=>({}));
+  if(r.ok){ location.href = j.redirect || '/admin/home'; }
+  else { msg.className='msg err'; msg.textContent = j.error || ('HTTP '+r.status); }
+});
+</script>
+</body>
+</html>

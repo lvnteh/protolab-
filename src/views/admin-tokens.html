@@ -41,7 +41,7 @@ a{color:hsl(252,83%,57%);text-decoration:none}
 </head>
 <body>
 <div class="topbar">
-  <a href="/admin/prototypes" class="topbar__back">
+  <a href="/admin/orgs/{{orgId}}/prototypes" class="topbar__back">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"/></svg>
     All Prototypes
   </a>
@@ -57,7 +57,7 @@ a{color:hsl(252,83%,57%);text-decoration:none}
 
 <div class="page">
   <div class="page-head"><h1 class="page-title">API Tokens</h1></div>
-  <p class="page-sub">Tokens let the local-AI MCP client (and other machine callers) pull feedback and push versioned updates through the <code class="mono">/api/v1</code> API. A token carries your account's access to all your prototypes. The secret is shown only once at creation — store it in your <code class="mono">.env</code> as <code class="mono">PROTOSHARE_TOKEN</code>.</p>
+  <p class="page-sub">Tokens let the local-AI MCP client (and other machine callers) pull feedback and push versioned updates through the <code class="mono">/api/v1</code> API. A token is scoped to <strong>this organization</strong> (<span class="mono">{{orgId}}</span>) and acts with your current admin role in it — if you are demoted or removed, the token stops working. The secret is shown only once at creation — store it in your <code class="mono">.env</code> as <code class="mono">PROTOSHARE_TOKEN</code>.</p>
 
   <div class="token-reveal" id="reveal">
     <div class="token-reveal__label">New token — copy it now</div>
@@ -83,11 +83,13 @@ a{color:hsl(252,83%,57%);text-decoration:none}
 
 <script>
 const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
+const ORG_ID = "{{orgId}}";
+const TBASE = `/admin/orgs/${ORG_ID}`;
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/`/g,'&#96;');}
 function fmtDate(iso){return iso?new Date(iso).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';}
 
 async function loadTokens(){
-  const resp = await fetch('/admin/tokens');
+  const resp = await fetch(TBASE + '/tokens', { credentials: 'include' });
   if(!resp.ok){ location.href='/admin/login'; return; }
   const rows = await resp.json();
   const tbody = document.getElementById('tbody');
@@ -104,7 +106,7 @@ async function loadTokens(){
 async function generateToken(){
   const nameEl = document.getElementById('token-name');
   const name = nameEl.value.trim() || 'token';
-  const resp = await fetch('/admin/tokens', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded', 'x-csrf-token': CSRF}, body:'name='+encodeURIComponent(name) });
+  const resp = await fetch(TBASE + '/tokens', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded', 'x-csrf-token': CSRF, 'x-expected-org': ORG_ID}, credentials:'include', body:'name='+encodeURIComponent(name)+'&expectedOrgId='+encodeURIComponent(ORG_ID) });
   if(!resp.ok){ alert('Failed to generate token.'); return; }
   const { token } = await resp.json();
   document.getElementById('reveal-value').textContent = token;
@@ -121,8 +123,8 @@ function copyToken(){
 
 async function revoke(id, name){
   if(!confirm(`Revoke token "${name}"? Any client using it will stop working immediately.`)) return;
-  await fetch('/admin/tokens/'+encodeURIComponent(id), { method:'DELETE', headers:{'x-csrf-token': CSRF} });
-  document.getElementById('tok-'+id)?.remove();
+  const resp = await fetch(TBASE + '/tokens/'+encodeURIComponent(id), { method:'DELETE', headers:{'x-csrf-token': CSRF, 'x-expected-org': ORG_ID}, credentials:'include' });
+  if (resp.ok) document.getElementById('tok-'+id)?.remove();
   loadTokens();
 }
 

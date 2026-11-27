@@ -85,11 +85,22 @@ textarea.input{resize:vertical;line-height:1.5}
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20" style="flex-shrink:0"><path d="M13.13 22.19L11.5 18.36C13.07 17.78 14.54 17 15.9 16.09L13.13 22.19M5.64 12.5L1.81 10.87L7.91 8.1C7 9.46 6.22 10.93 5.64 12.5M21.61 2.39C21.61 2.39 16.66 .269 11 5.93C8.81 8.12 7.5 10.53 6.65 12.64C6.37 13.39 6.56 14.21 7.11 14.77L9.24 16.89C9.79 17.45 10.61 17.63 11.36 17.35C13.5 16.53 15.88 15.19 18.07 13C23.73 7.34 21.61 2.39 21.61 2.39M14.54 9.46C13.76 8.68 13.76 7.41 14.54 6.63S16.59 5.85 17.37 6.63C18.14 7.41 18.15 8.68 17.37 9.46C16.59 10.24 15.32 10.24 14.54 9.46M8.88 16.53L7.47 15.12L8.88 16.53M6.24 22L9.88 18.36C9.54 18.27 9.21 18.12 8.91 17.91L4.83 22H6.24M2 22H3.41L8.18 17.24L6.76 15.83L2 20.59V22M2 19.17L6.09 15.09C5.88 14.79 5.73 14.46 5.64 14.12L2 17.76V19.17Z"/></svg>
     ProtoLab (Beta!)
   </span>
-  <a href="/admin/tokens/page" style="margin-left:auto;color:rgba(255,255,255,.9);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px">
+  <!-- Org switcher: lists the user's orgs, marks the page's URL org, and offers
+       a "+ New organization" entry to /admin/home. Switching updates the DEFAULT
+       landing org; this tab keeps its explicit URL org context. -->
+  <div style="position:relative">
+    <button id="org-switch-btn" type="button" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:13px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:6px">
+      <span id="org-switch-label">{{orgName}}</span>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </button>
+    <div id="org-menu" style="display:none;position:absolute;top:40px;left:0;background:#fff;border:1px solid hsl(220,13%,87%);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);min-width:240px;z-index:300;overflow:hidden"></div>
+  </div>
+  <a href="/admin/orgs/{{orgId}}/members" id="members-link" style="color:rgba(255,255,255,.9);font-size:13px;font-weight:600;display:none;align-items:center;gap:6px">Members</a>
+  <a href="/admin/orgs/{{orgId}}/tokens/page" id="tokens-link" style="margin-left:auto;color:rgba(255,255,255,.9);font-size:13px;font-weight:600;display:none;align-items:center;gap:6px">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z"/></svg>
     API Tokens
   </a>
-  <form method="post" action="/admin/logout" style="margin:0">
+  <form method="post" action="/admin/logout" style="margin:0;margin-left:auto">
     <input type="hidden" name="_csrf" value="{{csrfToken}}">
     <button type="submit" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,.9);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:8px" onmouseover="this.style.background='rgba(255,255,255,.15)'" onmouseout="this.style.background='none'">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h5a1 1 0 100-2H4V5h4a1 1 0 000-2H3zm10.293 3.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L14.586 11H7a1 1 0 110-2h7.586l-1.293-1.293a1 1 0 010-1.414z"/></svg>
@@ -156,7 +167,7 @@ textarea.input{resize:vertical;line-height:1.5}
 <div class="page">
   <div class="page-head">
     <h1 class="page-title">Prototypes</h1>
-    <button class="btn btn-primary" onclick="openPanel()">
+    <button class="btn btn-primary" id="upload-trigger" style="display:none" onclick="openPanel()">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path d="M10 3a1 1 0 01.707.293l4 4a1 1 0 01-1.414 1.414L11 6.414V13a1 1 0 11-2 0V6.414L6.707 8.707a1 1 0 01-1.414-1.414l4-4A1 1 0 0110 3z"/><path d="M3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
       Upload Prototype
     </button>
@@ -184,7 +195,37 @@ textarea.input{resize:vertical;line-height:1.5}
 
 <script>
 const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
+const ORG_ID = "{{orgId}}";
+const ORG_ROLE = "{{orgRole}}";
+const ORGS = {{orgsJson}};
 const rows = {{prototypesJson}};
+const BASE = `/admin/orgs/${ORG_ID}`;
+
+// Admin-only chrome: reveal the API Tokens + Members links and the Upload button
+// only for admins; a viewer sees a read-only list with an "Open" action (Task 6).
+(function () {
+  if (ORG_ROLE === 'admin') {
+    const t = document.getElementById('tokens-link'); if (t) t.style.display = 'flex';
+    const m = document.getElementById('members-link'); if (m) m.style.display = 'flex';
+    const u = document.getElementById('upload-trigger'); if (u) u.style.display = '';
+  }
+})();
+
+// Org switcher menu
+(function () {
+  const btn = document.getElementById('org-switch-btn');
+  const menu = document.getElementById('org-menu');
+  if (!btn || !menu) return;
+  function esc2(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  menu.innerHTML = ORGS.map(o => `
+    <a href="/admin/orgs/${encodeURIComponent(o.id)}/prototypes" style="display:flex;justify-content:space-between;gap:10px;padding:10px 14px;color:hsl(222,47%,11%);border-bottom:1px solid hsl(220,14%,96%);${o.id===ORG_ID?'background:hsl(252,83%,97%);font-weight:600':''}">
+      <span>${esc2(o.name)}${o.id===ORG_ID?' ✓':''}<br><span style="font-size:10px;color:hsl(220,9%,56%);font-family:monospace">${esc2(o.id)}</span></span>
+      <span style="font-size:10px;color:hsl(252,83%,40%);align-self:center">${esc2(o.role)}</span>
+    </a>`).join('') +
+    `<a href="/admin/home" style="display:block;padding:10px 14px;color:hsl(252,83%,57%);font-weight:600">+ New organization</a>`;
+  btn.addEventListener('click', () => { menu.style.display = menu.style.display === 'none' ? 'block' : 'none'; });
+  document.addEventListener('click', (e) => { if (!btn.contains(e.target) && !menu.contains(e.target)) menu.style.display = 'none'; });
+})();
 
 function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
@@ -201,13 +242,13 @@ function render() {
       <div class="empty-state">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
         <h3>No prototypes yet</h3>
-        <p>Upload your first prototype to get started.</p>
+        <p>${ORG_ROLE === 'admin' ? 'Upload your first prototype to get started.' : 'No prototypes have been shared in this organization yet.'}</p>
       </div>
     </td></tr>`;
     return;
   }
   tbody.innerHTML = rows.map(r => `
-    <tr onclick="location.href='/admin/prototypes/${r.id}'" style="cursor:pointer">
+    <tr onclick="location.href='${BASE}/prototypes/${r.id}'" style="cursor:pointer">
       <td><span class="proto-name">${esc(r.name)}</span></td>
       <td><span class="num">${r.allowlist_count}</span></td>
       <td><span class="num">${r.view_count}</span></td>
@@ -215,9 +256,9 @@ function render() {
       <td><span class="ts">${fmtDate(r.created_at)}</span></td>
       <td>
         <div class="actions-cell">
-          <a class="copy-btn" href="/p/${esc(r.share_token)}" target="_blank" onclick="event.stopPropagation()">Open</a>
+          <a class="copy-btn" href="${BASE}/prototypes/${r.id}/open" target="_blank" onclick="event.stopPropagation()">Open</a>
           <button class="copy-btn" onclick="event.stopPropagation();copyLink('${esc(r.share_token)}')" title="Copy share link">Copy link</button>
-          <button class="btn btn-danger" onclick="event.stopPropagation();del('${r.id}','${esc(r.name)}')">Delete</button>
+          ${ORG_ROLE === 'admin' ? `<button class="btn btn-danger" onclick="event.stopPropagation();del('${r.id}','${esc(r.name)}')">Delete</button>` : ''}
         </div>
       </td>
     </tr>
@@ -281,12 +322,13 @@ async function submitUpload() {
   fd.append('name', name);
   fd.append('file', file);
   fd.append('allowlist', allowlist);
+  fd.append('expectedOrgId', ORG_ID);
 
   btn.disabled = true;
   btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"/></svg> Uploading…';
 
   try {
-    const resp = await fetch('/admin/prototypes', { method: 'POST', headers: { Accept: 'application/json', 'x-csrf-token': CSRF }, body: fd });
+    const resp = await fetch(`${BASE}/prototypes`, { method: 'POST', headers: { Accept: 'application/json', 'x-csrf-token': CSRF, 'x-expected-org': ORG_ID }, body: fd, credentials: 'include' });
     if (!resp.ok) throw new Error('Upload failed');
     const { name: protoName, shareLink, id } = await resp.json();
 
@@ -297,7 +339,7 @@ async function submitUpload() {
     document.getElementById('file-name').style.display = 'none';
     document.getElementById('file-zone-label').style.display = '';
 
-    successEl.innerHTML = `<strong>${esc(protoName)}</strong> uploaded. Share link: <a href="${shareLink}" target="_blank">${shareLink}</a> — <a href="/admin/prototypes/${id}">Open</a>`;
+    successEl.innerHTML = `<strong>${esc(protoName)}</strong> uploaded. Share link: <a href="${shareLink}" target="_blank">${shareLink}</a> — <a href="${BASE}/prototypes/${id}">Open</a>`;
     successEl.style.display = 'block';
 
     // Add row to table without reload
@@ -318,7 +360,10 @@ function del(id, name) {
   document.getElementById('modal-title').textContent = 'Delete prototype?';
   document.getElementById('modal-body').textContent = `"${name}" and all its data will be permanently deleted. This cannot be undone.`;
   _modalCallback = async () => {
-    await fetch('/admin/prototypes/' + id, { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
+    const resp = await fetch(`${BASE}/prototypes/` + id, { method: 'DELETE', headers: { 'x-csrf-token': CSRF, 'x-expected-org': ORG_ID }, credentials: 'include' });
+    if (resp.status === 401) { location.href = '/admin/login'; return; }
+    if (resp.status === 403) { alert('You do not have permission to delete this prototype.'); return; }
+    if (!resp.ok && resp.status !== 404) { alert('Delete failed (HTTP ' + resp.status + ').'); return; }
     location.reload();
   };
   const el = document.getElementById('confirm-modal');

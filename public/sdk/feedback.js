@@ -1930,6 +1930,10 @@
     rangeDraft = null;
     draftCard.classList.remove('visible');
     document.body.classList.remove('__fb-draft-open');
+    // Restore the submit button to its resting state (it is left on "Posting…"
+    // / disabled after a successful post) so the next draft opens clean.
+    const submit = document.getElementById('__fb-draft-submit');
+    if (submit) { submit.disabled = true; submit.textContent = 'Post comment'; }
     // Reset screenshot preview so it doesn't flash on the next open.
     const shotWrap = document.getElementById('__fb-draft-shot-wrap');
     if (shotWrap) { shotWrap.className = 'no-shot'; document.getElementById('__fb-draft-shot-img').src = ''; }

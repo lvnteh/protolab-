@@ -3,6 +3,15 @@
 **Date:** 2026-07-29
 **Status:** Approved (design decisions locked via product Q&A 2026-07-29)
 
+> **Phase update (2026-11-27):** self-serve org creation, per-email single-use
+> invitations, canonical `/admin/orgs/:orgId/...` URLs, the EMS consolidation
+> migration, org deletion with durable storage cleanup, and the Task 6 capability
+> matrix + shared effective-reviewer-access resolver are specified and
+> implemented per
+> [`docs/superpowers/plans/2026-11-27-org-accounts-invites-self-serve.md`](../plans/2026-11-27-org-accounts-invites-self-serve.md).
+> That plan supersedes the "admin-provisioned orgs" and "Default Organization"
+> decisions below (now EMS); the two-role admin/viewer model is unchanged.
+
 ## Goal
 
 Move the tenancy boundary from the individual **user** (`prototypes.owner_id`) to

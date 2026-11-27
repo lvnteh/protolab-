@@ -86,11 +86,15 @@ async function listExplanations(prototypeId, versionId) {
 async function createComment(prototypeId, versionId, fields) {
   const id = nanoid(12);
   const email = fields.email || 'local@test.com';
+  // Author identity is derived server-side by the route (account user id + kind),
+  // NEVER from the request body. A reply carries the same author stamping path.
+  const authorUserId = fields.authorUserId || null;
+  const authorKind = fields.authorKind || null;
   if (fields.parentId) {
     await getDb().query(
-      `INSERT INTO comments (id, prototype_id, email, type, comment, created_at, parent_id, version_id)
-       VALUES ($1,$2,$3,'reply',$4,$5,$6,$7)`,
-      [id, prototypeId, email, fields.comment.trim(), new Date().toISOString(), fields.parentId, versionId]);
+      `INSERT INTO comments (id, prototype_id, email, type, comment, created_at, parent_id, version_id, author_user_id, author_kind)
+       VALUES ($1,$2,$3,'reply',$4,$5,$6,$7,$8,$9)`,
+      [id, prototypeId, email, fields.comment.trim(), new Date().toISOString(), fields.parentId, versionId, authorUserId, authorKind]);
     return { id };
   }
   const anchorCols = serializeAnchorCols(fields.type, fields.anchor);
@@ -103,8 +107,9 @@ async function createComment(prototypeId, versionId, fields) {
        (id, prototype_id, email, type, element_selector, element_label, element_tag,
         breadcrumb, comment, page_url, created_at, tag, x_pct, y_pct, version_id,
         anchor_quote, anchor_prefix, anchor_suffix, anchor_start, anchor_end,
-        screenshot_key, screenshot_thumb, screenshot_w, screenshot_h, screenshot_x_pct, screenshot_y_pct)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+        screenshot_key, screenshot_thumb, screenshot_w, screenshot_h, screenshot_x_pct, screenshot_y_pct,
+        author_user_id, author_kind)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
     [
       id, prototypeId, email, fields.type,
       fields.element?.selector || null,
@@ -125,6 +130,7 @@ async function createComment(prototypeId, versionId, fields) {
       Number.isInteger(fields.screenshotH) ? fields.screenshotH : null,
       typeof fields.screenshotXPct === 'number' ? fields.screenshotXPct : null,
       typeof fields.screenshotYPct === 'number' ? fields.screenshotYPct : null,
+      authorUserId, authorKind,
     ]);
   return { id };
 }

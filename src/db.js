@@ -267,6 +267,19 @@ async function initDb() {
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS screenshot_x_pct REAL`);
   await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS screenshot_y_pct REAL`);
 
+  // Server-derived comment authorship (Task 6). The SDK still sends a display
+  // `email`, but it can NEVER establish authorship or editing rights — identity
+  // is derived server-side and stamped here:
+  //   author_user_id : the authenticated account that wrote it (users.id), or
+  //                     NULL for a share-link reviewer / legacy row.
+  //   author_kind    : 'account' (a member writing with their login) |
+  //                     'reviewer' (a share-link reviewer, identity = session's
+  //                     validated reviewer email) | NULL (legacy, pre-Task-6).
+  // The 5-minute own-comment edit window and ownership checks key off these, not
+  // the request body. Legacy rows (NULL identity) are editable only by admins.
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_user_id TEXT REFERENCES users(id) ON DELETE SET NULL`);
+  await _pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_kind TEXT`);
+
   // K. schema_migrations marker table. Lets us skip the expensive backfill scan on
   //    normal boots once it has run and no legacy (unversioned) prototypes remain.
   await _pool.query(`

@@ -17,6 +17,17 @@
   // frame-bridge.js) instead of on this document. Only HTML prototypes are framed.
   const IS_FRAMED = script.getAttribute('data-framed') === '1';
   const PROTO_FRAME = IS_FRAMED ? document.getElementById('__fb-proto-frame') : null;
+  // Session-bound CSRF token for same-origin mutations. Stamped into the trusted
+  // shell/app-origin document by the server (delivery.js); echoed on every
+  // state-changing fetch so the reviewerCsrf guard accepts it. The sandboxed
+  // prototype never sees this value.
+  const CSRF_TOKEN = script.getAttribute('data-csrf-token') || '';
+  // Merge the CSRF header into a fetch's headers for mutation requests.
+  function withCsrf(headers) {
+    const h = Object.assign({}, headers || {});
+    if (CSRF_TOKEN) h['x-csrf-token'] = CSRF_TOKEN;
+    return h;
+  }
   // In framed mode the "current page" is the iframe's URL, reported by the bridge,
   // not the shell's own location. Seeded on the bridge 'ready'/'page' messages.
   let framedHref = IS_FRAMED ? '' : null;
@@ -1980,7 +1991,7 @@
   async function postComment(payload) {
     const resp = await fetch('/api/comments', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withCsrf({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ prototypeId: PROTO_ID, email: EMAIL, version: VERSION, ...payload }),
       credentials: 'include',
     });
@@ -1991,7 +2002,7 @@
   async function updateComment(id, comment) {
     const resp = await fetch('/api/comments/' + id, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withCsrf({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ comment }),
       credentials: 'include',
     });
@@ -2004,6 +2015,7 @@
   async function deleteComment(id) {
     const resp = await fetch('/api/comments/' + id, {
       method: 'DELETE',
+      headers: withCsrf(),
       credentials: 'include',
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -2382,8 +2394,9 @@
     navHistory.push(url);
     fetch('/api/nav', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withCsrf({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ prototypeId: PROTO_ID, email: EMAIL || 'local@test.com', pageUrl: url }),
+      credentials: 'include',
     }).catch(() => {});
     // Clear pins from the previous page immediately; the RAF loop will show
     // pins for the new page once the SPA has rendered its new DOM elements.
@@ -2413,31 +2426,57 @@
   const focusId = new URLSearchParams(location.search).get('focus') || '';
 
   // Framed-mode plumbing: talk to the prototype bridge over postMessage.
+  //
+  // The prototype iframe runs at an OPAQUE origin (CSP `sandbox allow-scripts`,
+  // deliberately NO allow-same-origin). An opaque origin has no nameable value —
+  // postMessage(..., 'null') does NOT target it — so the only way to reach the
+  // child is targetOrigin '*'. That is acceptable ONLY because we restrict what
+  // we ever send to non-sensitive PRESENTATION commands (here: the comment-mode
+  // toggle). We never post anything secret, authenticated, or actionable to the
+  // child, so a '*' target leaking to some other document would reveal nothing.
+  const FRAME_PRESENTATION_TYPES = { commentMode: true };
   function postToFrame(msg) {
     if (!IS_FRAMED || !PROTO_FRAME || !PROTO_FRAME.contentWindow) return;
+    // Defence-in-depth: refuse to broadcast anything that isn't a known
+    // presentation command, so this choke point can't be repurposed to ship
+    // sensitive data to a wildcard target.
+    if (!msg || !FRAME_PRESENTATION_TYPES[msg.type]) return;
     try {
-      PROTO_FRAME.contentWindow.postMessage(Object.assign({ __fb: true }, msg), window.location.origin);
+      PROTO_FRAME.contentWindow.postMessage(Object.assign({ __fb: true }, msg), '*');
     } catch (_) {}
   }
 
   if (IS_FRAMED) {
     window.addEventListener('message', (e) => {
-      if (e.origin !== window.location.origin) return;
-      // Only trust messages from our own iframe's window.
+      // Trust gate (both conditions required):
+      //   1. The message must originate from OUR iframe's window — a sibling
+      //      window, a popup, or window.top cannot spoof this.
+      //   2. The origin must be the opaque "null" the sandbox produces. The
+      //      prototype can NEVER present the app origin (it has no
+      //      allow-same-origin), so anything claiming the app origin here is a
+      //      forgery from a non-sandboxed context and is rejected.
       if (!PROTO_FRAME || e.source !== PROTO_FRAME.contentWindow) return;
+      if (e.origin !== 'null') return;
       const d = e.data;
-      if (!d || d.__fb !== true) return;
+      if (!d || d.__fb !== true || typeof d.type !== 'string') return;
+      // EVERY field below is treated as untrusted attacker-controlled input.
       if (d.type === 'click') {
         // Prototype click in comment mode. Coordinates are iframe-local; translate
         // to shell-viewport space by adding the iframe's on-screen offset (it sits
         // below the toolbar and flush-left), since the screenshot frame and
-        // the ripple/marker geometry are all in shell-viewport px.
-        if (mode === 'comment') {
-          const r = PROTO_FRAME.getBoundingClientRect();
-          handleProtoClick(d.x + r.left, d.y + r.top);
-        }
+        // the ripple/marker geometry are all in shell-viewport px. Reject any
+        // non-finite or out-of-frame coordinate before acting on it.
+        if (mode !== 'comment') return;
+        const r = PROTO_FRAME.getBoundingClientRect();
+        const x = Number(d.x), y = Number(d.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        if (x < 0 || y < 0 || x > r.width + 1 || y > r.height + 1) return;
+        handleProtoClick(x + r.left, y + r.top);
       } else if (d.type === 'ready' || d.type === 'page') {
-        if (typeof d.href === 'string') {
+        // A page URL the bridge reports. Bound its length and require an http(s)
+        // (or relative) shape — never act on a javascript:/data: string, and
+        // never let an unbounded blob through to navHistory / the nav endpoint.
+        if (typeof d.href === 'string' && isSafeFrameHref(d.href)) {
           framedHref = d.href;
           recordNav();
         }
@@ -2447,9 +2486,24 @@
           postToFrame({ type: 'commentMode', on: mode === 'comment' });
         }
       }
+      // Any other type (including the old 'geom') is ignored: the shell drives a
+      // fixed set of presentation/navigation ops and performs NO arbitrary action
+      // on the child's behalf — there is no fetch/eval/navigate path from here.
     });
     layoutFrame();
     window.addEventListener('resize', layoutFrame);
+  }
+
+  // Accept only bounded, http(s)/relative hrefs from the untrusted frame. Rejects
+  // javascript:, data:, blob:, overly long strings, and anything unparseable.
+  function isSafeFrameHref(href) {
+    if (typeof href !== 'string' || href.length === 0 || href.length > 2048) return false;
+    try {
+      const u = new URL(href, location.href);
+      return u.protocol === 'http:' || u.protocol === 'https:';
+    } catch (_) {
+      return false;
+    }
   }
 
   loadPins();

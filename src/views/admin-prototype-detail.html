@@ -262,21 +262,29 @@ textarea.input{resize:vertical;line-height:1.5}
     <div class="tab-panel" id="tab-settings">
       <div class="form-pad">
         <div id="save-alert" class="alert">Changes saved.</div>
-        <form method="POST" action="/admin/prototypes/{{id}}/settings">
+        <div id="settings-viewer-note" style="display:none;color:hsl(220,9%,46%);font-size:13px;padding:8px 0">You have viewer access to this organization. Settings can only be changed by an admin.</div>
+        <form method="POST" action="/admin/orgs/{{orgId}}/prototypes/{{id}}/settings" id="settings-form">
           <input type="hidden" name="_csrf" value="{{csrfToken}}">
+          <input type="hidden" name="expectedOrgId" value="{{orgId}}">
           <div class="field">
             <label for="proto-name">Prototype name</label>
             <input class="input" id="proto-name" name="name" type="text" value="{{name}}" required>
           </div>
           <div class="field">
-            <label for="allowlist">Email allowlist <span style="font-weight:400;color:hsl(220,9%,46%)">(one per line)</span></label>
+            <label>Automatically allowed (org members) <span style="font-weight:400;color:hsl(220,9%,46%)">— inherited, read-only</span></label>
+            <textarea class="input" rows="4" readonly style="background:hsl(220,14%,97%)">{{inheritedReviewers}}</textarea>
+            <span style="font-size:11px;color:hsl(220,9%,46%)">Current org admins and viewers can open this prototype's share link by entering their account email — no explicit entry needed.</span>
+          </div>
+          <div class="field">
+            <label for="allowlist">Explicit reviewers <span style="font-weight:400;color:hsl(220,9%,46%)">(one per line; external people outside the org)</span></label>
             <textarea class="input" id="allowlist" name="allowlist" rows="8">{{allowlist}}</textarea>
+            <span style="font-size:11px;color:hsl(220,9%,46%)">Removing an explicit reviewer still leaves access if that email is also a current org member.</span>
           </div>
           <div style="display:flex;gap:10px;margin-top:6px">
             <button type="submit" class="btn btn-primary">Save Changes</button>
           </div>
         </form>
-        <div class="danger-zone">
+        <div class="danger-zone" id="danger-zone">
           <div class="danger-zone__title">Danger Zone</div>
           <button type="button" class="btn btn-danger" onclick="deleteProto()">Delete this prototype</button>
         </div>
@@ -386,6 +394,10 @@ textarea.input{resize:vertical;line-height:1.5}
 <script>
 const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
 const PROTO_ID = '{{id}}';
+const ORG_ID = '{{orgId}}';
+const ORG_ROLE = '{{orgRole}}';
+const BASE = `/admin/orgs/${ORG_ID}`;
+const PBASE = `${BASE}/prototypes/${PROTO_ID}`;
 const SHARE_TOKEN = '{{shareToken}}';
 const PAGE_SIZE = 25;
 const TAG_COLOR = { bug:'hsl(0,84%,60%)', copy:'hsl(38,92%,50%)', question:'hsl(217,91%,60%)', idea:'hsl(142,71%,45%)', other:'hsl(252,83%,57%)' };
@@ -456,7 +468,7 @@ async function loadComments(page) {
     const filterValues = {};
     if (commentType) filterValues.type = commentType;
     if (commentVersion) filterValues.version = commentVersion;
-    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/comments', {
+    const resp = await fetch(PBASE + '/comments', {
       method: 'POST', headers: {'Content-Type':'application/json', 'x-csrf-token': CSRF},
       body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE, sortingKey: 'created_at', sortingOrder: 'desc', filterValues })
     });
@@ -543,7 +555,7 @@ async function populateVersionSelect(selectId) {
   const sel = document.getElementById(selectId);
   if (!sel || sel.dataset.populated === '1') return;
   try {
-    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/versions');
+    const resp = await fetch(PBASE + '/versions');
     if (!resp.ok) return;
     const rows = await resp.json();
     rows.forEach(v => {
@@ -562,7 +574,7 @@ let logPage = 1;
 
 async function loadLog(page) {
   logPage = page;
-  const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/access-log', {
+  const resp = await fetch(PBASE + '/access-log', {
     method: 'POST', headers: {'Content-Type':'application/json', 'x-csrf-token': CSRF},
     body: JSON.stringify({ pageSize: PAGE_SIZE, offset: (page-1)*PAGE_SIZE })
   });
@@ -586,7 +598,7 @@ async function loadLog(page) {
 }
 
 async function loadAllowlistCount() {
-  const resp = await fetch('/admin/prototypes/{{id}}/allowlist-count');
+  const resp = await fetch(PBASE + '/allowlist-count');
   if (resp.ok) {
     const { count } = await resp.json();
     document.getElementById('stat-allowlist').textContent = count;
@@ -598,12 +610,31 @@ function deleteProto() {
     'Delete this prototype?',
     'This prototype and all of its data — comments, versions and access logs — will be permanently deleted. This cannot be undone.',
     async () => {
-      await fetch('/admin/prototypes/{{id}}', { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
-      location.href = '/admin/prototypes';
+      const resp = await fetch(PBASE, { method: 'DELETE', headers: { 'x-csrf-token': CSRF, 'x-expected-org': ORG_ID }, credentials: 'include' });
+      if (resp.status === 401) { location.href = '/admin/login'; return; }
+      if (resp.status === 403) { toast('You do not have permission to delete this prototype.', 'error'); return; }
+      if (!resp.ok && resp.status !== 404) { toast('Delete failed (HTTP ' + resp.status + ').', 'error'); return; }
+      location.href = BASE + '/prototypes';
     },
     { confirmLabel: 'Delete prototype' }
   );
 }
+
+// Role gating (Task 6 capability matrix): a viewer can read + comment but cannot
+// upload/publish/manage, moderate others' comments, or edit explanations. Hide
+// the admin-only controls from the page rendered for a viewer. The server still
+// enforces every rule — this is UX, not the security boundary.
+(function gateViewerUI() {
+  if (ORG_ROLE === 'admin') return;
+  const hide = (sel) => document.querySelectorAll(sel).forEach(el => { el.style.display = 'none'; });
+  // Settings: read-only for viewers.
+  const form = document.getElementById('settings-form'); if (form) form.style.display = 'none';
+  const dz = document.getElementById('danger-zone'); if (dz) dz.style.display = 'none';
+  const vn = document.getElementById('settings-viewer-note'); if (vn) vn.style.display = 'block';
+  // Comment moderation + clear-all are admin-only.
+  hide('[onclick^="clearAllComments"]');
+  // Version upload form is already admin-gated by data-org-role below.
+})();
 
 loadComments(1);
 loadLog(1);
@@ -696,7 +727,14 @@ async function deleteComment(commentId) {
     'Delete comment?',
     'This comment will be permanently removed and cannot be recovered.',
     async () => {
-      await fetch('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId, { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
+      // Invariant: check the response status BEFORE removing the visible row, and
+      // distinguish 401 / 403 / 404 / 409 so the UI never hides a row the server
+      // refused to delete.
+      const resp = await fetch(PBASE + '/comments/' + commentId, { method: 'DELETE', headers: { 'x-csrf-token': CSRF, 'x-expected-org': ORG_ID }, credentials: 'include' });
+      if (resp.status === 401) { location.href = '/admin/login'; return; }
+      if (resp.status === 403) { toast('You do not have permission to delete this comment.', 'error'); return; }
+      if (resp.status === 404) { toast('That comment no longer exists.', 'error'); loadComments(commentsPage); return; }
+      if (!resp.ok) { toast('Delete failed (HTTP ' + resp.status + ').', 'error'); return; }
       (document.getElementById('comment-row-' + commentId) || document.getElementById('reply-row-' + commentId))?.remove();
       const count = parseInt(document.getElementById('stat-comments').textContent, 10);
       if (!isNaN(count)) document.getElementById('stat-comments').textContent = count - 1;
@@ -709,7 +747,10 @@ async function clearAllComments() {
     'Clear all comments?',
     'Every comment on this prototype will be permanently deleted. This cannot be undone.',
     async () => {
-      await fetch('/admin/prototypes/' + PROTO_ID + '/comments', { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
+      const resp = await fetch(PBASE + '/comments', { method: 'DELETE', headers: { 'x-csrf-token': CSRF, 'x-expected-org': ORG_ID }, credentials: 'include' });
+      if (resp.status === 401) { location.href = '/admin/login'; return; }
+      if (resp.status === 403) { toast('You do not have permission to clear comments.', 'error'); return; }
+      if (!resp.ok && resp.status !== 404) { toast('Failed (HTTP ' + resp.status + ').', 'error'); return; }
       loadComments(1);
     }
   );
@@ -823,7 +864,7 @@ function openShot(commentId) {
     reveal();
   };
   // Prefer the inline thumbnail; fall back to the gated full-image route.
-  img.src = meta.thumb || ('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId + '/screenshot');
+  img.src = meta.thumb || (PBASE + '/comments/' + commentId + '/screenshot');
   // A cached / data-URL image can be decoded synchronously, so `load` may have
   // already fired (or won't) — place the pin and reveal immediately in that case.
   if (img.complete && img.naturalWidth > 0) { placePin(); reveal(); }
@@ -843,7 +884,7 @@ function closeShot() {
 async function loadFunnels() {
   if (funnelsLoaded) return;
   try {
-    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/funnels');
+    const resp = await fetch(PBASE + '/funnels');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     renderFunnels(await resp.json());
     funnelsLoaded = true;
@@ -867,7 +908,7 @@ async function loadExplanations() {
   populateVersionSelect('explanations-version');
   if (explanationsLoaded) return;
   try {
-    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/explanations' + (explVersion ? '?version=' + explVersion : ''));
+    const resp = await fetch(PBASE + '/explanations' + (explVersion ? '?version=' + explVersion : ''));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     adminExplanations = await resp.json();
     renderExplanations();
@@ -945,7 +986,9 @@ function deleteExplanation(id) {
     'Delete explanation?',
     `The explanation for "${selector}" will be permanently removed.`,
     async () => {
-      await fetch('/api/explanations/' + id, { method: 'DELETE', headers: { 'x-csrf-token': CSRF } });
+      const resp = await fetch('/api/explanations/' + id, { method: 'DELETE', headers: { 'x-csrf-token': CSRF }, credentials: 'include' });
+      if (resp.status === 403) { toast('Only admins can delete explanations.', 'error'); return; }
+      if (!resp.ok && resp.status !== 404) { toast('Delete failed (HTTP ' + resp.status + ').', 'error'); return; }
       adminExplanations = adminExplanations.filter(e => e.id !== id);
       renderExplanations();
     }
@@ -986,7 +1029,7 @@ document.getElementById('version-upload-btn')?.addEventListener('click', async (
   const fd = new FormData();
   fd.append('file', f);
   fd.append('note', document.getElementById('version-note').value || '');
-  const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/versions',
+  const resp = await fetch(PBASE + '/versions',
     { method: 'POST', headers: { 'x-csrf-token': CSRF }, body: fd, credentials: 'include' });
   if (resp.status === 201) {
     fileInput.value = '';
@@ -1005,7 +1048,7 @@ function publishVersion(n) {
     'Make v' + n + ' live?',
     'Version ' + n + ' will become the live version shown to all reviewers. Earlier versions stay available in the history.',
     async () => {
-      const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/publish',
+      const resp = await fetch(PBASE + '/publish',
         { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': CSRF },
           body: JSON.stringify({ version: n }), credentials: 'include' });
       if (resp.ok) { versionsLoaded = false; await loadVersions(); toast('v' + n + ' is now live.'); }
@@ -1018,7 +1061,7 @@ function publishVersion(n) {
 async function loadVersions() {
   if (versionsLoaded) return;
   try {
-    const resp = await fetch('/admin/prototypes/' + PROTO_ID + '/versions');
+    const resp = await fetch(PBASE + '/versions');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const rows = await resp.json();
     const tbody = document.getElementById('versions-body');

@@ -9,6 +9,7 @@ const config = require('../config');
 const storage = require('../services/storage');
 const versions = require('../services/versions');
 const markdown = require('../services/markdown');
+const orgs = require('../services/orgs');
 
 const router = express.Router();
 
@@ -37,12 +38,15 @@ router.post('/:shareToken/enter', async (req, res) => {
   if (!proto) return res.status(404).send('Prototype not found.');
 
   const email = (req.body.email || '').trim().toLowerCase();
-  const { rows: allowRows } = await getDb().query(
-    'SELECT 1 FROM allowlist WHERE prototype_id = $1 AND LOWER(email) = $2',
-    [proto.id, email]
-  );
+  // Effective reviewer access (Task 6): an email qualifies via an explicit
+  // allowlist row OR as the canonical email of a current admin/viewer member of
+  // the prototype's owning org. So a logged-out same-org admin/viewer can open
+  // their own org's share link by entering their account email, with NO explicit
+  // allowlist entry. Membership in another org grants nothing (the resolver pins
+  // to prototype.org_id).
+  const { allowed } = await orgs.effectiveReviewerAccess(proto.id, email);
 
-  if (!allowRows.length) {
+  if (!allowed) {
     const html = readView('email-entry.html')
       .split('{{shareToken}}').join(req.params.shareToken)
       .split('{{error}}').join('<div class="alert">That email isn\'t on the access list for this prototype.</div>');
@@ -66,6 +70,13 @@ async function resolveServed(req, res) {
   const proto = rows[0];
   if (!proto) { res.status(404).send('Prototype not found.'); return null; }
   if (req.session.prototypeId !== proto.id) { res.status(403).send('Access denied.'); return null; }
+  // Re-check effective access on EVERY protected read (Task 6): a reviewer whose
+  // membership-derived grant was revoked (removed from the org, or the allowlist
+  // entry deleted with no remaining membership) loses access on their next
+  // request even though their session still names this prototype. An independent
+  // explicit allowlist entry keeps a removed member in.
+  const { allowed } = await orgs.effectiveReviewerAccess(proto.id, req.session.customerEmail);
+  if (!allowed) { res.status(403).send('Access denied.'); return null; }
 
   // Resolve which version to serve. An explicit ?version=N is honored only when
   // it names a PUBLISHED version of this prototype; a draft/unknown/non-integer

@@ -4,8 +4,13 @@ const { getDb } = require('../db');
 const { nanoid } = require('nanoid');
 const annotations = require('../services/annotations');
 const storage = require('../services/storage');
+const orgs = require('../services/orgs');
 
 const router = express.Router();
+
+// Own-comment edit/delete window (server-enforced, Task 6). The SDK also shows a
+// 5-minute window client-side, but the server is the authority.
+const EDIT_WINDOW_MS = 5 * 60 * 1000;
 
 // Max decoded screenshot size we accept (8MB). Larger payloads are dropped
 // (comment still posts without a screenshot) so a reviewer can't push huge
@@ -63,60 +68,81 @@ async function handleScreenshot(screenshot) {
   }
 }
 
-// Authorize the current request to read/mutate data belonging to `prototypeId`.
-// These /api routes are the reviewer-facing SDK endpoints (no auth middleware),
-// so authorization is decided per request against the session. Two — and only
-// two — callers are legitimate:
-//   1. A reviewer whose share-link session is bound to EXACTLY this prototype
-//      (req.session.prototypeId set by delivery.js on /enter).
-//   2. An authenticated user who is a MEMBER of the prototype's organization
-//      (req.session.userId + org_memberships) — the P1 tenant boundary.
-// Everyone else — including a reviewer bound to a *different* prototype, or a
-// user in a different org — is denied. This closes the cross-prototype /
-// cross-tenant hole: without it, any caller could read or edit any
-// comment/explanation by guessing its id.
-async function authorizedForPrototype(req, prototypeId) {
-  if (!prototypeId || !req.session) return false;
-  if (req.session.prototypeId === prototypeId) return true;
+// Resolve a STRUCTURED actor for a request against `prototypeId`. This is the one
+// place authorization/identity for the reviewer-facing SDK API is decided, and
+// it is re-run on EVERY read/write (so a removed member / revoked allowlist entry
+// loses access on their next request). Returns one of:
+//   { kind:'account', userId, email, role }  — an authenticated org MEMBER acting
+//        with their account (role = 'admin' | 'viewer'); identity is the canonical
+//        users.email, NEVER a request-body email.
+//   { kind:'reviewer', email }               — a share-link reviewer whose session
+//        is bound to EXACTLY this prototype AND whose session email still passes
+//        the effective-access rule (explicit allowlist OR current same-org member
+//        email). A member entering their email on an own-org link lands here.
+//   null                                       — not authorized for this prototype.
+// An account membership takes precedence (richer capabilities) when both apply.
+async function resolveActor(req, prototypeId) {
+  if (!prototypeId || !req.session) return null;
+
+  // Account actor: a current member of the prototype's owning org.
   if (req.session.userId) {
-    // Member of the prototype's org? Join prototype → membership for this user.
     const { rows } = await getDb().query(
-      `SELECT 1 FROM prototypes p
+      `SELECT m.role, u.email FROM prototypes p
          JOIN org_memberships m ON m.org_id = p.org_id
-        WHERE p.id = $1 AND m.user_id = $2`,
-      [prototypeId, req.session.userId]
-    );
-    return rows.length > 0;
+         JOIN users u ON u.id = m.user_id
+        WHERE p.id = $1 AND u.id = $2`,
+      [prototypeId, req.session.userId]);
+    if (rows[0]) {
+      return { kind: 'account', userId: req.session.userId, email: (rows[0].email || '').toLowerCase(), role: rows[0].role };
+    }
   }
-  return false;
+
+  // Reviewer actor: the share session must be bound to THIS prototype, and the
+  // session email must STILL satisfy the effective-access rule (re-checked here,
+  // not trusted from when the session was created).
+  if (req.session.prototypeId === prototypeId && req.session.customerEmail) {
+    const { allowed } = await orgs.effectiveReviewerAccess(prototypeId, req.session.customerEmail);
+    if (allowed) return { kind: 'reviewer', email: (req.session.customerEmail || '').toLowerCase() };
+  }
+  return null;
 }
 
-// Look up the prototype a comment/explanation belongs to, then authorize.
-// Returns { ok: true } when allowed, or { status, error } to send otherwise.
-// A missing row is 404; an unauthorized caller is 403 — and we deliberately
-// return 404 (not "you're not allowed to touch THAT one") is avoided here so
-// the caller can distinguish, since the id space is per-prototype anyway.
-async function authorizeResource(req, table, id) {
-  const { rows } = await getDb().query(
-    `SELECT prototype_id FROM ${table} WHERE id = $1`,
-    [id]
-  );
-  if (!rows.length) return { status: 404, error: 'Not found.' };
-  if (!(await authorizedForPrototype(req, rows[0].prototype_id))) {
-    return { status: 403, error: 'Forbidden.' };
-  }
-  return { ok: true };
+// Capability predicates over a resolved actor (the Task 6 matrix). Reviewers and
+// viewers may read + comment; only admins may moderate others' comments and
+// create/edit/delete explanations.
+const canComment = (actor) => !!actor; // any resolved actor may create comments/replies
+const canModerate = (actor) => !!actor && actor.kind === 'account' && actor.role === 'admin';
+const canExplain = (actor) => !!actor && actor.kind === 'account' && actor.role === 'admin';
+
+// May `actor` edit/delete THIS comment row? Admins may always (moderation).
+// Otherwise only the ORIGINAL author, and only within the 5-minute window, keyed
+// off the server-derived author identity (author_user_id for accounts,
+// author_kind='reviewer' + email for reviewers) — never the request-body email.
+// Legacy rows (author_kind NULL) have insufficient identity and are admin-only.
+function canEditOwnComment(actor, row) {
+  if (canModerate(actor)) return true;
+  if (!actor || !row.author_kind) return false;
+  const withinWindow = (Date.now() - new Date(row.created_at).getTime()) <= EDIT_WINDOW_MS;
+  if (!withinWindow) return false;
+  if (actor.kind === 'account') return row.author_kind === 'account' && row.author_user_id === actor.userId;
+  if (actor.kind === 'reviewer') return row.author_kind === 'reviewer' && (row.email || '').toLowerCase() === actor.email;
+  return false;
 }
 
 router.post('/comments', async (req, res) => {
   try {
-    const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, email, parentId, anchor, screenshot } = req.body;
-    const commentEmail = email || 'local@test.com';
+    const { prototypeId, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, parentId, anchor, screenshot } = req.body;
     if (!comment || !comment.trim()) return res.status(400).json({ error: 'Comment is required.' });
     if (!prototypeId) return res.status(400).json({ error: 'prototypeId is required.' });
-    if (!(await authorizedForPrototype(req, prototypeId))) {
-      return res.status(403).json({ error: 'Forbidden.' });
-    }
+    const actor = await resolveActor(req, prototypeId);
+    if (!canComment(actor)) return res.status(403).json({ error: 'Forbidden.' });
+
+    // Author identity is derived SERVER-SIDE from the resolved actor — the body's
+    // `email` can never set authorship or editing rights. The display email is
+    // the account's canonical email (members) or the validated reviewer email.
+    const commentEmail = actor.email;
+    const authorUserId = actor.kind === 'account' ? actor.userId : null;
+    const authorKind = actor.kind;
 
     try {
       let versionId;
@@ -131,12 +157,9 @@ router.post('/comments', async (req, res) => {
         if (!['general', 'element', 'range'].includes(type)) return res.status(400).json({ error: 'Invalid type.' });
         ({ versionId } = await annotations.resolveViewedVersion(prototypeId, req.body.version));
       }
-      // Screenshots only ride along on NEW parent pins — never on replies (a
-      // reply inherits context from its parent). Failure here is swallowed by
-      // handleScreenshot, so the comment always posts.
       const shot = parentId ? null : await handleScreenshot(screenshot);
       const { id } = await annotations.createComment(prototypeId, versionId,
-        { email: commentEmail, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, parentId, anchor, ...(shot || {}) });
+        { email: commentEmail, type, comment, element, breadcrumb, pageUrl, tag, xPct, yPct, parentId, anchor, authorUserId, authorKind, ...(shot || {}) });
       return res.status(201).json({ ok: true, id });
     } catch (e) {
       if (e.code === 'ANCHOR_REQUIRED') return res.status(400).json({ error: 'Range comment requires an anchor quote.' });
@@ -150,9 +173,8 @@ router.post('/comments', async (req, res) => {
 
 router.get('/comments/:prototypeId', async (req, res) => {
   try {
-    if (!(await authorizedForPrototype(req, req.params.prototypeId))) {
-      return res.status(403).json({ error: 'Forbidden.' });
-    }
+    const actor = await resolveActor(req, req.params.prototypeId);
+    if (!actor) return res.status(403).json({ error: 'Forbidden.' });
     const { versionId } = await annotations.resolveViewedVersion(req.params.prototypeId, req.query.version);
     const result = await annotations.listComments(req.params.prototypeId, versionId);
     res.json(result);
@@ -165,19 +187,32 @@ router.get('/comments/:prototypeId', async (req, res) => {
 router.patch('/comments/:commentId', async (req, res) => {
   const { comment } = req.body;
   if (!comment || !comment.trim()) return res.status(400).json({ error: 'Comment is required.' });
-  const auth = await authorizeResource(req, 'comments', req.params.commentId);
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const { rows } = await getDb().query(
+    'SELECT id, prototype_id, author_user_id, author_kind, email, created_at FROM comments WHERE id = $1',
+    [req.params.commentId]);
+  if (!rows.length) return res.status(404).json({ error: 'Not found.' });
+  const row = rows[0];
+  const actor = await resolveActor(req, row.prototype_id);
+  if (!actor) return res.status(403).json({ error: 'Forbidden.' });
+  // Editing is author-own (within the 5-min window) OR admin moderation. A viewer
+  // / reviewer editing someone ELSE's comment (or past the window) is 403.
+  if (!canEditOwnComment(actor, row)) return res.status(403).json({ error: 'You can only edit your own comment within five minutes of posting.' });
   await getDb().query('UPDATE comments SET comment = $1 WHERE id = $2', [comment.trim(), req.params.commentId]);
   res.json({ ok: true });
 });
 
 router.delete('/comments/:commentId', async (req, res) => {
-  const auth = await authorizeResource(req, 'comments', req.params.commentId);
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
-  // Best-effort: remove the stored screenshot (if any) before the row goes. A
-  // storage failure must never block the DB delete, so we swallow it.
-  const { rows } = await getDb().query('SELECT screenshot_key FROM comments WHERE id = $1', [req.params.commentId]);
-  const key = rows[0] && rows[0].screenshot_key;
+  const { rows } = await getDb().query(
+    'SELECT id, prototype_id, author_user_id, author_kind, email, created_at, screenshot_key FROM comments WHERE id = $1',
+    [req.params.commentId]);
+  if (!rows.length) return res.status(404).json({ error: 'Not found.' });
+  const row = rows[0];
+  const actor = await resolveActor(req, row.prototype_id);
+  if (!actor) return res.status(403).json({ error: 'Forbidden.' });
+  // Delete is author-own-within-window OR admin moderation (matrix: a viewer
+  // cannot moderate others' comments; a reviewer cannot moderate at all).
+  if (!canEditOwnComment(actor, row)) return res.status(403).json({ error: 'You can only delete your own comment within five minutes, unless you are an admin.' });
+  const key = row.screenshot_key;
   await getDb().query('DELETE FROM comments WHERE id = $1', [req.params.commentId]);
   if (key) await storage.deleteImage(key).catch(() => {});
   res.json({ ok: true });
@@ -186,21 +221,19 @@ router.delete('/comments/:commentId', async (req, res) => {
 router.post('/nav', async (req, res) => {
   const { prototypeId, pageUrl } = req.body;
   if (!prototypeId || !pageUrl) return res.status(400).json({ error: 'prototypeId and pageUrl are required.' });
-  if (!(await authorizedForPrototype(req, prototypeId))) {
-    return res.status(403).json({ error: 'Forbidden.' });
-  }
-  const email = req.body.email || 'local@test.com';
+  const actor = await resolveActor(req, prototypeId);
+  if (!actor) return res.status(403).json({ error: 'Forbidden.' });
+  // Telemetry email is the server-derived actor identity, not a body field.
   await getDb().query(
     'INSERT INTO nav_events (prototype_id, email, page_url, occurred_at) VALUES ($1,$2,$3,$4)',
-    [prototypeId, email, String(pageUrl).slice(0, 500), new Date().toISOString()]
+    [prototypeId, actor.email, String(pageUrl).slice(0, 500), new Date().toISOString()]
   );
   res.status(201).json({ ok: true });
 });
 
 router.get('/explanations/:prototypeId', async (req, res) => {
-  if (!(await authorizedForPrototype(req, req.params.prototypeId))) {
-    return res.status(403).json({ error: 'Forbidden.' });
-  }
+  const actor = await resolveActor(req, req.params.prototypeId);
+  if (!actor) return res.status(403).json({ error: 'Forbidden.' });
   const { versionId } = await annotations.resolveViewedVersion(req.params.prototypeId, req.query.version);
   res.json(await annotations.listExplanations(req.params.prototypeId, versionId));
 });
@@ -210,9 +243,10 @@ router.post('/explanations', async (req, res) => {
   if (!prototypeId || !elementSelector || !body || !body.trim()) {
     return res.status(400).json({ error: 'prototypeId, elementSelector, and body are required.' });
   }
-  if (!(await authorizedForPrototype(req, prototypeId))) {
-    return res.status(403).json({ error: 'Forbidden.' });
-  }
+  const actor = await resolveActor(req, prototypeId);
+  if (!actor) return res.status(403).json({ error: 'Forbidden.' });
+  // Explanations are authored content — admin-only (matrix).
+  if (!canExplain(actor)) return res.status(403).json({ error: 'Only admins can create explanations.' });
   try {
     const { versionId } = await annotations.resolveViewedVersion(prototypeId, req.body.version);
     const { id } = await annotations.createExplanation(prototypeId, versionId, { elementSelector, xPct, yPct, pageUrl, body });
@@ -226,8 +260,11 @@ router.post('/explanations', async (req, res) => {
 router.patch('/explanations/:id', async (req, res) => {
   const { body } = req.body;
   if (!body || !body.trim()) return res.status(400).json({ error: 'body is required.' });
-  const auth = await authorizeResource(req, 'explanations', req.params.id);
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const { rows } = await getDb().query('SELECT prototype_id FROM explanations WHERE id = $1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Not found.' });
+  const actor = await resolveActor(req, rows[0].prototype_id);
+  if (!actor) return res.status(403).json({ error: 'Forbidden.' });
+  if (!canExplain(actor)) return res.status(403).json({ error: 'Only admins can edit explanations.' });
   await getDb().query(
     'UPDATE explanations SET body = $1, updated_at = $2 WHERE id = $3',
     [body.trim(), new Date().toISOString(), req.params.id]
@@ -236,8 +273,11 @@ router.patch('/explanations/:id', async (req, res) => {
 });
 
 router.delete('/explanations/:id', async (req, res) => {
-  const auth = await authorizeResource(req, 'explanations', req.params.id);
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const { rows } = await getDb().query('SELECT prototype_id FROM explanations WHERE id = $1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Not found.' });
+  const actor = await resolveActor(req, rows[0].prototype_id);
+  if (!actor) return res.status(403).json({ error: 'Forbidden.' });
+  if (!canExplain(actor)) return res.status(403).json({ error: 'Only admins can delete explanations.' });
   await getDb().query('DELETE FROM explanations WHERE id = $1', [req.params.id]);
   res.json({ ok: true });
 });

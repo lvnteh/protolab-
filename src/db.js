@@ -366,6 +366,12 @@ async function initDb() {
     CREATE UNIQUE INDEX IF NOT EXISTS uq_invites_pending
       ON org_invitations(org_id, email) WHERE status = 'pending'
   `);
+  // Seven-day expiry (product decision #9), enforced server-side at acceptInvite.
+  // Added idempotently so it applies to already-deployed invitation tables too.
+  // A NULL expires_at means "legacy invite, no expiry" — we do NOT retroactively
+  // invalidate invites that were issued before this column existed; every invite
+  // created/reissued from now on carries a concrete expires_at.
+  await _pool.query(`ALTER TABLE org_invitations ADD COLUMN IF NOT EXISTS expires_at TEXT`);
   await _pool.query(`CREATE INDEX IF NOT EXISTS idx_invites_org ON org_invitations(org_id, status)`);
 
   // storage_cleanup_queue: a durable work queue of object-storage objects that
@@ -600,30 +606,40 @@ async function initDb() {
 
     if (emsMarker.length === 0 || unassigned.length > 0 || unassignedTokens.length > 0) {
       const nowIso = new Date().toISOString();
-      // Reuse an existing EMS org if present (idempotent even if the marker was
-      // lost); otherwise create it with an opaque id.
-      let { rows: emsOrg } = await lockClient.query(
-        'SELECT id FROM organizations WHERE name = $1', ['EMS']);
-      let emsOrgId = emsOrg[0] && emsOrg[0].id;
-      if (!emsOrgId) {
-        emsOrgId = nanoid(12);
+      // One atomic transaction for the whole fold: a crash mid-fold must not
+      // leave a half-migrated DB (org created but prototypes unmoved, or the
+      // marker recorded before the UPDATEs). Idempotent on re-run regardless.
+      await lockClient.query('BEGIN');
+      try {
+        // Reuse an existing EMS org if present (idempotent even if the marker was
+        // lost); otherwise create it with an opaque id.
+        let { rows: emsOrg } = await lockClient.query(
+          'SELECT id FROM organizations WHERE name = $1', ['EMS']);
+        let emsOrgId = emsOrg[0] && emsOrg[0].id;
+        if (!emsOrgId) {
+          emsOrgId = nanoid(12);
+          await lockClient.query(
+            'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+            [emsOrgId, 'EMS', nowIso]);
+        }
+        // Every existing user becomes an admin of EMS.
         await lockClient.query(
-          'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
-          [emsOrgId, 'EMS', nowIso]);
+          `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+           SELECT 'm_' || u.id, $1, u.id, 'admin', $2 FROM users u
+           ON CONFLICT (org_id, user_id) DO NOTHING`,
+          [emsOrgId, nowIso]);
+        // Move ALL existing prototypes + tokens into EMS.
+        await lockClient.query('UPDATE prototypes SET org_id = $1 WHERE org_id IS NULL', [emsOrgId]);
+        await lockClient.query('UPDATE api_tokens SET org_id = $1 WHERE org_id IS NULL', [emsOrgId]);
+        await lockClient.query(
+          `INSERT INTO schema_migrations (name, applied_at) VALUES ($1, $2)
+           ON CONFLICT (name) DO NOTHING`,
+          ['org-ems-consolidation-v1', nowIso]);
+        await lockClient.query('COMMIT');
+      } catch (e) {
+        await lockClient.query('ROLLBACK');
+        throw e;
       }
-      // Every existing user becomes an admin of EMS.
-      await lockClient.query(
-        `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
-         SELECT 'm_' || u.id, $1, u.id, 'admin', $2 FROM users u
-         ON CONFLICT (org_id, user_id) DO NOTHING`,
-        [emsOrgId, nowIso]);
-      // Move ALL existing prototypes + tokens into EMS.
-      await lockClient.query('UPDATE prototypes SET org_id = $1 WHERE org_id IS NULL', [emsOrgId]);
-      await lockClient.query('UPDATE api_tokens SET org_id = $1 WHERE org_id IS NULL', [emsOrgId]);
-      await lockClient.query(
-        `INSERT INTO schema_migrations (name, applied_at) VALUES ($1, $2)
-         ON CONFLICT (name) DO NOTHING`,
-        ['org-ems-consolidation-v1', nowIso]);
     }
 
     // After the backfill, org_id is mandatory on both tenant-scoped tables.

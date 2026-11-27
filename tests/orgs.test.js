@@ -370,5 +370,43 @@ async function mkPrototype(orgId, ownerId, name = 'P') {
       await expect(orgsSvc.acceptInvite(invitee, inv.token, email))
         .rejects.toMatchObject({ code: 'INVALID_INVITE' });
     });
+
+    test('acceptInvite rejects an EXPIRED invite (decision #9, server-enforced)', async () => {
+      const admin = await mkUser(`exp-admin-${nanoid(6)}@sap.com`);
+      const org = await orgsSvc.createOrg(admin, 'Org');
+      const email = `exp-u-${nanoid(6)}@sap.com`;
+      const invitee = await mkUser(email);
+      const inv = await orgsSvc.createInvite(admin, org.id, email, 'viewer');
+      // The invite is created with a +7d expiry; force it into the past.
+      await getDb().query(
+        'UPDATE org_invitations SET expires_at = $1 WHERE id = $2',
+        [new Date(Date.now() - 1000).toISOString(), inv.id]);
+      await expect(orgsSvc.acceptInvite(invitee, inv.token, email))
+        .rejects.toMatchObject({ code: 'INVALID_INVITE' });
+      // Not added — the membership never happens on an expired invite.
+      expect(await orgsSvc.membership(invitee, org.id)).toBeNull();
+      // And it is reissue-able (still status='pending', just past expiry).
+      const inv2 = await orgsSvc.reissueInvite(admin, org.id, inv.id);
+      expect(inv2.token).not.toBe(inv.token);
+      await orgsSvc.acceptInvite(invitee, inv2.token, email);
+      expect((await orgsSvc.membership(invitee, org.id)).role).toBe('viewer');
+    });
+
+    test('createInvite and acceptInvite both reject a non-allowlisted domain', async () => {
+      const admin = await mkUser(`dom-admin-${nanoid(6)}@sap.com`);
+      const org = await orgsSvc.createOrg(admin, 'Org');
+      // Blocked at creation.
+      await expect(orgsSvc.createInvite(admin, org.id, 'outsider@gmail.com', 'viewer'))
+        .rejects.toMatchObject({ code: 'DOMAIN_NOT_ALLOWED' });
+      // Defence in depth: even if a non-allowlisted invite somehow exists in the
+      // table (e.g. the allowlist tightened after issuance), acceptance re-checks.
+      const email = `dom-u-${nanoid(6)}@sap.com`;
+      const invitee = await mkUser(email);
+      const inv = await orgsSvc.createInvite(admin, org.id, email, 'viewer');
+      await getDb().query('UPDATE org_invitations SET email = $1 WHERE id = $2',
+        ['outsider@gmail.com', inv.id]);
+      await expect(orgsSvc.acceptInvite(invitee, inv.token, 'outsider@gmail.com'))
+        .rejects.toMatchObject({ code: 'INVALID_INVITE' });
+    });
   });
 });

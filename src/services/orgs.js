@@ -34,6 +34,7 @@
 // enqueues durable storage cleanup in the same transaction as the row deletes.
 const { nanoid } = require('nanoid');
 const { getDb } = require('../db');
+const config = require('../config');
 
 // Thrown when an action (role change / removal) would leave an org with zero
 // admins. Callers map it to a 409 (conflict) rather than a 500. `code` lets a
@@ -66,6 +67,19 @@ class InvalidInviteError extends Error {
 }
 
 const now = () => new Date().toISOString();
+
+// Invite lifetime: product decision #9. createInvite/reissueInvite stamp
+// expires_at = now + INVITE_TTL_MS; acceptInvite rejects once it is past.
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const inviteExpiry = () => new Date(Date.now() + INVITE_TTL_MS).toISOString();
+
+// Is `email`'s domain permitted to hold an account? The same gate used at
+// signup/org-creation; re-checked at acceptInvite so an invite can never be the
+// path by which a non-allowlisted domain lands a membership.
+function emailDomainAllowed(email) {
+  const domain = (email || '').split('@')[1] || '';
+  return config.allowedEmailDomains.includes(domain);
+}
 
 // Run `fn(client)` inside a BEGIN..COMMIT, rolling back (and re-throwing) on any
 // error. ONE checked-out client is used for the whole unit of work so FOR UPDATE
@@ -252,15 +266,20 @@ async function createInvite(actorUserId, orgId, email, role) {
   const normEmail = (email || '').trim().toLowerCase();
   if (!normEmail) throw new Error('An email is required to invite.');
   if (role !== 'admin' && role !== 'viewer') throw new Error("role must be 'admin' or 'viewer'.");
+  if (!emailDomainAllowed(normEmail)) {
+    const err = new Error('That email domain is not permitted.');
+    err.code = 'DOMAIN_NOT_ALLOWED';
+    throw err;
+  }
   return withTx(async (client) => {
     await lockOrgAsAdmin(client, actorUserId, orgId);
     const id = nanoid(12);
     const token = nanoid(24);
     try {
       await client.query(
-        `INSERT INTO org_invitations (id, org_id, email, role, token, status, invited_by, created_at)
-         VALUES ($1,$2,$3,$4,$5,'pending',$6,$7)`,
-        [id, orgId, normEmail, role, token, actorUserId, now()]);
+        `INSERT INTO org_invitations (id, org_id, email, role, token, status, invited_by, created_at, expires_at)
+         VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8)`,
+        [id, orgId, normEmail, role, token, actorUserId, now(), inviteExpiry()]);
     } catch (e) {
       if (e.code === '23505') {
         const err = new Error('A pending invitation for that email already exists.');
@@ -294,9 +313,9 @@ async function reissueInvite(actorUserId, orgId, inviteId) {
     const id = nanoid(12);
     const token = nanoid(24);
     await client.query(
-      `INSERT INTO org_invitations (id, org_id, email, role, token, status, invited_by, created_at)
-       VALUES ($1,$2,$3,$4,$5,'pending',$6,$7)`,
-      [id, orgId, inv[0].email, inv[0].role, token, actorUserId, nowIso]);
+      `INSERT INTO org_invitations (id, org_id, email, role, token, status, invited_by, created_at, expires_at)
+       VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8)`,
+      [id, orgId, inv[0].email, inv[0].role, token, actorUserId, nowIso, inviteExpiry()]);
     return { id, token, email: inv[0].email, role: inv[0].role };
   });
 }
@@ -351,9 +370,20 @@ async function acceptInvite(userId, token, userEmail) {
 
     await client.query('SELECT id FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
     const { rows: inv } = await client.query(
-      'SELECT id, org_id, email, role, status FROM org_invitations WHERE token = $1 FOR UPDATE', [token]);
+      'SELECT id, org_id, email, role, status, expires_at FROM org_invitations WHERE token = $1 FOR UPDATE', [token]);
     if (!inv[0] || inv[0].status !== 'pending') throw new InvalidInviteError();
     if (inv[0].email !== normEmail) throw new InvalidInviteError('This invitation was issued to a different email.');
+    // Expiry (decision #9). A NULL expires_at is a legacy invite issued before the
+    // column existed — treated as non-expiring so we don't retroactively break it.
+    if (inv[0].expires_at && Date.now() > new Date(inv[0].expires_at).getTime()) {
+      throw new InvalidInviteError('This invitation has expired. Ask an admin to reissue it.');
+    }
+    // Domain gate re-checked at accept time: the invite must never be the path by
+    // which a non-allowlisted domain lands a membership (defence in depth — the
+    // email is also gated at signup and at createInvite).
+    if (!emailDomainAllowed(normEmail)) {
+      throw new InvalidInviteError('That email domain is not permitted.');
+    }
 
     const nowIso = now();
     // Insert the membership, or upgrade an existing viewer to the invited role.

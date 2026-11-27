@@ -326,13 +326,13 @@ async function reissueInvite(actorUserId, orgId, inviteId) {
 async function listInvites(orgId, status = null) {
   if (status) {
     const { rows } = await getDb().query(
-      `SELECT id, org_id, email, role, status, token, invited_by, created_at, accepted_at, revoked_at
+      `SELECT id, org_id, email, role, status, token, invited_by, created_at, expires_at, accepted_at, revoked_at
          FROM org_invitations WHERE org_id = $1 AND status = $2 ORDER BY created_at DESC`,
       [orgId, status]);
     return rows;
   }
   const { rows } = await getDb().query(
-    `SELECT id, org_id, email, role, status, token, invited_by, created_at, accepted_at, revoked_at
+    `SELECT id, org_id, email, role, status, token, invited_by, created_at, expires_at, accepted_at, revoked_at
        FROM org_invitations WHERE org_id = $1 ORDER BY created_at DESC`,
     [orgId]);
   return rows;

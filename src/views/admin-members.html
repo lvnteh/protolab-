@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{csrfToken}}">
-<title>Members — {{orgName}} — ProtoLab (Beta!)</title>
+<title>Settings — {{orgName}} — ProtoLab (Beta!)</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:hsl(222,47%,11%);background:hsl(220,14%,96%);min-height:100vh}
@@ -32,18 +32,34 @@ h1{font-size:22px}
 .btn-secondary{background:#fff;color:hsl(222,47%,11%);border:1px solid hsl(220,13%,87%)}
 .btn-danger{background:#fff;color:#c0392b;border:1px solid #e0c0bd}
 .form-pad{padding:16px 18px}
-.input,select.input{padding:8px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:13px;outline:none}
+.input{padding:8px 12px;border:1px solid hsl(220,13%,87%);border-radius:8px;font-size:13px;outline:none;height:38px}
+/* Native select needs extra right padding for its chevron and an explicit
+   height so it lines up with the text input and the Send-invite button. */
+select.input{height:38px;padding:0 34px 0 12px;line-height:36px;background:#fff;cursor:pointer}
 .msg{font-size:12px;margin-left:8px}
 .msg.err{color:#c0392b}.msg.ok{color:#1a7f4b}
 .danger-zone{border:1px solid #fccfcf;background:#fffafa}
 .danger-zone .card__head{color:#c0392b}
-.link{display:inline-block;max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-family:monospace;font-size:11px}
+/* Link cell: the URL truncates on its own line, Copy sits neatly beneath it,
+   and the whole thing is width-capped so a long invite URL can never push the
+   actions column off the card. */
+.invite-link{display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:320px}
+.invite-link .link{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:11px}
+.tbl td{vertical-align:middle}
+.mono{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:12px}
+.ts{color:hsl(220,9%,46%);font-size:12px}
+.token-reveal{background:#f0fdf4;border:1px solid #b3e8cf;border-radius:10px;padding:16px;margin-bottom:16px;display:none}
+.token-reveal__label{font-size:12px;font-weight:700;color:#1a7f4b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.token-reveal__value{display:flex;gap:8px;align-items:center}
+.token-reveal code{flex:1;background:#fff;border:1px solid #b3e8cf;border-radius:6px;padding:8px 10px;font-size:12px;word-break:break-all;font-family:'SF Mono',Monaco,Consolas,monospace}
+.token-reveal__warn{font-size:12px;color:hsl(38,92%,30%);margin-top:8px}
+.copy-btn{background:#fff;border:1px solid #b3e8cf;cursor:pointer;color:#1a7f4b;font-size:12px;padding:8px 12px;border-radius:6px;font-weight:600;white-space:nowrap}
 </style>
 </head>
 <body>
 <div class="topbar">
   <a href="/admin/orgs/{{orgId}}/prototypes">← Prototypes</a>
-  <span class="topbar__title">Members</span>
+  <span class="topbar__title">Settings</span>
   <form method="post" action="/admin/logout" style="margin-left:auto">
     <input type="hidden" name="_csrf" value="{{csrfToken}}">
     <button type="submit" class="btn btn-secondary">Log out</button>
@@ -77,6 +93,28 @@ h1{font-size:22px}
     <div class="card__head">Invitations</div>
     <table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Link</th><th></th></tr></thead>
       <tbody id="invites-body"><tr><td colspan="5">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card__head">API tokens</div>
+    <div class="form-pad">
+      <p style="color:hsl(220,9%,46%);font-size:12px;margin-bottom:14px;line-height:1.6">Tokens let the local-AI MCP client (and other machine callers) pull feedback and push versioned updates through the <code class="mono">/api/v1</code> API. A token is scoped to <strong>this organization</strong> and acts with your current admin role — if you are demoted or removed, it stops working. The secret is shown once at creation; store it in your <code class="mono">.env</code> as <code class="mono">PROTOSHARE_TOKEN</code>.</p>
+      <div class="token-reveal" id="reveal">
+        <div class="token-reveal__label">New token — copy it now</div>
+        <div class="token-reveal__value">
+          <code id="reveal-value"></code>
+          <button class="copy-btn" onclick="copyToken(event)">Copy</button>
+        </div>
+        <div class="token-reveal__warn">⚠ This is the only time the full token is shown. It cannot be retrieved later.</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:4px">
+        <input class="input" id="token-name" type="text" placeholder="Token name (e.g. laptop-dev)" style="flex:1">
+        <button class="btn btn-primary" id="token-gen-btn">Generate token</button>
+      </div>
+    </div>
+    <table class="tbl"><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+      <tbody id="tokens-body"><tr><td colspan="4">Loading…</td></tr></tbody>
     </table>
   </div>
 
@@ -143,7 +181,9 @@ function renderInvites(list){
       ? `<button class="btn btn-secondary" onclick="reissue('${esc(i.id)}')">Reissue</button>
          <button class="btn btn-danger" onclick="revoke('${esc(i.id)}')">Revoke</button>`
       : '';
-    const link = i.link ? `<a class="link" href="${esc(i.link)}">${esc(i.link)}</a> <button class="btn btn-secondary" onclick="copyLink('${esc(i.link)}')">Copy</button>` : '—';
+    const link = i.link
+      ? `<div class="invite-link"><a class="link" href="${esc(i.link)}" title="${esc(i.link)}">${esc(i.link)}</a><button class="btn btn-secondary" onclick="copyLink('${esc(i.link)}')">Copy</button></div>`
+      : '—';
     return `<tr id="i-${esc(i.id)}">
       <td>${esc(i.email)}</td><td><span class="role">${esc(i.role)}</span></td>
       <td><span class="badge badge-${esc(i.status)}">${esc(i.status)}</span></td>
@@ -206,6 +246,51 @@ document.getElementById('delete-btn').addEventListener('click', async () => {
   if(r.ok){ location.href = j.redirect || '/admin/home'; }
   else { msg.className='msg err'; msg.textContent = j.error || ('HTTP '+r.status); }
 });
+
+// ── API tokens (moved here from the standalone tokens page) ──────────────────
+function fmtDateTime(iso){return iso?new Date(iso).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';}
+async function loadTokens(){
+  const resp = await fetch(`/admin/orgs/${ORG_ID}/tokens`, { credentials:'include' });
+  if(!resp.ok){ document.getElementById('tokens-body').innerHTML='<tr><td colspan="4">Unable to load tokens.</td></tr>'; return; }
+  const rows = await resp.json();
+  const b = document.getElementById('tokens-body');
+  if(!rows.length){ b.innerHTML='<tr><td colspan="4">No tokens yet. Generate one above.</td></tr>'; return; }
+  b.innerHTML = rows.map(t => `
+    <tr id="tok-${esc(t.id)}">
+      <td><strong>${esc(t.name)}</strong> <span class="mono ts">${esc(t.id)}</span></td>
+      <td class="ts">${fmtDateTime(t.created_at)}</td>
+      <td class="ts">${fmtDateTime(t.last_used_at)}</td>
+      <td style="text-align:right"><button class="btn btn-danger" onclick="revokeToken('${esc(t.id)}','${esc(t.name)}')">Revoke</button></td>
+    </tr>`).join('');
+}
+document.getElementById('token-gen-btn').addEventListener('click', async () => {
+  const nameEl = document.getElementById('token-name');
+  const name = nameEl.value.trim() || 'token';
+  const resp = await fetch(`/admin/orgs/${ORG_ID}/tokens`, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded','x-csrf-token':CSRF,'x-expected-org':ORG_ID},
+    credentials:'include',
+    body:'name='+encodeURIComponent(name)+'&expectedOrgId='+encodeURIComponent(ORG_ID) });
+  if(!resp.ok){ alert('Failed to generate token.'); return; }
+  const { token } = await resp.json();
+  document.getElementById('reveal-value').textContent = token;
+  document.getElementById('reveal').style.display = 'block';
+  nameEl.value = '';
+  loadTokens();
+});
+function copyToken(ev){
+  navigator.clipboard.writeText(document.getElementById('reveal-value').textContent);
+  ev.target.textContent = 'Copied!';
+  setTimeout(()=>ev.target.textContent='Copy',1600);
+}
+async function revokeToken(id, name){
+  if(!confirm(`Revoke token "${name}"? Any client using it will stop working immediately.`)) return;
+  const resp = await fetch(`/admin/orgs/${ORG_ID}/tokens/`+encodeURIComponent(id), {
+    method:'DELETE', headers:{'x-csrf-token':CSRF,'x-expected-org':ORG_ID}, credentials:'include' });
+  if(resp.ok) document.getElementById('tok-'+id)?.remove();
+  loadTokens();
+}
+loadTokens();
 </script>
 </body>
 </html>

@@ -95,12 +95,11 @@ textarea.input{resize:vertical;line-height:1.5}
     </button>
     <div id="org-menu" style="display:none;position:absolute;top:40px;left:0;background:#fff;border:1px solid hsl(220,13%,87%);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);min-width:240px;z-index:300;overflow:hidden"></div>
   </div>
-  <a href="/admin/orgs/{{orgId}}/members" id="members-link" style="color:rgba(255,255,255,.9);font-size:13px;font-weight:600;display:none;align-items:center;gap:6px">Members</a>
-  <a href="/admin/orgs/{{orgId}}/tokens/page" id="tokens-link" style="margin-left:auto;color:rgba(255,255,255,.9);font-size:13px;font-weight:600;display:none;align-items:center;gap:6px">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z"/></svg>
-    API Tokens
+  <a href="/admin/orgs/{{orgId}}/members" id="members-link" style="margin-left:auto;color:rgba(255,255,255,.9);font-size:13px;font-weight:600;display:none;align-items:center;gap:6px">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.53 1.53 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.53 1.53 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.53 1.53 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.53 1.53 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+    Settings
   </a>
-  <form method="post" action="/admin/logout" style="margin:0;margin-left:auto">
+  <form method="post" action="/admin/logout" style="margin:0;margin-left:16px">
     <input type="hidden" name="_csrf" value="{{csrfToken}}">
     <button type="submit" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,.9);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:8px" onmouseover="this.style.background='rgba(255,255,255,.15)'" onmouseout="this.style.background='none'">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h5a1 1 0 100-2H4V5h4a1 1 0 000-2H3zm10.293 3.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L14.586 11H7a1 1 0 110-2h7.586l-1.293-1.293a1 1 0 010-1.414z"/></svg>
@@ -205,7 +204,6 @@ const BASE = `/admin/orgs/${ORG_ID}`;
 // only for admins; a viewer sees a read-only list with an "Open" action (Task 6).
 (function () {
   if (ORG_ROLE === 'admin') {
-    const t = document.getElementById('tokens-link'); if (t) t.style.display = 'flex';
     const m = document.getElementById('members-link'); if (m) m.style.display = 'flex';
     const u = document.getElementById('upload-trigger'); if (u) u.style.display = '';
   }

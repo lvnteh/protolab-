@@ -672,8 +672,11 @@ async function revokeTokenHandler(req, res) {
   await apiTokens.revokeToken(req.params.tokenId, req.orgId);
   res.json({ ok: true });
 }
+// The standalone tokens page was folded into the org Settings (members) page.
+// Keep the route as a redirect so old bookmarks / the MCP setup docs still land
+// somewhere sensible (the API-tokens card lives on Settings now).
 function tokensPageHandler(req, res) {
-  renderAdmin(res, 'admin-tokens.html', { orgId: req.orgId });
+  res.redirect(`/admin/orgs/${req.orgId}/members`);
 }
 
 async function listVersionsHandler(req, res) {
@@ -779,23 +782,23 @@ async function funnelsHandler(req, res) {
 
 async function membersPageHandler(req, res) {
   const members = await orgs.listMembers(req.orgId);
-  const invites = await orgs.listInvites(req.orgId);
+  // Only PENDING invites are actionable; revoked/accepted ones are terminal and
+  // would just pile up in the list (a fresh revoke/reissue would otherwise leave
+  // its old row behind). Show pending only — revoking a row removes it from view.
+  const invites = await orgs.listInvites(req.orgId, 'pending');
   const org = await orgs.getOrg(req.orgId);
   const counts = await orgs.countOrgResources(req.orgId);
   const nowIso = new Date().toISOString();
-  // Classify each invite's effective display status: a pending invite past its
-  // 7-day window shows as 'expired'. The schema has no expires_at column, so we
-  // derive the 7-day cutoff from created_at here for display only.
+  // A pending invite past its expires_at shows as 'expired' (still reissue-able).
+  // expires_at is the authoritative column (set at create/reissue); fall back to
+  // created_at + 7d only for legacy rows issued before the column existed.
   const invRows = invites.map(i => {
-    let status = i.status;
-    if (status === 'pending') {
-      const exp = new Date(new Date(i.created_at).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      if (exp < nowIso) status = 'expired';
-      i.expires_at = exp;
-    }
+    const exp = i.expires_at
+      || new Date(new Date(i.created_at).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const status = exp < nowIso ? 'expired' : 'pending';
     return {
       id: i.id, email: i.email, role: i.role, status,
-      created_at: i.created_at, expires_at: i.expires_at || null,
+      created_at: i.created_at, expires_at: exp,
       link: status === 'pending' ? `${config.baseUrl}/admin/invite/${i.token}` : null,
     };
   });

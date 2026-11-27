@@ -128,7 +128,7 @@ let app, protoId, shareToken;
     const rawRes = await agent.get(`/p/${shareToken}/raw`);
     expect(rawRes.status).toBe(200);
     expect(rawRes.text).toContain('HTML AGAIN');
-    expect(rawRes.headers['content-security-policy']).toBe('sandbox allow-scripts');
+    expect(rawRes.headers['content-security-policy']).toBe('sandbox allow-scripts allow-forms');
     expect(rawRes.headers['content-security-policy']).not.toMatch(/script-src 'self'/);
   });
 

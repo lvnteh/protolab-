@@ -101,11 +101,11 @@ async function reviewerFor(protoId) {
   afterAll(async () => { await closeDb(); });
 
   // ── S1: sandbox CSP header on executable uploaded HTML ──────────────────────
-  test('GET /p/:token/raw sends exactly "sandbox allow-scripts" CSP', async () => {
+  test('GET /p/:token/raw sends the "sandbox allow-scripts allow-forms" CSP', async () => {
     const reviewer = await reviewerFor(htmlProtoId);
     const res = await reviewer.get(`/p/${htmlToken}/raw`);
     expect(res.status).toBe(200);
-    expect(res.headers['content-security-policy']).toBe('sandbox allow-scripts');
+    expect(res.headers['content-security-policy']).toBe('sandbox allow-scripts allow-forms');
     // The sandbox header must NOT grant same-origin back to the prototype.
     expect(res.headers['content-security-policy']).not.toMatch(/allow-same-origin/);
     // The injected bridge carries the trusted shell origin so it can message

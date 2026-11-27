@@ -155,9 +155,13 @@ function setMarkdownCsp(res) {
 // This header is the authority even when /raw is opened directly (no iframe
 // sandbox attribute in play), so a reviewer who pastes the raw URL into a tab
 // still gets an opaque, de-privileged document. The iframe `sandbox` attribute
-// in proto-shell.html is the defence-in-depth twin for the framed path.
+// in proto-shell.html is the defence-in-depth twin for the framed path — and it
+// grants `allow-forms` too, so this header MUST match it (otherwise an in-proto
+// form works framed but not when the raw URL is opened directly). `allow-forms`
+// does NOT weaken isolation: the origin stays opaque (no allow-same-origin), so
+// a submitted form still can't carry the reviewer's session cookie.
 function setHtmlSandboxCsp(res) {
-  res.setHeader('Content-Security-Policy', 'sandbox allow-scripts');
+  res.setHeader('Content-Security-Policy', 'sandbox allow-scripts allow-forms');
 }
 
 router.get('/:shareToken/view', customerAuth, async (req, res) => {

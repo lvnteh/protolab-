@@ -444,6 +444,9 @@ function renderPager(containerId, infoId, total, page, onPage) {
 let commentsPage = 1;
 // commentId -> { thumb, xPct, yPct, label } for comments that have a screenshot.
 const shotMeta = {};
+// Bumped on every openShot so a late image load / safety-net timeout from a
+// previous open can't resurrect a modal the admin has since closed or replaced.
+let shotOpenToken = 0;
 let commentType = '';
 let commentVersion = '';
 
@@ -801,18 +804,34 @@ function openShot(commentId) {
     pin.style.top = (meta.yPct * 100) + '%';
     pin.style.display = '';
   };
-  img.onload = placePin;
-  img.onerror = () => { document.getElementById('shot-caption').textContent = 'Comment — image unavailable'; };
+
+  // Reveal the modal only once the screenshot has loaded, so the lightbox opens
+  // straight into the full side-by-side layout instead of flashing a collapsed
+  // comment-only box while the image is still fetching. A guard keeps it to a
+  // single reveal; a slow/failed image still shows (via onerror / timeout).
+  let revealed = false;
+  const myToken = ++shotOpenToken;
+  const reveal = () => {
+    if (revealed || myToken !== shotOpenToken) return;
+    revealed = true;
+    backdrop.style.display = 'flex';
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+  };
+  img.onload = () => { placePin(); reveal(); };
+  img.onerror = () => {
+    document.getElementById('shot-caption').textContent = 'Comment — image unavailable';
+    reveal();
+  };
   // Prefer the inline thumbnail; fall back to the gated full-image route.
   img.src = meta.thumb || ('/admin/prototypes/' + PROTO_ID + '/comments/' + commentId + '/screenshot');
   // A cached / data-URL image can be decoded synchronously, so `load` may have
-  // already fired (or won't) — place the pin immediately in that case.
-  if (img.complete && img.naturalWidth > 0) placePin();
-
-  backdrop.style.display = 'flex';
-  requestAnimationFrame(() => backdrop.classList.add('open'));
+  // already fired (or won't) — place the pin and reveal immediately in that case.
+  if (img.complete && img.naturalWidth > 0) { placePin(); reveal(); }
+  // Safety net: never leave the admin staring at nothing if the image hangs.
+  setTimeout(reveal, 4000);
 }
 function closeShot() {
+  shotOpenToken++; // invalidate any pending reveal from the open we're closing
   const el = document.getElementById('shot-modal');
   el.classList.remove('open');
   el.addEventListener('transitionend', () => {

@@ -1707,6 +1707,13 @@
   // translated the iframe-local click point into shell-viewport px. Captures a
   // screenshot (with a marker at the click point) and opens the draft card.
   function handleProtoClick(vx, vy) {
+    // A draft is a modal step: while its card is open, a click on the prototype
+    // (which is what reached us here — the card itself is our own UI and never
+    // routes through this path) means "dismiss and go back to plain comment
+    // mode", NOT "start another comment". Without this guard a second click
+    // captured a fresh screenshot while the first draft card was still on screen,
+    // nesting a screenshot-in-a-screenshot. Closing keeps us in comment mode.
+    if (draft || rangeDraft) { closeDraft(); return; }
     spawnRipple(vx, vy);
     const shot = captureScreenshot(vx, vy);
     draft = { selector: null, xPct: null, yPct: null, tag: null, shot };
@@ -1720,6 +1727,10 @@
   document.addEventListener('mouseup', () => {
     if (mode !== 'comment') return;
     if (IS_HTML_PROTO) return; // HTML prototypes use click-to-comment, not text selection
+    // A draft is already open (modal step): don't let a fresh selection start a
+    // competing range draft. The open card is the only active surface until it's
+    // resolved (Post / Cancel / Esc / click-out).
+    if (draft || rangeDraft) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
@@ -1749,6 +1760,11 @@
     // This MUST run before the suppress guard so a selection's trailing state can
     // never swallow a click on the draft card's Post button.
     if (isOwnUi(e.target)) return;
+    // A draft/range-draft is a modal step. A click out here (not on our own UI)
+    // dismisses it and returns to plain comment mode rather than starting a
+    // second comment — mirrors handleProtoClick's guard for the framed path and
+    // prevents nesting a new capture on top of the open draft card.
+    if (draft || rangeDraft) { e.preventDefault(); e.stopPropagation(); closeDraft(); return; }
     // Swallow the click that ends a text-selection drag (so it doesn't also drop
     // an element pin). Only consumed for document clicks, never the UI clicks above.
     if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }

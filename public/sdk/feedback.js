@@ -72,8 +72,26 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,.12);
     }
-    #__fb-toolbar-left { display: flex; align-items: center; gap: 8px; }
+    #__fb-toolbar-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
     #__fb-toolbar-title { font-weight: 600; font-size: 13px; color: #fff; }
+    /* Comment-mode: the single toolbar tints to signal the mode (replaces the
+       old separate full-width banner stripe). */
+    body.__fb-comment-mode #__fb-toolbar { background: hsl(252,83%,45%); }
+    /* Inline comment-mode hint, shown only while commenting — folds the former
+       banner's instruction into the toolbar so no second stripe is needed. */
+    #__fb-toolbar-hint {
+      display: none; align-items: center; gap: 6px;
+      margin-left: 4px; padding-left: 12px;
+      border-left: 1px solid rgba(255,255,255,.3);
+      font-size: 12px; color: rgba(255,255,255,.92);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    body.__fb-comment-mode #__fb-toolbar-hint { display: inline-flex; }
+    #__fb-toolbar-hint kbd {
+      font-family: inherit; font-size: 11px; line-height: 1;
+      background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.35);
+      border-radius: 4px; padding: 2px 5px;
+    }
     #__fb-mode-switcher {
       display: inline-flex; border-radius: 8px; border: 1px solid rgba(255,255,255,.25);
       background: rgba(255,255,255,.15); padding: 2px; gap: 0;
@@ -186,14 +204,7 @@
     #__fb-version-switcher:focus-visible { border-color: rgba(255,255,255,.6); box-shadow: 0 0 0 2px rgba(255,255,255,.25); }
     #__fb-version-switcher option { color: hsl(222,47%,11%); background: #fff; font-weight: 500; }
 
-    #__fb-comment-banner {
-      position: fixed; top: 44px; left: 0; right: var(--fb-sidebar-w, 32px); z-index: 2147483646;
-      background: hsl(252,83%,45%); color: #fff; text-align: center;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 12px; padding: 6px; pointer-events: none; display: none;
-    }
-    body.__fb-comment-mode #__fb-comment-banner { display: block; }
-    body.__fb-comment-mode { padding-top: 72px !important; cursor: crosshair !important; }
+    body.__fb-comment-mode { cursor: crosshair !important; }
     body.__fb-comment-mode * { cursor: crosshair !important; }
     body.__fb-comment-mode.__fb-draft-open,
     body.__fb-comment-mode.__fb-draft-open * { cursor: default !important; }
@@ -534,6 +545,10 @@
     <div id="__fb-toolbar-left">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#fff" width="18" height="18" style="flex-shrink:0"><path d="M13.13 22.19L11.5 18.36C13.07 17.78 14.54 17 15.9 16.09L13.13 22.19M5.64 12.5L1.81 10.87L7.91 8.1C7 9.46 6.22 10.93 5.64 12.5M21.61 2.39C21.61 2.39 16.66 .269 11 5.93C8.81 8.12 7.5 10.53 6.65 12.64C6.37 13.39 6.56 14.21 7.11 14.77L9.24 16.89C9.79 17.45 10.61 17.63 11.36 17.35C13.5 16.53 15.88 15.19 18.07 13C23.73 7.34 21.61 2.39 21.61 2.39M14.54 9.46C13.76 8.68 13.76 7.41 14.54 6.63S16.59 5.85 17.37 6.63C18.14 7.41 18.15 8.68 17.37 9.46C16.59 10.24 15.32 10.24 14.54 9.46M8.88 16.53L7.47 15.12L8.88 16.53M6.24 22L9.88 18.36C9.54 18.27 9.21 18.12 8.91 17.91L4.83 22H6.24M2 22H3.41L8.18 17.24L6.76 15.83L2 20.59V22M2 19.17L6.09 15.09C5.88 14.79 5.73 14.46 5.64 14.12L2 17.76V19.17Z"/></svg>
       <span id="__fb-toolbar-title">ProtoLab</span>
+      <span id="__fb-toolbar-hint">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span id="__fb-toolbar-hint-text"></span>
+      </span>
     </div>
     <div id="__fb-toolbar-right">
       <button id="__fb-shot-btn" type="button" title="Capture a screenshot of the shared view when you place a comment">
@@ -573,12 +588,14 @@
     toolbarLeft.appendChild(sel);
   }
 
-  const commentBanner = document.createElement('div');
-  commentBanner.id = '__fb-comment-banner';
-  commentBanner.textContent = IS_MARKDOWN
-    ? 'Select any text to leave a comment · Esc to exit'
-    : 'Click any element to leave a comment · Esc to exit';
-  document.body.insertBefore(commentBanner, toolbar.nextSibling);
+  // Comment-mode hint text lives inline in the toolbar (shown via the
+  // body.__fb-comment-mode CSS). Wording depends on how this proto is annotated.
+  const hintText = document.getElementById('__fb-toolbar-hint-text');
+  if (hintText) {
+    hintText.innerHTML = (IS_MARKDOWN
+      ? 'Select any text to leave a comment · '
+      : 'Click any element to leave a comment · ') + '<kbd>Esc</kbd> to exit';
+  }
   // Tag the body so the markdown-only CSS (text cursor, selection-first) applies.
   if (IS_MARKDOWN) document.body.classList.add('__fb-markdown');
 
@@ -782,7 +799,7 @@
     document.body.classList.toggle('__fb-comment-mode', m === 'comment');
     // Tell the bridge whether to intercept prototype clicks and show the crosshair.
     postToFrame({ type: 'commentMode', on: m === 'comment' });
-    if (IS_FRAMED) layoutFrame(); // banner toggles the iframe's top offset
+    if (IS_FRAMED) layoutFrame(); // keep the iframe width in sync on mode change
     if (m !== 'comment') closeDraft();
     renderPinLayer();
     renderRangeLayer();
@@ -863,12 +880,12 @@
   }
 
   // Position/size the prototype iframe within the shell so it fills the area below
-  // the toolbar (and banner, in comment mode) and left of the sidebar. Only used
-  // in framed mode.
+  // the toolbar and left of the sidebar. Only used in framed mode. The toolbar is a
+  // fixed 44px in every mode (the comment hint is inline, not a separate stripe).
   function layoutFrame() {
     if (!PROTO_FRAME) return;
     const sidebarW = sidebarExpanded ? 260 : 32;
-    const topOffset = (mode === 'comment') ? 72 : 44; // toolbar (+ banner when commenting)
+    const topOffset = 44; // toolbar height
     PROTO_FRAME.style.top = topOffset + 'px';
     PROTO_FRAME.style.height = 'calc(100vh - ' + topOffset + 'px)';
     PROTO_FRAME.style.width = 'calc(100vw - ' + sidebarW + 'px)';
@@ -2397,7 +2414,7 @@
       if (d.type === 'click') {
         // Prototype click in comment mode. Coordinates are iframe-local; translate
         // to shell-viewport space by adding the iframe's on-screen offset (it sits
-        // below the toolbar/banner and flush-left), since the screenshot frame and
+        // below the toolbar and flush-left), since the screenshot frame and
         // the ripple/marker geometry are all in shell-viewport px.
         if (mode === 'comment') {
           const r = PROTO_FRAME.getBoundingClientRect();

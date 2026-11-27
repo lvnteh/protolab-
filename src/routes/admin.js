@@ -459,6 +459,19 @@ router.get('/prototypes/:id/preview', orgs.requireOrg, async (req, res) => {
   }
 
   const html = injectPreview(documentHtml, proto.id, highlightId, JSON.stringify(comments));
+  // HTML previews render EXECUTABLE uploaded markup at the app origin in the
+  // admin's own browser. Sandbox it the same way /p/:token/raw is: the CSP
+  // `sandbox allow-scripts` forces an opaque origin (prototype scripts still run,
+  // but it cannot touch the admin's app-origin cookies, storage, or authenticated
+  // endpoints) and blocks top navigation. preview.js only reads its own injected
+  // DOM + inline data-comments, so it needs no app-origin privilege and works
+  // unchanged under the opaque origin. Markdown previews are already sanitized
+  // (markdown-it html:false + sanitize-html) and carry no executable author
+  // markup, so they are NOT sandboxed here (parity with the markdown delivery
+  // view, which keeps its own restrictive CSP).
+  if (contentType !== 'markdown') {
+    res.setHeader('Content-Security-Policy', 'sandbox allow-scripts');
+  }
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });

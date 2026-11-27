@@ -68,18 +68,26 @@ const testPassword = 'password123';
     expect(res.headers.location).toContain('prototypes');
   });
 
-  test('GET /admin/prototypes returns 200 when authenticated', async () => {
+  test('GET /admin/prototypes redirects to the canonical org URL when authenticated', async () => {
+    // Legacy unscoped read links now redirect to the canonical
+    // /admin/orgs/:orgId/prototypes URL (Task 3). Following it yields the list.
     const agent = request.agent(app);
     await agent.post('/admin/login').send(`email=${testEmail}&password=${testPassword}`);
     const res = await agent.get('/admin/prototypes');
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toMatch(/\/admin\/orgs\/[^/]+\/prototypes/);
+    const followed = await agent.get(res.headers.location);
+    expect(followed.status).toBe(200);
   });
 
   test('POST /admin/logout destroys the session and redirects to login', async () => {
     const agent = request.agent(app);
     await agent.post('/admin/login').send(`email=${testEmail}&password=${testPassword}`);
-    // Sanity: the session is authenticated before logout.
-    expect((await agent.get('/admin/prototypes')).status).toBe(200);
+    // Sanity: the session is authenticated before logout (legacy read redirects
+    // to the canonical org URL rather than to login).
+    const before = await agent.get('/admin/prototypes');
+    expect(before.status).toBe(302);
+    expect(before.headers.location).toMatch(/\/admin\/orgs\//);
 
     const out = await agent.post('/admin/logout');
     expect(out.status).toBe(302);

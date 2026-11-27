@@ -148,8 +148,9 @@ async function mkPrototype(orgId, ownerId, name = 'P') {
 
     test('viewer can READ the org prototype list and detail', async () => {
       const agent = await login(app, viewerEmail);
-      expect((await agent.get('/admin/prototypes')).status).toBe(200);
-      expect((await agent.get(`/admin/prototypes/${protoId}`)).status).toBe(200);
+      // Canonical org-scoped read URLs (Task 3); legacy unscoped reads 302 here.
+      expect((await agent.get(`/admin/orgs/${orgId}/prototypes`)).status).toBe(200);
+      expect((await agent.get(`/admin/orgs/${orgId}/prototypes/${protoId}`)).status).toBe(200);
     });
 
     test('viewer is DENIED write actions (403)', async () => {

@@ -127,8 +127,10 @@ async function signUpAsOrgAdmin(app) {
 
     test('succeeds and stores a bcrypt hash (not plaintext)', async () => {
       const { email, res } = await signUp(app);
+      // Post-EMS-consolidation a bare signup has zero orgs and lands on the
+      // create-or-join home (Task 2), not a prototype list.
       expect(res.status).toBe(302);
-      expect(res.headers.location).toContain('prototypes');
+      expect(res.headers.location).toContain('/admin/home');
       const { rows } = await getDb().query('SELECT password_hash FROM users WHERE email = $1', [email]);
       expect(rows).toHaveLength(1);
       expect(rows[0].password_hash).not.toBe('password123');
@@ -137,11 +139,11 @@ async function signUpAsOrgAdmin(app) {
   });
 
   describe('login by email', () => {
-    test('a signed-up user can log in via email + password', async () => {
+    test('a signed-up (org-less) user can log in and lands on the create-or-join home', async () => {
       const { email } = await signUp(app);
       const res = await request(app).post('/admin/login').send(`email=${email}&password=password123`);
       expect(res.status).toBe(302);
-      expect(res.headers.location).toContain('prototypes');
+      expect(res.headers.location).toContain('/admin/home');
     });
   });
 
@@ -218,13 +220,17 @@ async function signUpAsOrgAdmin(app) {
       const { rows: stillThere } = await getDb().query('SELECT 1 FROM prototypes WHERE id = $1', [protoIdA]);
       expect(stillThere).toHaveLength(1);
 
-      // A's prototype does not appear in B's list
-      const list = await agentB.get('/admin/prototypes');
+      // A's prototype does not appear in B's list (follow the legacy→canonical
+      // redirect to reach the rendered list).
+      const listRedirect = await agentB.get('/admin/prototypes');
+      expect(listRedirect.status).toBe(302);
+      const list = await agentB.get(listRedirect.headers.location);
       expect(list.status).toBe(200);
       expect(list.text).not.toContain(protoIdA);
 
-      // ...but it DOES appear in A's list
-      const listA = await agentA.get('/admin/prototypes');
+      // ...but it DOES appear in A's list.
+      const listARedirect = await agentA.get('/admin/prototypes');
+      const listA = await agentA.get(listARedirect.headers.location);
       expect(listA.text).toContain(protoIdA);
     });
 

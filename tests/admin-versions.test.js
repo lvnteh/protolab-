@@ -195,7 +195,9 @@ async function addOrgMember(userEmail, targetOrgId) {
   test('the detail view renders the version upload form for an admin', async () => {
     const agent = request.agent(app);
     await agent.post('/admin/login').send(`email=${email}&password=${password}`);
-    const res = await agent.get(`/admin/prototypes/${protoId}`).expect(200);
+    // Canonical org-scoped detail URL (Task 3); the legacy /admin/prototypes/:id
+    // redirects here after a resource-membership check.
+    const res = await agent.get(`/admin/orgs/${orgId}/prototypes/${protoId}`).expect(200);
     expect(res.text).toContain('id="version-upload-form"');
     expect(res.text).toContain('accept=".html"');     // html prototype → accept locked
   });

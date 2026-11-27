@@ -31,13 +31,21 @@ let app, protoId, orgId;
     app.use(express.json());
     app.use(session({ secret: 'test', resave: false, saveUninitialized: false }));
     // Simulate a reviewer's share-link session. delivery.js binds the session to
-    // exactly one prototype on /enter; the /api routes now authorize against
-    // that binding. Tests that exercise a *different* prototype set the
-    // `x-test-proto` header so the stub session is bound to the right one —
-    // mirroring a reviewer who entered via that prototype's link.
-    app.use((req, _res, next) => {
+    // exactly one prototype on /enter; the /api routes now resolve a structured
+    // actor and re-check EFFECTIVE reviewer access (Task 6) — an explicit
+    // allowlist row OR a current same-org member email. To mirror a reviewer who
+    // legitimately entered via a prototype's share link (which requires passing
+    // that access check), the stub ensures the session email is on the bound
+    // prototype's allowlist before the request runs. Tests that exercise a
+    // *different* prototype set `x-test-proto` so the binding matches.
+    app.use(async (req, _res, next) => {
       req.session.customerEmail = 'user@example.com';
       req.session.prototypeId = req.get('x-test-proto') || protoId;
+      try {
+        await getDb().query(
+          'INSERT INTO allowlist (prototype_id, email) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+          [req.session.prototypeId, 'user@example.com']);
+      } catch { /* prototype may not exist yet for negative tests; access check will 403 */ }
       next();
     });
     app.use('/api', apiRouter);
@@ -224,12 +232,13 @@ let app, protoId, orgId;
         pageUrl: '/p/v/view',
       });
       victimCommentId = c.body.id;
-      const e = await request(app).post('/api/explanations').set('x-test-proto', victimProto).send({
-        prototypeId: victimProto,
-        elementSelector: '#secret',
-        body: 'Victim secret explanation',
-      });
-      victimExplanationId = e.body.id;
+      // Explanations are admin-only to create (Task 6 capability matrix), so this
+      // reviewer session can no longer POST one — seed it directly in the DB.
+      victimExplanationId = nanoid(12);
+      await getDb().query(
+        `INSERT INTO explanations (id, prototype_id, element_selector, body, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [victimExplanationId, victimProto, '#secret', 'Victim secret explanation', new Date().toISOString(), new Date().toISOString()]);
     });
 
     // The attacker's session is bound to the DEFAULT protoId (not victimProto).
@@ -366,7 +375,7 @@ let app, protoId, orgId;
   });
 
   describe('version-scoped annotations', () => {
-    let vp, v1, v2;
+    let vp, v1, v2, adminApp;
     beforeAll(async () => {
       vp = nanoid(12);
       await getDb().query(
@@ -383,6 +392,20 @@ let app, protoId, orgId;
       v1 = await mk(1); v2 = await mk(2);
       await getDb().query('UPDATE prototypes SET published_version_id = $1 WHERE id = $2', [v2, vp]);
       void v1;
+
+      // Explanations are admin-only to create (Task 6). Build a second app whose
+      // session is an ADMIN member of the prototype's org, so these tests can
+      // exercise the explanation unique-index behavior with a legitimate actor.
+      const adminId = nanoid(12);
+      await getDb().query('INSERT INTO users (id,email,password_hash,created_at) VALUES ($1,$2,$3,$4)',
+        [adminId, `vpadmin-${adminId}@sap.com`, 'x', new Date().toISOString()]);
+      await getDb().query(`INSERT INTO org_memberships (id,org_id,user_id,role,created_at) VALUES ($1,$2,$3,'admin',$4)`,
+        [nanoid(12), orgId, adminId, new Date().toISOString()]);
+      adminApp = express();
+      adminApp.use(express.json());
+      adminApp.use(session({ secret: 'test', resave: false, saveUninitialized: false }));
+      adminApp.use((req, _res, next) => { req.session.userId = adminId; next(); });
+      adminApp.use('/api', apiRouter);
     });
 
     test('a comment is stamped against the viewed version and only shows there', async () => {
@@ -421,11 +444,12 @@ let app, protoId, orgId;
     });
 
     test('same selector explanation on two versions is OK; same version is 409 (Review Focus #3)', async () => {
-      await request(app).post('/api/explanations').set('x-test-proto', vp)
+      // Explanations are admin-only (Task 6) — drive via the admin-session app.
+      await request(adminApp).post('/api/explanations')
         .send({ prototypeId: vp, elementSelector: '.e', pageUrl: '/e', body: 'live one', version: 2 }).expect(201);
-      await request(app).post('/api/explanations').set('x-test-proto', vp)
+      await request(adminApp).post('/api/explanations')
         .send({ prototypeId: vp, elementSelector: '.e', pageUrl: '/e', body: 'dupe', version: 2 }).expect(409);
-      await request(app).post('/api/explanations').set('x-test-proto', vp)
+      await request(adminApp).post('/api/explanations')
         .send({ prototypeId: vp, elementSelector: '.e', pageUrl: '/e', body: 'v1 one', version: 1 }).expect(201);
     });
   });

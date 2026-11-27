@@ -96,6 +96,12 @@ async function mkProto(orgId, ownerId) {
     orgId = await mkOrg('ss-org');
     await mkAdminMembership(orgId, adminUserId);
     protoId = await mkProto(orgId, adminUserId);
+    // The reviewer sessions below enter as 'rev@x.com'; /api now re-checks
+    // effective reviewer access (Task 6), so the email must be on the prototype's
+    // allowlist (mirroring a reviewer who entered via the share link).
+    await getDb().query(
+      'INSERT INTO allowlist (prototype_id, email) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+      [protoId, 'rev@x.com']);
     await initDb(); // idempotent backfill gives the prototype its v1
 
     adminAgent = request.agent(app);
@@ -205,6 +211,7 @@ async function mkProto(orgId, ownerId) {
   test('deleting a prototype removes all its comment images', async () => {
     // Fresh prototype so we can delete it wholesale.
     const pid = await mkProto(orgId, adminUserId);
+    await getDb().query('INSERT INTO allowlist (prototype_id, email) VALUES ($1,$2) ON CONFLICT DO NOTHING', [pid, 'rev@x.com']);
     await initDb();
     const reviewer = request.agent(app);
     await reviewer.post('/__seed').send({ prototypeId: pid, customerEmail: 'rev@x.com' });

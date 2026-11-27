@@ -1,7 +1,10 @@
 // src/middleware/apiTokenAuth.js
 // Machine-facing auth for /api/v1/*. Parses a Bearer token, resolves it to a
-// user via the token service, and sets req.userId. The session-cookie adminAuth
-// and this never mix — /api/v1 is bearer-only, /admin is cookie-only.
+// user via the token service, and sets req.userId/req.orgId. resolveToken now
+// also rechecks that the owner is still an ADMIN member of the token's org, so a
+// demoted/removed user's token 401s here even if the row still exists. The
+// session-cookie adminAuth and this never mix — /api/v1 is bearer-only, /admin
+// is cookie-only.
 const { resolveToken } = require('../services/tokens');
 
 async function apiTokenAuth(req, res, next) {

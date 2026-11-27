@@ -1,13 +1,94 @@
 // src/services/orgs.js
-// Organization membership + role resolution (P1 multi-tenancy). The tenant
-// boundary is the org: a prototype belongs to an org (prototypes.org_id), and a
-// user's access is decided by their role in that org (org_memberships).
+// Organization membership + role resolution + org management (invites, roles,
+// members). The tenant boundary is the org: a prototype belongs to an org
+// (prototypes.org_id), and a user's access is decided by their role in that org
+// (org_memberships).
 //
 // Roles (this phase): 'admin' (full control of prototypes + org) and 'viewer'
 // (read org prototypes/feedback + add comments; no writes, no org management).
-// A future plan splits admin into owner/member — see
-// docs/superpowers/plans/2026-07-29-future-owner-member-roles.md.
+//
+// CONCURRENCY INVARIANTS (management writes): any action that can change who is
+// an admin — setRole, removeMember, acceptInvite, createOrg — runs in a single
+// transaction on ONE checked-out client, BEGIN..COMMIT/ROLLBACK. Inside it we:
+//   1. SELECT ... FOR UPDATE the organizations row (serialises concurrent
+//      management of the same org — lock order is ALWAYS org first, then the
+//      invitation/membership row), then
+//   2. recheck the ACTOR's admin role inside the txn (authorization can't be
+//      trusted to a read taken before the lock), then
+//   3. count the REMAINING admins inside the txn and throw LastAdminError if the
+//      action would drop the org below one admin.
+const { nanoid } = require('nanoid');
 const { getDb } = require('../db');
+
+// Thrown when an action (role change / removal) would leave an org with zero
+// admins. Callers map it to a 409 (conflict) rather than a 500. `code` lets a
+// caller branch without string-matching the message.
+class LastAdminError extends Error {
+  constructor(message = 'An organization must keep at least one admin.') {
+    super(message);
+    this.name = 'LastAdminError';
+    this.code = 'LAST_ADMIN';
+  }
+}
+
+// Thrown when the actor is not an admin of the org they are trying to manage.
+class NotAuthorizedError extends Error {
+  constructor(message = 'Requires admin role.') {
+    super(message);
+    this.name = 'NotAuthorizedError';
+    this.code = 'NOT_AUTHORIZED';
+  }
+}
+
+// Thrown when an invite token is unknown, already terminal, or does not match
+// the accepting user's email.
+class InvalidInviteError extends Error {
+  constructor(message = 'Invalid or expired invitation.') {
+    super(message);
+    this.name = 'InvalidInviteError';
+    this.code = 'INVALID_INVITE';
+  }
+}
+
+const now = () => new Date().toISOString();
+
+// Run `fn(client)` inside a BEGIN..COMMIT, rolling back (and re-throwing) on any
+// error. ONE checked-out client is used for the whole unit of work so FOR UPDATE
+// row locks are actually held across the statements that depend on them.
+async function withTx(fn) {
+  const client = await getDb().connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Lock the org row FOR UPDATE and assert the actor is an admin of it — both on
+// the supplied in-transaction client, so the check reflects state no other txn
+// can change until we commit. Returns nothing; throws NotAuthorizedError if the
+// org is missing or the actor is not an admin.
+async function lockOrgAsAdmin(client, actorUserId, orgId) {
+  const { rows: org } = await client.query(
+    'SELECT id FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
+  if (!org[0]) throw new NotAuthorizedError();
+  const { rows: m } = await client.query(
+    'SELECT role FROM org_memberships WHERE org_id = $1 AND user_id = $2', [orgId, actorUserId]);
+  if (!m[0] || m[0].role !== 'admin') throw new NotAuthorizedError();
+}
+
+// Count current admins of an org (on the given client, inside the txn).
+async function countAdmins(client, orgId) {
+  const { rows } = await client.query(
+    "SELECT COUNT(*)::int AS n FROM org_memberships WHERE org_id = $1 AND role = 'admin'", [orgId]);
+  return rows[0].n;
+}
 
 // Resolve a user's role in an org, or null if they are not a member.
 async function membership(userId, orgId) {
@@ -20,8 +101,8 @@ async function membership(userId, orgId) {
 }
 
 // The org a user should act in by default: their most-recently-created
-// membership. Used to set req.session.activeOrgId at login/signup when the user
-// has not explicitly picked an org.
+// membership. Used to set req.session.activeOrgId at login when the user has
+// not explicitly picked an org.
 async function defaultOrgId(userId) {
   const { rows } = await getDb().query(
     'SELECT org_id FROM org_memberships WHERE user_id = $1 ORDER BY created_at DESC, org_id DESC LIMIT 1',
@@ -42,10 +123,259 @@ async function getOrgPrototype(id, orgId, columns = '*') {
   return rows[0] || null;
 }
 
+// --- Org management service ---------------------------------------------------
+
+// Create a new org and make the creator its first admin. User + org + membership
+// run in one transaction so a failure leaves no orphan org without an admin.
+// Returns { id, name }.
+async function createOrg(userId, name) {
+  const orgName = (name || '').trim();
+  if (!userId) throw new NotAuthorizedError('A user is required to create an org.');
+  if (!orgName) throw new Error('Organization name is required.');
+  return withTx(async (client) => {
+    const orgId = nanoid(12);
+    const nowIso = now();
+    await client.query(
+      'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+      [orgId, orgName, nowIso]);
+    await client.query(
+      `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+       VALUES ($1,$2,$3,'admin',$4)`,
+      [nanoid(12), orgId, userId, nowIso]);
+    return { id: orgId, name: orgName };
+  });
+}
+
+// List the orgs a user belongs to, with their role in each. Ordered by
+// membership recency (newest first) so the UI can default to the latest.
+async function listUserOrgs(userId) {
+  const { rows } = await getDb().query(
+    `SELECT o.id, o.name, m.role, m.created_at
+       FROM org_memberships m
+       JOIN organizations o ON o.id = m.org_id
+      WHERE m.user_id = $1
+      ORDER BY m.created_at DESC, o.id DESC`,
+    [userId]);
+  return rows;
+}
+
+// List an org's members (user id, email, role, joined-at).
+async function listMembers(orgId) {
+  const { rows } = await getDb().query(
+    `SELECT u.id AS user_id, u.email, m.role, m.created_at
+       FROM org_memberships m
+       JOIN users u ON u.id = m.user_id
+      WHERE m.org_id = $1
+      ORDER BY m.created_at ASC, u.email ASC`,
+    [orgId]);
+  return rows;
+}
+
+// Change a member's role. Admin-only. Guards (all inside ONE txn, after locking
+// the org row): actor must still be an admin; demoting the last remaining admin
+// is refused with LastAdminError. Demotion from admin -> viewer revokes that
+// user's API tokens for this org in the SAME transaction (a demoted user must
+// lose machine access atomically, so a token can't outlive the privilege).
+async function setRole(actorUserId, orgId, targetUserId, newRole) {
+  if (newRole !== 'admin' && newRole !== 'viewer') {
+    throw new Error("role must be 'admin' or 'viewer'.");
+  }
+  return withTx(async (client) => {
+    await lockOrgAsAdmin(client, actorUserId, orgId);
+    const { rows: target } = await client.query(
+      'SELECT role FROM org_memberships WHERE org_id = $1 AND user_id = $2', [orgId, targetUserId]);
+    if (!target[0]) throw new Error('That user is not a member of this organization.');
+    const currentRole = target[0].role;
+    if (currentRole === newRole) return { changed: false };
+
+    // Demoting an admin -> viewer: refuse if they are the last admin.
+    if (currentRole === 'admin' && newRole === 'viewer') {
+      if ((await countAdmins(client, orgId)) <= 1) throw new LastAdminError();
+    }
+
+    await client.query(
+      'UPDATE org_memberships SET role = $1 WHERE org_id = $2 AND user_id = $3',
+      [newRole, orgId, targetUserId]);
+
+    // Losing admin means losing machine access: revoke this user's org tokens.
+    if (currentRole === 'admin' && newRole === 'viewer') {
+      await client.query(
+        'DELETE FROM api_tokens WHERE org_id = $1 AND user_id = $2', [orgId, targetUserId]);
+    }
+    return { changed: true };
+  });
+}
+
+// Remove a member from an org. Admin-only. Refuses to remove the last admin
+// (LastAdminError). Revokes that user's API tokens for this org in the SAME
+// transaction so machine access dies with the membership.
+async function removeMember(actorUserId, orgId, targetUserId) {
+  return withTx(async (client) => {
+    await lockOrgAsAdmin(client, actorUserId, orgId);
+    const { rows: target } = await client.query(
+      'SELECT role FROM org_memberships WHERE org_id = $1 AND user_id = $2', [orgId, targetUserId]);
+    if (!target[0]) return { removed: false };
+    if (target[0].role === 'admin' && (await countAdmins(client, orgId)) <= 1) {
+      throw new LastAdminError();
+    }
+    await client.query(
+      'DELETE FROM api_tokens WHERE org_id = $1 AND user_id = $2', [orgId, targetUserId]);
+    await client.query(
+      'DELETE FROM org_memberships WHERE org_id = $1 AND user_id = $2', [orgId, targetUserId]);
+    return { removed: true };
+  });
+}
+
+// --- Invitations --------------------------------------------------------------
+
+// Create a pending invite for `email` to join `orgId` at `role`. Admin-only. The
+// token is nanoid(24), the opaque handle in the invite link. At most one PENDING
+// invite per (org, email) — enforced by uq_invites_pending; a duplicate pending
+// invite surfaces as a 23505, which we translate to a typed error. Returns
+// { id, token, email, role }.
+async function createInvite(actorUserId, orgId, email, role) {
+  const normEmail = (email || '').trim().toLowerCase();
+  if (!normEmail) throw new Error('An email is required to invite.');
+  if (role !== 'admin' && role !== 'viewer') throw new Error("role must be 'admin' or 'viewer'.");
+  return withTx(async (client) => {
+    await lockOrgAsAdmin(client, actorUserId, orgId);
+    const id = nanoid(12);
+    const token = nanoid(24);
+    try {
+      await client.query(
+        `INSERT INTO org_invitations (id, org_id, email, role, token, status, invited_by, created_at)
+         VALUES ($1,$2,$3,$4,$5,'pending',$6,$7)`,
+        [id, orgId, normEmail, role, token, actorUserId, now()]);
+    } catch (e) {
+      if (e.code === '23505') {
+        const err = new Error('A pending invitation for that email already exists.');
+        err.code = 'INVITE_EXISTS';
+        throw err;
+      }
+      throw e;
+    }
+    return { id, token, email: normEmail, role };
+  });
+}
+
+// Reissue an invite: revoke the referenced PENDING invite and create a fresh one
+// (new token) for the same email+role, atomically. Lets an admin rotate a leaked
+// or lost invite link. Admin-only. Returns the new { id, token, email, role }.
+async function reissueInvite(actorUserId, orgId, inviteId) {
+  return withTx(async (client) => {
+    await lockOrgAsAdmin(client, actorUserId, orgId);
+    const { rows: inv } = await client.query(
+      'SELECT id, email, role, status FROM org_invitations WHERE id = $1 AND org_id = $2 FOR UPDATE',
+      [inviteId, orgId]);
+    if (!inv[0]) throw new InvalidInviteError('Invitation not found.');
+    if (inv[0].status !== 'pending') {
+      throw new InvalidInviteError('Only a pending invitation can be reissued.');
+    }
+    const nowIso = now();
+    // Revoke the old one first so uq_invites_pending frees up for the new row.
+    await client.query(
+      "UPDATE org_invitations SET status = 'revoked', revoked_at = $1 WHERE id = $2",
+      [nowIso, inviteId]);
+    const id = nanoid(12);
+    const token = nanoid(24);
+    await client.query(
+      `INSERT INTO org_invitations (id, org_id, email, role, token, status, invited_by, created_at)
+       VALUES ($1,$2,$3,$4,$5,'pending',$6,$7)`,
+      [id, orgId, inv[0].email, inv[0].role, token, actorUserId, nowIso]);
+    return { id, token, email: inv[0].email, role: inv[0].role };
+  });
+}
+
+// List an org's invitations. `status` optionally filters (e.g. 'pending'). The
+// token is included so an admin UI can re-render/copy a pending invite link;
+// this listing is only ever reached behind an admin guard.
+async function listInvites(orgId, status = null) {
+  if (status) {
+    const { rows } = await getDb().query(
+      `SELECT id, org_id, email, role, status, token, invited_by, created_at, accepted_at, revoked_at
+         FROM org_invitations WHERE org_id = $1 AND status = $2 ORDER BY created_at DESC`,
+      [orgId, status]);
+    return rows;
+  }
+  const { rows } = await getDb().query(
+    `SELECT id, org_id, email, role, status, token, invited_by, created_at, accepted_at, revoked_at
+       FROM org_invitations WHERE org_id = $1 ORDER BY created_at DESC`,
+    [orgId]);
+  return rows;
+}
+
+// Revoke a pending invite. Admin-only. No-op (returns { revoked: false }) if the
+// invite is unknown or already terminal.
+async function revokeInvite(actorUserId, orgId, inviteId) {
+  return withTx(async (client) => {
+    await lockOrgAsAdmin(client, actorUserId, orgId);
+    const { rows } = await client.query(
+      "UPDATE org_invitations SET status = 'revoked', revoked_at = $1 " +
+      "WHERE id = $2 AND org_id = $3 AND status = 'pending' RETURNING id",
+      [now(), inviteId, orgId]);
+    return { revoked: rows.length > 0 };
+  });
+}
+
+// Accept an invite by token. The accepting user must be logged in and their
+// email must match the invite's email. Lock order: org row FIRST, then the
+// invitation row — both FOR UPDATE — so a concurrent revoke/accept can't race.
+// On success: inserts (or upgrades) the membership and marks the invite
+// accepted, atomically. Returns { orgId, role }. Throws InvalidInviteError if
+// the token is unknown, already terminal, or the email does not match.
+async function acceptInvite(userId, token, userEmail) {
+  const normEmail = (userEmail || '').trim().toLowerCase();
+  if (!userId) throw new NotAuthorizedError('Must be logged in to accept an invite.');
+  return withTx(async (client) => {
+    // Find the invite (not yet locked) to learn its org, so we can take the org
+    // lock FIRST (lock order: org, then invitation).
+    const { rows: pre } = await client.query(
+      'SELECT org_id FROM org_invitations WHERE token = $1', [token]);
+    if (!pre[0]) throw new InvalidInviteError();
+    const orgId = pre[0].org_id;
+
+    await client.query('SELECT id FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
+    const { rows: inv } = await client.query(
+      'SELECT id, org_id, email, role, status FROM org_invitations WHERE token = $1 FOR UPDATE', [token]);
+    if (!inv[0] || inv[0].status !== 'pending') throw new InvalidInviteError();
+    if (inv[0].email !== normEmail) throw new InvalidInviteError('This invitation was issued to a different email.');
+
+    const nowIso = now();
+    // Insert the membership, or upgrade an existing viewer to the invited role.
+    await client.query(
+      `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+      [nanoid(12), inv[0].org_id, userId, inv[0].role, nowIso]);
+    await client.query(
+      "UPDATE org_invitations SET status = 'accepted', accepted_at = $1 WHERE id = $2",
+      [nowIso, inv[0].id]);
+    return { orgId: inv[0].org_id, role: inv[0].role };
+  });
+}
+
+// --- Middleware ---------------------------------------------------------------
+
+// Require an authenticated user, no org required. Mirrors adminAuth.js (userId
+// present) but is a named export here so Task-1 routes that act BEFORE an active
+// org is chosen (accept-invite, create-org, org switch) can guard on login
+// without the requireOrg 403. For JSON/API callers it 401s; browser callers are
+// redirected to login.
+function requireLogin(req, res, next) {
+  if (req.session && req.session.userId) {
+    req.userId = req.session.userId;
+    return next();
+  }
+  if (req.accepts(['html', 'json']) === 'json') {
+    return res.status(401).json({ error: 'Login required.' });
+  }
+  return res.redirect('/admin/login');
+}
+
 // Middleware: require an authenticated user who is a member of their active org.
 // Sets req.orgId + req.orgRole. 401 if not logged in, 403 if no active-org
-// membership. If the session has no activeOrgId yet (e.g. an old session from
-// before P1), fall back to the user's default org and persist it.
+// membership. If the session has no activeOrgId yet, fall back to the user's
+// default org and persist it.
 async function requireOrg(req, res, next) {
   try {
     if (!req.session || !req.session.userId) return res.redirect('/admin/login');
@@ -73,4 +403,29 @@ async function requireAdmin(req, res, next) {
   });
 }
 
-module.exports = { membership, defaultOrgId, getOrgPrototype, requireOrg, requireAdmin };
+module.exports = {
+  // resolution / scoping
+  membership,
+  defaultOrgId,
+  getOrgPrototype,
+  // org management
+  createOrg,
+  listUserOrgs,
+  listMembers,
+  setRole,
+  removeMember,
+  // invitations
+  createInvite,
+  reissueInvite,
+  listInvites,
+  revokeInvite,
+  acceptInvite,
+  // middleware
+  requireLogin,
+  requireOrg,
+  requireAdmin,
+  // typed errors
+  LastAdminError,
+  NotAuthorizedError,
+  InvalidInviteError,
+};

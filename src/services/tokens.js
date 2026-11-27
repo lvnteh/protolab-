@@ -25,6 +25,15 @@ async function createToken(userId, name, orgId) {
 // Resolve a presented raw token ("<id>.<secret>") to { userId, tokenId, orgId },
 // or null if the id is unknown or the secret doesn't match. Single indexed
 // lookup + one async bcrypt compare. Bumps last_used_at on success.
+//
+// MACHINE-ACCESS RECHECK: a token grants org-scoped machine access only while
+// its owner is still an ADMIN member of the token's org. setRole/removeMember
+// delete a user's tokens in the same transaction as the demotion/removal, so a
+// revoked privilege kills the token immediately — but we ALSO recheck here as
+// defence-in-depth (and to cover tokens whose membership changed out-of-band):
+// if the user is no longer an admin member of the token's org, the token does
+// not resolve. The secret must still verify first, so this reveals nothing to a
+// caller holding a bad secret.
 async function resolveToken(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const dot = raw.indexOf('.');
@@ -36,6 +45,13 @@ async function resolveToken(raw) {
   if (!rows[0]) return null;
   const ok = await bcrypt.compare(secret, rows[0].token_hash);
   if (!ok) return null;
+  // Recheck current membership + admin role in the token's org. A token with no
+  // org (should not happen post-consolidation, org_id is NOT NULL) is rejected.
+  if (!rows[0].org_id) return null;
+  const { rows: m } = await getDb().query(
+    'SELECT role FROM org_memberships WHERE user_id = $1 AND org_id = $2',
+    [rows[0].user_id, rows[0].org_id]);
+  if (!m[0] || m[0].role !== 'admin') return null;
   await getDb().query('UPDATE api_tokens SET last_used_at = $1 WHERE id = $2',
     [new Date().toISOString(), id]);
   return { userId: rows[0].user_id, tokenId: id, orgId: rows[0].org_id };

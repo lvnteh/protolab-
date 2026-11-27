@@ -334,13 +334,14 @@
 
     /* toast */
     #__fb-toast {
-      position: fixed; bottom: 24px; right: 16px; z-index: 2147483647;
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-8px);
+      z-index: 2147483647;
       background: hsl(142,71%,30%); color: #fff; border-radius: 8px; padding: 10px 16px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none;
+      font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none;
       box-shadow: 0 4px 12px rgba(0,0,0,.15);
     }
-    #__fb-toast.visible { opacity: 1; }
+    #__fb-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     .fb-popover__replies {
       margin-top: 8px; padding-top: 8px;

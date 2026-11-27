@@ -15,6 +15,9 @@ function sdkScript(protoId, email, contentType, versionCtx) {
     if (versionCtx.version != null) vAttrs += ` data-version="${escAttr(String(versionCtx.version))}"`;
     if (versionCtx.viewBase) vAttrs += ` data-view-base="${escAttr(versionCtx.viewBase)}"`;
     if (Array.isArray(versionCtx.versions)) vAttrs += ` data-versions="${escAttr(JSON.stringify(versionCtx.versions))}"`;
+    // Session-bound CSRF token for the SDK's same-origin mutations. Lives only in
+    // the trusted shell/app-origin document (never in the sandboxed /raw frame).
+    if (versionCtx.csrfToken) vAttrs += ` data-csrf-token="${escAttr(versionCtx.csrfToken)}"`;
   }
   return `<script src="/sdk/anchor.js"></script>\n`
     + `<script src="/sdk/feedback.js" data-proto-id="${escAttr(protoId)}" data-email="${encodeURIComponent(email)}"${ctAttr}${vAttrs}></script>`;
@@ -23,8 +26,15 @@ function sdkScript(protoId, email, contentType, versionCtx) {
 // The tiny bridge injected into an HTML prototype served inside the shell iframe.
 // Forwards clicks/navigation/geometry to the parent shell; carries no proto-id or
 // email (the full SDK in the shell owns all state and API calls).
-function bridgeScript() {
-  return `<script src="/sdk/frame-bridge.js"></script>`;
+//
+// The prototype runs at an OPAQUE origin (CSP `sandbox allow-scripts`), so its
+// own `window.location.origin` is the string "null" and is useless as a target
+// for postMessage back to the trusted shell. We therefore stamp the real shell
+// origin onto the script tag as `data-shell-origin`; the bridge posts to the
+// parent with THAT exact origin and accepts parent messages only from it.
+function bridgeScript(shellOrigin) {
+  const attr = shellOrigin ? ` data-shell-origin="${escAttr(shellOrigin)}"` : '';
+  return `<script src="/sdk/frame-bridge.js"${attr}></script>`;
 }
 
 function previewScript(protoId, highlightId, commentsJson) {
@@ -103,9 +113,9 @@ function injectSdk(html, protoId, email, contentType, versionCtx) {
   return html + `\n${sdkTag}\n`;
 }
 
-function injectBridge(html) {
+function injectBridge(html, shellOrigin) {
   const { lastBodyClose } = scanHtml(html);
-  const tag = bridgeScript();
+  const tag = bridgeScript(shellOrigin);
   if (lastBodyClose !== -1) {
     return html.slice(0, lastBodyClose) + `\n${tag}\n` + html.slice(lastBodyClose);
   }

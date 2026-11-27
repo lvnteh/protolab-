@@ -10,11 +10,27 @@ const storage = require('../services/storage');
 const versions = require('../services/versions');
 const markdown = require('../services/markdown');
 const orgs = require('../services/orgs');
+const reviewerCsrf = require('../middleware/reviewerCsrf');
 
 const router = express.Router();
 
 function readView(name) {
   return fs.readFileSync(path.join(__dirname, '../views', name), 'utf8');
+}
+
+// The ProtoLab app's own origin — the TRUSTED shell origin that the sandboxed
+// prototype bridge must address when posting messages back to the parent, and
+// the only origin the bridge accepts parent messages from. Derived from the
+// request when available (so it is correct behind proxies / in tests) and falls
+// back to the configured BASE_URL. The sandboxed prototype can't compute this
+// itself (its own origin is the opaque string "null"), so delivery stamps it in.
+function shellOriginFor(req) {
+  try {
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    if (host) return `${proto}://${host}`;
+  } catch { /* fall through */ }
+  try { return new URL(config.baseUrl).origin; } catch { return config.baseUrl; }
 }
 
 router.get('/:shareToken', async (req, res) => {
@@ -25,11 +41,12 @@ router.get('/:shareToken', async (req, res) => {
   if (!rows[0]) return res.status(404).send('Prototype not found.');
   const html = readView('email-entry.html')
     .split('{{shareToken}}').join(req.params.shareToken)
+    .split('{{csrfToken}}').join(reviewerCsrf.ensureToken(req))
     .split('{{error}}').join('');
   res.send(html);
 });
 
-router.post('/:shareToken/enter', async (req, res) => {
+router.post('/:shareToken/enter', reviewerCsrf.reviewerCsrfFormNav, async (req, res) => {
   const { rows: protoRows } = await getDb().query(
     'SELECT * FROM prototypes WHERE share_token = $1',
     [req.params.shareToken]
@@ -49,6 +66,7 @@ router.post('/:shareToken/enter', async (req, res) => {
   if (!allowed) {
     const html = readView('email-entry.html')
       .split('{{shareToken}}').join(req.params.shareToken)
+      .split('{{csrfToken}}').join(reviewerCsrf.ensureToken(req))
       .split('{{error}}').join('<div class="alert">That email isn\'t on the access list for this prototype.</div>');
     return res.status(403).send(html);
   }
@@ -124,6 +142,24 @@ function setMarkdownCsp(res) {
   ].join('; '));
 }
 
+// Sandbox every endpoint that returns EXECUTABLE uploaded HTML (the /raw bytes
+// the iframe loads, and the same URL if opened directly in a tab). The CSP
+// `sandbox` directive forces the document — and every descendant it spawns —
+// into an OPAQUE origin while still allowing its own scripts to run. Without
+// `allow-same-origin` the prototype is cut off from the ProtoLab app origin:
+//   - document.cookie is empty (no session cookie theft)
+//   - same-origin fetch/XHR to /api/* is cross-origin + unauthenticated, and
+//     such requests arrive with `Origin: null`, which the mutation guard rejects
+//   - localStorage/sessionStorage access throws (no app storage)
+//   - it cannot read the trusted shell parent's DOM
+// This header is the authority even when /raw is opened directly (no iframe
+// sandbox attribute in play), so a reviewer who pastes the raw URL into a tab
+// still gets an opaque, de-privileged document. The iframe `sandbox` attribute
+// in proto-shell.html is the defence-in-depth twin for the framed path.
+function setHtmlSandboxCsp(res) {
+  res.setHeader('Content-Security-Policy', 'sandbox allow-scripts');
+}
+
 router.get('/:shareToken/view', customerAuth, async (req, res) => {
   const resolved = await resolveServed(req, res);
   if (!resolved) return;
@@ -134,6 +170,10 @@ router.get('/:shareToken/view', customerAuth, async (req, res) => {
     version: servedVersion,
     versions: publishedVersions, // [{version, note, createdAt, contentType, isCurrent}]
     viewBase: `/p/${req.params.shareToken}/view`,
+    // Session-bound CSRF token stamped into the TRUSTED shell so the SDK can echo
+    // it on its same-origin mutations. The sandboxed prototype never sees this —
+    // it only exists in the shell document (app origin), not in /raw.
+    csrfToken: reviewerCsrf.ensureToken(req),
   };
 
   let output;
@@ -173,7 +213,8 @@ router.get('/:shareToken/raw', customerAuth, async (req, res) => {
   if (contentType === 'markdown') {
     return res.redirect(302, `/p/${req.params.shareToken}/view`);
   }
-  const output = injectBridge(documentHtml);
+  const output = injectBridge(documentHtml, shellOriginFor(req));
+  setHtmlSandboxCsp(res);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.send(output);

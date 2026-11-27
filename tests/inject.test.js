@@ -1,5 +1,5 @@
 // tests/inject.test.js
-const { injectSdk } = require('../src/services/inject');
+const { injectSdk, injectBridge } = require('../src/services/inject');
 
 const BARE_HTML = `<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello</h1></body></html>`;
 
@@ -59,4 +59,34 @@ test('injectSdk emits version data-attributes when a version context is supplied
 test('injectSdk output is unchanged when no version context is supplied', () => {
   const a = injectSdk('<body></body>', 'proto1', 'a@b.com', 'html');
   expect(a).not.toContain('data-version=');
+});
+
+test('injectSdk emits data-csrf-token from the version context', () => {
+  const ctx = { csrfToken: 'a'.repeat(64), viewBase: '/p/tok/view' };
+  const out = injectSdk('<body></body>', 'proto1', 'rev@b.com', 'html', ctx);
+  expect(out).toContain('data-csrf-token="' + 'a'.repeat(64) + '"');
+});
+
+test('injectSdk omits data-csrf-token when none supplied', () => {
+  const out = injectSdk('<body></body>', 'proto1', 'rev@b.com', 'html', { viewBase: '/x' });
+  expect(out).not.toContain('data-csrf-token');
+});
+
+test('injectBridge stamps the trusted shell origin onto the bridge tag', () => {
+  const out = injectBridge(BARE_HTML, 'https://proto.example');
+  expect(out).toContain('/sdk/frame-bridge.js');
+  expect(out).toContain('data-shell-origin="https://proto.example"');
+  expect(out.indexOf('/sdk/frame-bridge.js')).toBeLessThan(out.indexOf('</body>'));
+});
+
+test('injectBridge HTML-escapes the shell origin attribute (no attribute break-out)', () => {
+  const out = injectBridge(BARE_HTML, 'https://x"/><script>bad()</script>');
+  expect(out).not.toContain('"/><script>bad()');
+  expect(out).toContain('&quot;');
+});
+
+test('injectBridge omits data-shell-origin when none supplied (fail-closed bridge)', () => {
+  const out = injectBridge(BARE_HTML);
+  expect(out).toContain('/sdk/frame-bridge.js');
+  expect(out).not.toContain('data-shell-origin');
 });

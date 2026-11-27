@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Adversarial Prototype</title>
+</head>
+<body>
+<h1 id="proto-heading">Adversarial Prototype</h1>
+<button id="proto-button">A real prototype control</button>
+<!--
+  S4 ADVERSARIAL FIXTURE. Served at /p/:token/raw inside the sandboxed iframe
+  (CSP `sandbox allow-scripts`, opaque origin, NO allow-same-origin). Every block
+  below ATTEMPTS an isolation breach and records the outcome on window.__attack so
+  the browser regression can read it back. All of these MUST be blocked/inert; the
+  prototype's own legitimate script (this file) still runs — that is the point of
+  allow-scripts.
+-->
+<script>
+(function () {
+  var result = {};
+  function record(name, fn) {
+    try { result[name] = { ok: true, value: fn() }; }
+    catch (e) { result[name] = { ok: false, error: String(e && e.name || e) }; }
+  }
+
+  // 1. Parent DOM access — reading the trusted shell's document across the opaque
+  //    origin boundary must throw (cross-origin SecurityError).
+  record('parentDomRead', function () {
+    return window.parent.document.body.innerHTML.slice(0, 20); // expect THROW
+  });
+  record('topDomRead', function () {
+    return window.top.document.title; // expect THROW
+  });
+
+  // 2. App storage — localStorage/sessionStorage/cookie belong to the app origin.
+  //    Under the opaque sandbox origin, storage access throws and cookie is empty.
+  record('localStorage', function () {
+    window.localStorage.setItem('x', '1'); // expect THROW (opaque origin)
+    return window.localStorage.getItem('x');
+  });
+  record('cookie', function () {
+    return document.cookie; // expect '' — no session cookie reachable
+  });
+
+  // 3. Authenticated response read — try to read the reviewer's comments using the
+  //    ambient cookie. The request is cross-origin+unauthenticated from an opaque
+  //    origin; the browser blocks the read (CORS) and the server never authorizes.
+  record('authFetchAttempted', function () {
+    fetch('/api/comments/ANY', { credentials: 'include' })
+      .then(function (r) { return r.text(); })
+      .then(function (t) { window.__attack.authFetchBody = t; })
+      .catch(function (e) { window.__attack.authFetchError = String(e && e.name || e); });
+    return 'dispatched';
+  });
+
+  // 4. Mutation request — try to create a comment using the ambient cookie. Must be
+  //    rejected: cross-origin + `Origin: null` => the reviewerCsrf guard 403s it
+  //    before any side effect (and CORS blocks reading the response anyway).
+  record('mutationAttempted', function () {
+    fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ prototypeId: 'injected', type: 'general', comment: 'ATTACK-INJECTED' }),
+    })
+      .then(function (r) { window.__attack.mutationStatus = r.status; })
+      .catch(function (e) { window.__attack.mutationError = String(e && e.name || e); });
+    return 'dispatched';
+  });
+
+  // 5. Forged bridge message — impersonate the trusted shell by posting a
+  //    commentMode toggle to OURSELVES / parent as if we were the shell. The real
+  //    bridge only accepts messages from window.parent carrying the exact shell
+  //    origin, so a self-sent message (origin "null", source=self) is ignored.
+  record('forgedBridgeMessage', function () {
+    window.postMessage({ __fb: true, type: 'commentMode', on: true }, '*');
+    // Also try to drive the PARENT with a fake navigation / click as the child —
+    // the shell validates e.origin==='null' && e.source===iframe, so a crafted
+    // payload can at most do what a legit bridge could (presentation/nav), never
+    // trigger an authenticated request. We still assert the parent took no harmful
+    // action by checking server state in the test.
+    try { window.parent.postMessage({ __fb: true, type: 'click', x: 1e9, y: 1e9 }, '*'); } catch (e) {}
+    try { window.parent.postMessage({ __fb: true, type: 'page', href: 'javascript:alert(1)' }, '*'); } catch (e) {}
+    return 'sent';
+  });
+
+  // 6. Top navigation — break out of the frame by navigating the top window. With
+  //    no allow-top-navigation the assignment throws / is blocked.
+  record('topNavigation', function () {
+    window.top.location = 'https://evil.example/'; // expect THROW / no-op
+    return 'attempted';
+  });
+
+  window.__attack = Object.assign(window.__attack || {}, result);
+  // Expose a readiness flag the test can poll.
+  window.__attackReady = true;
+})();
+</script>
+</body>
+</html>

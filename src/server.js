@@ -90,7 +90,17 @@ app.use('/admin/signup', postOnly(signupLimiter));
 app.use('/api/comments', postOnly(commentsLimiter));
 
 app.use('/sdk', express.static(path.join(__dirname, '../public/sdk'), {
-  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    // The sandboxed prototype iframe runs at an OPAQUE origin (CSP `sandbox
+    // allow-scripts`), so loading /sdk/frame-bridge.js into it is a cross-origin
+    // subresource fetch. Helmet's default Cross-Origin-Resource-Policy:
+    // same-origin would block it (net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin),
+    // leaving the bridge inert — no comment-mode clicks, no nav. These SDK files
+    // are public, non-sensitive static assets, so marking them cross-origin is
+    // safe and is required for the bridge to run inside the sandbox.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  },
 }));
 app.use('/p', deliveryRouter);
 app.use('/api/v1', apiV1Router);

@@ -67,9 +67,21 @@ const commentsLimiter = rateLimit({
   message: { error: 'Too many comments submitted. Please slow down.' },
 });
 
+// POST /admin/orgs — self-serve org creation. ~10 / hour per IP to deter spam
+// while leaving room for a user legitimately setting up a few orgs.
+const orgCreateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: sharedStore('rl_orgcreate'),
+  message: { error: 'Too many organizations created. Please try again later.' },
+});
+
 module.exports = {
   postOnly,
   loginLimiter,
   signupLimiter,
   commentsLimiter,
+  orgCreateLimiter,
 };

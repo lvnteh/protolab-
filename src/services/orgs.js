@@ -1,15 +1,28 @@
 // src/services/orgs.js
 // Organization membership + role resolution + org management (invites, roles,
-// members). The tenant boundary is the org: a prototype belongs to an org
-// (prototypes.org_id), and a user's access is decided by their role in that org
-// (org_memberships).
+// members, rename/delete) + the shared effective-reviewer-access resolver. The
+// tenant boundary is the org: a prototype belongs to an org (prototypes.org_id),
+// and a user's access is decided by their role in that org (org_memberships).
 //
 // Roles (this phase): 'admin' (full control of prototypes + org) and 'viewer'
 // (read org prototypes/feedback + add comments; no writes, no org management).
+// The two-role model + capability matrix is enforced in the routes (admin.js,
+// api.js) and this service; last-admin protection lives HERE (setRole /
+// removeMember / deleteOrg), so there is one place to widen it when the
+// owner/member split is picked up.
+//
+// EFFECTIVE REVIEWER ACCESS (Task 6): effectiveReviewerAccess(prototypeId, email)
+// is the single resolver shared by the share-link entry (delivery.js), delivery
+// reads, the member-view entry, and the /api feedback routes. An email qualifies
+// via an explicit allowlist row OR as the canonical users.email of a CURRENT
+// admin/viewer membership in prototype.org_id. Membership in another org grants
+// nothing. It is re-checked on every protected read/write, so a removed member /
+// revoked allowlist entry loses access on the next request.
 //
 // CONCURRENCY INVARIANTS (management writes): any action that can change who is
-// an admin — setRole, removeMember, acceptInvite, createOrg — runs in a single
-// transaction on ONE checked-out client, BEGIN..COMMIT/ROLLBACK. Inside it we:
+// an admin — setRole, removeMember, acceptInvite, createOrg, deleteOrg — runs in
+// a single transaction on ONE checked-out client, BEGIN..COMMIT/ROLLBACK. Inside
+// it we:
 //   1. SELECT ... FOR UPDATE the organizations row (serialises concurrent
 //      management of the same org — lock order is ALWAYS org first, then the
 //      invitation/membership row), then
@@ -17,6 +30,8 @@
 //      trusted to a read taken before the lock), then
 //   3. count the REMAINING admins inside the txn and throw LastAdminError if the
 //      action would drop the org below one admin.
+// deleteOrg also validates the typed confirmation against the LOCKED org name and
+// enqueues durable storage cleanup in the same transaction as the row deletes.
 const { nanoid } = require('nanoid');
 const { getDb } = require('../db');
 
@@ -354,6 +369,162 @@ async function acceptInvite(userId, token, userEmail) {
   });
 }
 
+// --- Org read / rename / delete (Task 5) -------------------------------------
+
+// Read a single org row (id, name, created_at) or null.
+async function getOrg(orgId) {
+  if (!orgId) return null;
+  const { rows } = await getDb().query(
+    'SELECT id, name, created_at FROM organizations WHERE id = $1', [orgId]);
+  return rows[0] || null;
+}
+
+// Count the ProtoLab-owned resources an org deletion would remove, for the
+// confirmation screen (so an admin sees what is at stake before typing the name).
+async function countOrgResources(orgId) {
+  const { rows } = await getDb().query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM prototypes      WHERE org_id = $1) AS prototypes,
+       (SELECT COUNT(*)::int FROM api_tokens      WHERE org_id = $1) AS tokens,
+       (SELECT COUNT(*)::int FROM org_memberships WHERE org_id = $1) AS members`,
+    [orgId]);
+  return rows[0];
+}
+
+// Rename an org. Admin-only, serialized under the org lock + actor recheck.
+async function renameOrg(actorUserId, orgId, name) {
+  const newName = (name || '').trim();
+  if (!newName) throw new Error('Organization name is required.');
+  return withTx(async (client) => {
+    await lockOrgAsAdmin(client, actorUserId, orgId);
+    await client.query('UPDATE organizations SET name = $1 WHERE id = $2', [newName, orgId]);
+    return { id: orgId, name: newName };
+  });
+}
+
+// Delete an org and every ProtoLab asset it owns, in ONE transaction. Admin-only.
+// Guards: lock the org row, recheck the actor is still an admin, and validate the
+// caller typed the org's EXACT current name (checked against the LOCKED row, so a
+// concurrent rename can't let a stale confirmation through). Then:
+//   1. Gather every stored object key (version files + legacy top-level filename +
+//      comment screenshots) and ENQUEUE them into storage_cleanup_queue in the
+//      same transaction (durable: survives the row deletes and a crash; drained
+//      out-of-band by the cleanup runner, idempotently).
+//   2. Delete the org's api_tokens and prototypes explicitly (restrictive FKs),
+//      letting prototype-child cascades (versions/comments/explanations/allowlist/
+//      telemetry) and org-child cascades (memberships/invitations) fire.
+//   3. Delete the organization row.
+// Returns { deleted:true, enqueued:<n> }. Throws NotAuthorizedError (missing org
+// or non-admin actor) or a DELETE_NAME_MISMATCH-coded Error (wrong confirmation).
+async function deleteOrg(actorUserId, orgId, confirmName) {
+  return withTx(async (client) => {
+    // Lock + authorize against the live row.
+    const { rows: org } = await client.query(
+      'SELECT id, name FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
+    if (!org[0]) throw new NotAuthorizedError();
+    const { rows: m } = await client.query(
+      'SELECT role FROM org_memberships WHERE org_id = $1 AND user_id = $2', [orgId, actorUserId]);
+    if (!m[0] || m[0].role !== 'admin') throw new NotAuthorizedError();
+
+    // Server-side exact-name confirmation, validated against the LOCKED row.
+    if ((confirmName || '').trim() !== org[0].name) {
+      const err = new Error('The confirmation text does not match the organization name.');
+      err.code = 'DELETE_NAME_MISMATCH';
+      throw err;
+    }
+
+    // 1. Inventory every stored object key for this org and enqueue cleanup.
+    const { rows: verFiles } = await client.query(
+      `SELECT pv.filename FROM prototype_versions pv
+         JOIN prototypes p ON p.id = pv.prototype_id WHERE p.org_id = $1`, [orgId]);
+    const { rows: protoFiles } = await client.query(
+      'SELECT filename FROM prototypes WHERE org_id = $1', [orgId]);
+    const { rows: shots } = await client.query(
+      `SELECT c.screenshot_key FROM comments c
+         JOIN prototypes p ON p.id = c.prototype_id
+        WHERE p.org_id = $1 AND c.screenshot_key IS NOT NULL`, [orgId]);
+
+    const nowIso = now();
+    const seen = new Set();
+    let enqueued = 0;
+    const enqueue = async (kind, key) => {
+      if (!key || seen.has(`${kind}:${key}`)) return;
+      seen.add(`${kind}:${key}`);
+      await client.query(
+        `INSERT INTO storage_cleanup_queue (id, kind, object_key, status, attempts, next_attempt_at, created_at)
+         VALUES ($1,$2,$3,'pending',0,$4,$4)`,
+        [nanoid(12), kind, key, nowIso]);
+      enqueued++;
+    };
+    for (const r of verFiles) await enqueue('prototype', r.filename);
+    for (const r of protoFiles) await enqueue('prototype', r.filename);
+    for (const r of shots) await enqueue('screenshot', r.screenshot_key);
+
+    // 2. Delete the restrictive-FK children explicitly, then 3. the org.
+    await client.query('DELETE FROM api_tokens WHERE org_id = $1', [orgId]);
+    await client.query('DELETE FROM prototypes WHERE org_id = $1', [orgId]);
+    await client.query('DELETE FROM organizations WHERE id = $1', [orgId]);
+    return { deleted: true, enqueued };
+  });
+}
+
+// --- Effective reviewer access (Task 6) --------------------------------------
+
+// Normalize an email the same way everywhere access is decided: trim + lowercase.
+function normalizeEmail(email) {
+  return (email || '').trim().toLowerCase();
+}
+
+// Decide whether `email` may review `prototypeId` as a share-link reviewer. An
+// email qualifies when EITHER:
+//   (a) it has an explicit allowlist row for the prototype, OR
+//   (b) it matches the canonical users.email of a CURRENT admin/viewer membership
+//       in the prototype's OWNING org (prototype.org_id).
+// Both sides are normalized (trim+lowercase). Membership in ANOTHER org grants
+// nothing — the join is pinned to prototype.org_id. Rechecked on every protected
+// read/write so a removed member / revoked allowlist entry loses access on the
+// next request. Returns { allowed, source } where source is 'allowlist' |
+// 'membership' | null (source is informational, e.g. for removal messaging).
+async function effectiveReviewerAccess(prototypeId, email) {
+  const norm = normalizeEmail(email);
+  if (!prototypeId || !norm) return { allowed: false, source: null };
+  // (a) explicit allowlist row.
+  const { rows: allow } = await getDb().query(
+    'SELECT 1 FROM allowlist WHERE prototype_id = $1 AND LOWER(email) = $2 LIMIT 1',
+    [prototypeId, norm]);
+  if (allow.length) return { allowed: true, source: 'allowlist' };
+  // (b) current admin/viewer membership in the prototype's owning org.
+  const { rows: member } = await getDb().query(
+    `SELECT 1 FROM prototypes p
+       JOIN org_memberships m ON m.org_id = p.org_id
+       JOIN users u ON u.id = m.user_id
+      WHERE p.id = $1 AND LOWER(u.email) = $2 LIMIT 1`,
+    [prototypeId, norm]);
+  if (member.length) return { allowed: true, source: 'membership' };
+  return { allowed: false, source: null };
+}
+
+// Count the DISTINCT effective reviewer emails for a prototype: the union of its
+// explicit allowlist emails and current org admin/viewer emails, deduplicated by
+// canonical lowercased email. Also returns the explicit-only count so the UI can
+// label "explicit reviewers" separately from the inherited-org set.
+async function effectiveReviewerCount(prototypeId) {
+  const { rows } = await getDb().query(
+    `WITH eff AS (
+       SELECT LOWER(email) AS e FROM allowlist WHERE prototype_id = $1
+       UNION
+       SELECT LOWER(u.email) FROM prototypes p
+         JOIN org_memberships m ON m.org_id = p.org_id
+         JOIN users u ON u.id = m.user_id
+        WHERE p.id = $1
+     )
+     SELECT
+       (SELECT COUNT(*)::int FROM eff) AS effective,
+       (SELECT COUNT(DISTINCT LOWER(email))::int FROM allowlist WHERE prototype_id = $1) AS explicit`,
+    [prototypeId]);
+  return rows[0] || { effective: 0, explicit: 0 };
+}
+
 // --- Middleware ---------------------------------------------------------------
 
 // Require an authenticated user, no org required. Mirrors adminAuth.js (userId
@@ -403,6 +574,49 @@ async function requireAdmin(req, res, next) {
   });
 }
 
+// Canonical org-URL guard (Task 3). Resolves the intended org from the :orgId
+// URL parameter — NOT session.activeOrgId — so two browser tabs can each work in
+// a different org simultaneously. Requires an authenticated user who is a current
+// member of THAT org. Sets req.orgId + req.orgRole from the URL org. 401 (JSON) /
+// redirect (browser) when logged out; 403/404-style recovery when not a member.
+// On a membership miss the browser is sent to /admin/home (session recovery, Task
+// 2 Step 5); JSON/API callers get a typed 403 before any side effect.
+async function requireOrgParam(req, res, next) {
+  try {
+    if (!req.session || !req.session.userId) {
+      if (req.accepts(['html', 'json']) === 'json') {
+        return res.status(401).json({ error: 'Login required.' });
+      }
+      return res.redirect('/admin/login');
+    }
+    const orgId = req.params.orgId;
+    const m = await membership(req.session.userId, orgId);
+    if (!m) {
+      if (req.accepts(['html', 'json']) === 'json') {
+        return res.status(403).json({ error: 'No access to this organization.' });
+      }
+      return res.redirect('/admin/home');
+    }
+    req.userId = req.session.userId;
+    req.orgId = orgId;
+    req.orgRole = m.role;
+    next();
+  } catch (err) {
+    console.error('requireOrgParam error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+}
+
+// Canonical org-URL guard + admin role. Viewers get a typed 403.
+function requireAdminParam(req, res, next) {
+  requireOrgParam(req, res, () => {
+    if (req.orgRole !== 'admin') {
+      return res.status(403).json({ error: 'Requires admin role.' });
+    }
+    next();
+  });
+}
+
 module.exports = {
   // resolution / scoping
   membership,
@@ -414,6 +628,14 @@ module.exports = {
   listMembers,
   setRole,
   removeMember,
+  getOrg,
+  renameOrg,
+  deleteOrg,
+  countOrgResources,
+  // effective reviewer access (Task 6)
+  effectiveReviewerAccess,
+  effectiveReviewerCount,
+  normalizeEmail,
   // invitations
   createInvite,
   reissueInvite,
@@ -424,6 +646,8 @@ module.exports = {
   requireLogin,
   requireOrg,
   requireAdmin,
+  requireOrgParam,
+  requireAdminParam,
   // typed errors
   LastAdminError,
   NotAuthorizedError,

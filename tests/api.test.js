@@ -11,15 +11,20 @@ const express = require('express');
 const session = require('express-session');
 const apiRouter = require('../src/routes/api');
 
-let app, protoId;
+let app, protoId, orgId;
 
 (hasDb ? describe : describe.skip)('api routes', () => {
   beforeAll(async () => {
     await initDb();
+    orgId = nanoid(12);
+    await getDb().query(
+      'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+      [orgId, 'Test Org', new Date().toISOString()]
+    );
     protoId = nanoid(12);
     await getDb().query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [protoId, 'Test', 'test.html', nanoid(12), new Date().toISOString()]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [protoId, 'Test', 'test.html', nanoid(12), new Date().toISOString(), orgId]
     );
 
     app = express();
@@ -138,8 +143,8 @@ let app, protoId;
   test('GET /api/comments/:protoId nests replies under their parent', async () => {
     const pid = 'nest-' + Date.now();
     await getDb().query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [pid, 'NestTest', 'nest.html', 'tok-' + Date.now(), new Date().toISOString()]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [pid, 'NestTest', 'nest.html', 'tok-' + Date.now(), new Date().toISOString(), orgId]
     );
 
     const p = await request(app).post('/api/comments').set('x-test-proto', pid).send({
@@ -180,8 +185,8 @@ let app, protoId;
     // Create a second prototype
     const otherProtoId = 'other-' + Date.now();
     await getDb().query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [otherProtoId, 'Other Proto', 'other.html', 'tok-' + otherProtoId, new Date().toISOString()]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [otherProtoId, 'Other Proto', 'other.html', 'tok-' + otherProtoId, new Date().toISOString(), orgId]
     );
 
     // Attempt to reply using the wrong prototypeId. The reviewer is bound to
@@ -208,8 +213,8 @@ let app, protoId;
     beforeAll(async () => {
       victimProto = 'victim-' + Date.now();
       await getDb().query(
-        'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-        [victimProto, 'Victim', 'victim.html', 'tok-' + victimProto, new Date().toISOString()]
+        'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+        [victimProto, 'Victim', 'victim.html', 'tok-' + victimProto, new Date().toISOString(), orgId]
       );
       // Seed a comment + explanation owned by the victim prototype.
       const c = await request(app).post('/api/comments').set('x-test-proto', victimProto).send({
@@ -320,8 +325,8 @@ let app, protoId;
   test('GET /api/comments returns anchor fields on range comments', async () => {
     const pid = 'range-' + Date.now();
     await getDb().query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [pid, 'RangeGet', `${pid}.md`, 'tok-' + pid, new Date().toISOString()]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [pid, 'RangeGet', `${pid}.md`, 'tok-' + pid, new Date().toISOString(), orgId]
     );
     await request(app).post('/api/comments').set('x-test-proto', pid).send({
       prototypeId: pid, type: 'range', comment: 'anchored', pageUrl: '/p/x/view',
@@ -365,8 +370,8 @@ let app, protoId;
     beforeAll(async () => {
       vp = nanoid(12);
       await getDb().query(
-        'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-        [vp, 'VP', `${vp}.html`, nanoid(12), new Date().toISOString()]);
+        'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+        [vp, 'VP', `${vp}.html`, nanoid(12), new Date().toISOString(), orgId]);
       const mk = async (n) => {
         const id = nanoid(12);
         await getDb().query(

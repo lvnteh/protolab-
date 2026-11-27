@@ -18,7 +18,7 @@ const { initDb, getDb, closeDb, cleanDb } = require('../src/db');
 const { nanoid } = require('nanoid');
 
 // Track every id we create so afterAll can delete precisely our own rows.
-const created = { prototypes: [], users: [] };
+const created = { prototypes: [], users: [], orgs: [] };
 
 async function seedPrototype(db, { withComment = true, withTelemetry = true } = {}) {
   const userId = nanoid(12);
@@ -26,10 +26,16 @@ async function seedPrototype(db, { withComment = true, withTelemetry = true } = 
     [userId, `cascade-${userId}@sap.com`, 'x', new Date().toISOString()]);
   created.users.push(userId);
 
+  // org_id is NOT NULL on prototypes; give each seeded prototype its own org.
+  const orgId = nanoid(12);
+  await db.query('INSERT INTO organizations (id,name,created_at) VALUES ($1,$2,$3)',
+    [orgId, `Cascade Org ${orgId}`, new Date().toISOString()]);
+  created.orgs.push(orgId);
+
   const protoId = nanoid(12);
   await db.query(
-    'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
-    [protoId, 'Cascade', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId]);
+    'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id,org_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [protoId, 'Cascade', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId, orgId]);
   created.prototypes.push(protoId);
 
   // Give it a version + published pointer via the backfill path.
@@ -72,6 +78,9 @@ async function seedPrototype(db, { withComment = true, withTelemetry = true } = 
     }
     for (const id of created.users) {
       await db.query('DELETE FROM users WHERE id = $1', [id]);
+    }
+    for (const id of created.orgs) {
+      await db.query('DELETE FROM organizations WHERE id = $1', [id]);
     }
     await closeDb();
   });

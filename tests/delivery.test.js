@@ -21,6 +21,10 @@ let app, protoId, shareToken;
 (hasDb ? describe : describe.skip)('delivery routes', () => {
   beforeAll(async () => {
     await initDb();
+    const orgId = nanoid(12);
+    await getDb().query(
+      'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+      [orgId, 'Test Org', new Date().toISOString()]);
     protoId = nanoid(12);
     shareToken = nanoid(12);
 
@@ -28,8 +32,8 @@ let app, protoId, shareToken;
     fs.writeFileSync(htmlPath, '<!DOCTYPE html><html><head></head><body><h1>Test</h1></body></html>');
 
     await getDb().query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [protoId, 'Test Proto', `${protoId}.html`, shareToken, new Date().toISOString()]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [protoId, 'Test Proto', `${protoId}.html`, shareToken, new Date().toISOString(), orgId]
     );
     await getDb().query(
       'INSERT INTO allowlist (prototype_id, email) VALUES ($1,$2)',

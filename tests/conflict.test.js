@@ -34,12 +34,20 @@ let app, userId, protoId, rawToken;
     userId = nanoid(12);
     await getDb().query('INSERT INTO users (id,email,password_hash,created_at) VALUES ($1,$2,$3,$4)',
       [userId, `cf-${userId}@sap.com`, 'x', new Date().toISOString()]);
-    ({ raw: rawToken } = await tokens.createToken(userId, 't'));
+    // org_id is NOT NULL on prototypes + api_tokens; the token owner must also be
+    // an admin member of the token's org or resolveToken rejects the bearer.
+    const orgId = nanoid(12);
+    await getDb().query('INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+      [orgId, 'Test Org', new Date().toISOString()]);
+    await getDb().query(
+      `INSERT INTO org_memberships (id, org_id, user_id, role, created_at) VALUES ($1,$2,$3,'admin',$4)`,
+      [nanoid(12), orgId, userId, new Date().toISOString()]);
+    ({ raw: rawToken } = await tokens.createToken(userId, 't', orgId));
 
     protoId = nanoid(12);
     await getDb().query(
-      'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [protoId, 'CF', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId]);
+      'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id,org_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [protoId, 'CF', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId, orgId]);
     await initDb(); // backfill v1 + publish it
     const storage = require('../src/services/storage');
     await storage.putPrototype(`${protoId}.html`, '<html>v1</html>');

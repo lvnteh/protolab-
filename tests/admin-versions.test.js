@@ -85,9 +85,18 @@ async function addOrgMember(userEmail, targetOrgId) {
     // org, so it can read the version history.
     const { agent, orgId: adminOrgId } = await signUpAsOrgAdmin(app, email);
     orgId = adminOrgId;
-    // User B: a plain signup (viewer of the Default Organization, NOT of A's org),
-    // used by the "another user gets 404" test.
+    // User B: a signup with their OWN separate org (NOT a member of A's org).
+    // Post-EMS-consolidation signup no longer auto-joins any org, so without a
+    // membership B would 403 at requireOrg; giving B their own org makes the
+    // cross-org access to A's prototype resolve to a proper 404.
     await request(app).post('/admin/signup').send(`email=${emailB}&password=${password}&confirm=${password}`);
+    const { rows: bRows } = await getDb().query('SELECT id FROM users WHERE email = $1', [emailB]);
+    const bOrgId = nanoid(12);
+    await getDb().query('INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+      [bOrgId, 'Org B', new Date().toISOString()]);
+    await getDb().query(
+      `INSERT INTO org_memberships (id, org_id, user_id, role, created_at) VALUES ($1,$2,$3,'admin',$4)`,
+      [nanoid(12), bOrgId, bRows[0].id, new Date().toISOString()]);
 
     const up = await agent.post('/admin/prototypes').set('Accept', 'application/json')
       .field('name', 'Ver').attach('file', Buffer.from('<html>v1</html>'), 'p.html');

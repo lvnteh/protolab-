@@ -7,7 +7,7 @@ const bcrypt = require('bcryptjs');
 const hasDb = !!process.env.DATABASE_URL;
 
 jest.resetModules();
-const { initDb, closeDb } = require('../src/db');
+const { initDb, getDb, closeDb } = require('../src/db');
 const { nanoid } = require('nanoid');
 const request = require('supertest');
 const express = require('express');
@@ -31,6 +31,16 @@ const testPassword = 'password123';
     // Register the account these tests log in with.
     await request(app).post('/admin/signup')
       .send(`email=${testEmail}&password=${testPassword}&confirm=${testPassword}`);
+    // Post-EMS-consolidation, signup no longer auto-joins any org. Give this
+    // test user an org + admin membership so they can view the prototypes list
+    // (otherwise requireOrg 403s a member-less user).
+    const { rows: u } = await getDb().query('SELECT id FROM users WHERE email = $1', [testEmail]);
+    const orgId = nanoid(12);
+    await getDb().query('INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+      [orgId, 'Admin Test Org', new Date().toISOString()]);
+    await getDb().query(
+      `INSERT INTO org_memberships (id, org_id, user_id, role, created_at) VALUES ($1,$2,$3,'admin',$4)`,
+      [nanoid(12), orgId, u[0].id, new Date().toISOString()]);
   });
 
   afterAll(async () => {

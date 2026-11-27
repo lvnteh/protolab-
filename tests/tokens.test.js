@@ -20,6 +20,17 @@ async function createOrg() {
   return id;
 }
 
+// resolveToken now requires the token owner to be an ADMIN member of the token's
+// org (machine-access recheck, Task 1). Give a user admin membership in an org
+// so their tokens resolve.
+async function addAdmin(orgId, userId) {
+  await getDb().query(
+    `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+     VALUES ($1,$2,$3,'admin',$4) ON CONFLICT (org_id, user_id) DO UPDATE SET role = 'admin'`,
+    [nanoid(12), orgId, userId, new Date().toISOString()]
+  );
+}
+
 (hasDb ? describe : describe.skip)('token service', () => {
   beforeAll(async () => {
     await initDb();
@@ -29,6 +40,7 @@ async function createOrg() {
       [userId, `tok-${userId}@sap.com`, 'x', new Date().toISOString()]
     );
     orgId = await createOrg();
+    await addAdmin(orgId, userId);
   });
   afterAll(async () => { await closeDb(); });
 
@@ -63,6 +75,7 @@ async function createOrg() {
       [fresh, `list-${fresh}@sap.com`, 'x', new Date().toISOString()]
     );
     const freshOrgId = await createOrg();
+    await addAdmin(freshOrgId, fresh);
     await tokens.createToken(fresh, 'alpha', freshOrgId);
     await tokens.createToken(fresh, 'beta', freshOrgId);
     const list = await tokens.listTokens(freshOrgId);
@@ -112,5 +125,35 @@ async function createOrg() {
     expect(await tokens.resolveToken('nodot')).toBeNull();
     expect(await tokens.resolveToken('.secretonly')).toBeNull();
     expect(await tokens.resolveToken('idonly.')).toBeNull();
+  });
+
+  // Machine-access recheck (Task 1): a token only resolves while its owner is an
+  // admin member of the token's org.
+  test('resolveToken stops resolving when the owner is demoted to viewer', async () => {
+    const u = nanoid(12);
+    await getDb().query(
+      'INSERT INTO users (id, email, password_hash, created_at) VALUES ($1,$2,$3,$4)',
+      [u, `demote-${u}@sap.com`, 'x', new Date().toISOString()]);
+    const o = await createOrg();
+    await addAdmin(o, u);
+    const { raw } = await tokens.createToken(u, 'wk', o);
+    expect(await tokens.resolveToken(raw)).toMatchObject({ userId: u });
+    // Demote to viewer: the token must stop resolving.
+    await getDb().query(
+      "UPDATE org_memberships SET role = 'viewer' WHERE org_id = $1 AND user_id = $2", [o, u]);
+    expect(await tokens.resolveToken(raw)).toBeNull();
+  });
+
+  test('resolveToken returns null when the owner is no longer a member of the org', async () => {
+    const u = nanoid(12);
+    await getDb().query(
+      'INSERT INTO users (id, email, password_hash, created_at) VALUES ($1,$2,$3,$4)',
+      [u, `gone-${u}@sap.com`, 'x', new Date().toISOString()]);
+    const o = await createOrg();
+    await addAdmin(o, u);
+    const { raw } = await tokens.createToken(u, 'wk', o);
+    expect(await tokens.resolveToken(raw)).toMatchObject({ userId: u });
+    await getDb().query('DELETE FROM org_memberships WHERE org_id = $1 AND user_id = $2', [o, u]);
+    expect(await tokens.resolveToken(raw)).toBeNull();
   });
 });

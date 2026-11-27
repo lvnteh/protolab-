@@ -7,11 +7,12 @@ jest.setTimeout(15000);
 const { initDb, getDb, closeDb, runAnnotationVersionBackfill } = require('../src/db');
 const { nanoid } = require('nanoid');
 
+let orgId;
 async function mkProto() {
   const id = nanoid(12);
   await getDb().query(
-    'INSERT INTO prototypes (id,name,filename,share_token,created_at) VALUES ($1,$2,$3,$4,$5)',
-    [id, 'P', `${id}.html`, nanoid(12), new Date().toISOString()]);
+    'INSERT INTO prototypes (id,name,filename,share_token,created_at,org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, 'P', `${id}.html`, nanoid(12), new Date().toISOString(), orgId]);
   return id;
 }
 async function mkVersion(protoId, version, status) {
@@ -24,7 +25,13 @@ async function mkVersion(protoId, version, status) {
 }
 
 (hasDb ? describe : describe.skip)('explanations version schema', () => {
-  beforeAll(async () => { await initDb(); });
+  beforeAll(async () => {
+    await initDb();
+    orgId = nanoid(12);
+    await getDb().query(
+      'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+      [orgId, 'Test Org', new Date().toISOString()]);
+  });
   afterAll(async () => { await closeDb(); });
 
   test('same selector/page is allowed on two different versions, rejected on the same version', async () => {

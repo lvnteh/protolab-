@@ -50,6 +50,14 @@ function makeApp() {
     await getDb().query('INSERT INTO users (id,email,password_hash,created_at) VALUES ($1,$2,$3,$4)',
       [otherUserId, `fb-${otherUserId}@sap.com`, 'x', new Date().toISOString()]);
     orgA = await createOrg('orgA'); orgB = await createOrg('orgB');
+    // API tokens only resolve while the owner is an ADMIN member of the token's
+    // org (machine-access recheck, Task 1). Enrol each token owner accordingly.
+    await getDb().query(
+      `INSERT INTO org_memberships (id,org_id,user_id,role,created_at) VALUES ($1,$2,$3,'admin',$4)`,
+      [nanoid(12), orgA, userId, new Date().toISOString()]);
+    await getDb().query(
+      `INSERT INTO org_memberships (id,org_id,user_id,role,created_at) VALUES ($1,$2,$3,'admin',$4)`,
+      [nanoid(12), orgB, otherUserId, new Date().toISOString()]);
     ({ raw: rawToken } = await tokens.createToken(userId, 't', orgA));
     ({ raw: otherToken } = await tokens.createToken(otherUserId, 't', orgB));
 

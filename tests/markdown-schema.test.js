@@ -4,14 +4,21 @@ const { initDb, getDb, closeDb } = require('../src/db');
 const { nanoid } = require('nanoid');
 
 (hasDb ? describe : describe.skip)('markdown schema migrations', () => {
-  beforeAll(async () => { await initDb(); });
+  let orgId;
+  beforeAll(async () => {
+    await initDb();
+    orgId = nanoid(12);
+    await getDb().query(
+      'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+      [orgId, 'Test Org', new Date().toISOString()]);
+  });
   afterAll(async () => { await closeDb(); });
 
   test('prototypes + prototype_versions have content_type defaulting to html', async () => {
     const id = nanoid(12), tok = nanoid(12);
     await getDb().query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [id, 'CT', `${id}.html`, tok, new Date().toISOString()]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, 'CT', `${id}.html`, tok, new Date().toISOString(), orgId]
     );
     const { rows } = await getDb().query('SELECT content_type FROM prototypes WHERE id = $1', [id]);
     expect(rows[0].content_type).toBe('html');
@@ -20,8 +27,8 @@ const { nanoid } = require('nanoid');
   test("comments type CHECK now allows 'range'", async () => {
     const id = nanoid(12), tok = nanoid(12);
     await getDb().query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [id, 'R', `${id}.html`, tok, new Date().toISOString()]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, 'R', `${id}.html`, tok, new Date().toISOString(), orgId]
     );
     const cid = nanoid(12);
     await getDb().query(

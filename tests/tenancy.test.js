@@ -46,8 +46,9 @@ function makeApp() {
 }
 
 // Sign up a fresh user with a unique allowed-domain email and return a
-// logged-in agent plus the email used. NOTE: under the P1 org model a fresh
-// signup joins the Default Organization as a *viewer* (read+comment only).
+// logged-in agent plus the email used. NOTE: post-EMS-consolidation a fresh
+// signup has NO org membership (the Default-Organization auto-join was removed);
+// the user lands on an empty prototype list until invited into an org.
 async function signUp(app) {
   const email = `user-${nanoid(8)}@sap.com`.toLowerCase();
   const agent = request.agent(app);
@@ -159,13 +160,9 @@ async function signUpAsOrgAdmin(app) {
       expect(protoRows[0].owner_id).toBe(userRows[0].id);
     });
 
-    test('a viewer (fresh signup) cannot upload a prototype', async () => {
-      // Ensure a Default Organization exists so the signup enrols as a viewer.
-      await getDb().query(
-        `INSERT INTO organizations (id, name, created_at)
-         SELECT $1,'Default Organization',$2
-         WHERE NOT EXISTS (SELECT 1 FROM organizations WHERE name = 'Default Organization')`,
-        [nanoid(12), new Date().toISOString()]);
+    test('a fresh signup with no org membership cannot upload a prototype', async () => {
+      // Post-EMS-consolidation there is no signup auto-join: a brand-new user has
+      // zero memberships, so requireAdmin (via requireOrg) denies every write.
       const { agent } = await signUp(app);
       const res = await agent
         .post('/admin/prototypes')

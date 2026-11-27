@@ -7,16 +7,25 @@ jest.setTimeout(15000);
 const { initDb, getDb, closeDb } = require('../src/db');
 const { nanoid } = require('nanoid');
 
+let orgId;
+async function mkOrg() {
+  orgId = nanoid(12);
+  await getDb().query(
+    'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
+    [orgId, 'Test Org', new Date().toISOString()]);
+  return orgId;
+}
+
 async function mkProto() {
   const id = nanoid(12);
   await getDb().query(
-    'INSERT INTO prototypes (id,name,filename,share_token,created_at) VALUES ($1,$2,$3,$4,$5)',
-    [id, 'P', `${id}.html`, nanoid(12), new Date().toISOString()]);
+    'INSERT INTO prototypes (id,name,filename,share_token,created_at,org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, 'P', `${id}.html`, nanoid(12), new Date().toISOString(), orgId]);
   return id;
 }
 
 (hasDb ? describe : describe.skip)('schema: versions + tokens', () => {
-  beforeAll(async () => { await initDb(); });
+  beforeAll(async () => { await initDb(); await mkOrg(); });
   afterAll(async () => { await closeDb(); });
 
   test('api_tokens table exists with expected columns', async () => {
@@ -56,8 +65,8 @@ async function mkProto() {
     const id = nanoid(12);
     // Insert a legacy-style prototype with only a filename, no version rows.
     await getDb().query(
-      'INSERT INTO prototypes (id, name, filename, share_token, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [id, 'Legacy', `${id}.html`, nanoid(12), new Date().toISOString()]
+      'INSERT INTO prototypes (id, name, filename, share_token, created_at, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, 'Legacy', `${id}.html`, nanoid(12), new Date().toISOString(), orgId]
     );
     // Insert a legacy comment with no version_id, to verify the comment backfill.
     const commentId = nanoid(12);
@@ -91,13 +100,14 @@ async function mkProto() {
 
   beforeAll(async () => {
     await initDb();
+    await mkOrg();
     userId = nanoid(12);
     await getDb().query('INSERT INTO users (id,email,password_hash,created_at) VALUES ($1,$2,$3,$4)',
       [userId, `ver-${userId}@sap.com`, 'x', new Date().toISOString()]);
     protoId = nanoid(12);
     await getDb().query(
-      'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [protoId, 'Ver', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId]);
+      'INSERT INTO prototypes (id,name,filename,share_token,created_at,owner_id,org_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [protoId, 'Ver', `${protoId}.html`, nanoid(12), new Date().toISOString(), userId, orgId]);
     await initDb(); // second call re-runs the idempotent backfill so this prototype gets its v1
   });
   afterAll(async () => { await closeDb(); });

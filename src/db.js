@@ -622,11 +622,19 @@ async function initDb() {
             'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
             [emsOrgId, 'EMS', nowIso]);
         }
-        // Every existing user becomes an admin of EMS.
+        // Every existing user becomes an admin of EMS. The membership PK is a
+        // fresh random id (NOT 'm_' || user_id): a deterministic PK collided on
+        // org_memberships_pkey with legacy membership rows from the earlier
+        // Default-Org fold / env-admin seed that used that same scheme, and
+        // ON CONFLICT (org_id,user_id) does NOT cover the PK. WHERE NOT EXISTS
+        // makes it idempotent on (org_id,user_id) without relying on a PK clash.
         await lockClient.query(
           `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
-           SELECT 'm_' || u.id, $1, u.id, 'admin', $2 FROM users u
-           ON CONFLICT (org_id, user_id) DO NOTHING`,
+           SELECT 'm_' || replace(gen_random_uuid()::text, '-', ''), $1, u.id, 'admin', $2
+             FROM users u
+            WHERE NOT EXISTS (
+              SELECT 1 FROM org_memberships m
+               WHERE m.org_id = $1 AND m.user_id = u.id)`,
           [emsOrgId, nowIso]);
         // Move ALL existing prototypes + tokens into EMS.
         await lockClient.query('UPDATE prototypes SET org_id = $1 WHERE org_id IS NULL', [emsOrgId]);

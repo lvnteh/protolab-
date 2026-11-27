@@ -131,6 +131,47 @@ async function mkPrototype(orgId, ownerId, name = 'P') {
       const { rows } = await getDb().query("SELECT COUNT(*)::int AS n FROM organizations WHERE name = 'EMS'");
       expect(rows[0].n).toBe(1);
     });
+
+    test('survives a legacy membership whose PK is "m_"+userId (prod FAILED repro)', async () => {
+      // Production crashed on this deploy: the fold inserted membership PKs as
+      // 'm_' || user_id, which collided with legacy org_memberships rows from an
+      // earlier fold that used the SAME id scheme — a PK clash that
+      // ON CONFLICT (org_id,user_id) did not cover, so initDb threw and the
+      // healthcheck never came up. Reproduce: a user with a pre-existing
+      // membership keyed 'm_'+userId in ANOTHER org, then run the EMS fold.
+      await cleanDb();
+      await getDb().query('DELETE FROM schema_migrations WHERE name = $1', ['org-ems-consolidation-v1']);
+      await getDb().query('ALTER TABLE prototypes ALTER COLUMN org_id DROP NOT NULL');
+      await getDb().query('ALTER TABLE api_tokens ALTER COLUMN org_id DROP NOT NULL');
+
+      const u = await mkUser(`collide-${nanoid(6)}@sap.com`);
+      const otherOrg = await mkOrg('Legacy Org');
+      // The landmine: a membership whose PK is exactly what the buggy fold would
+      // generate for this user ('m_' + id), but in a different org.
+      await getDb().query(
+        `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
+         VALUES ($1,$2,$3,'admin',$4)`,
+        [`m_${u}`, otherOrg, u, new Date().toISOString()]);
+      // An org-less prototype so the fold's trigger condition fires.
+      const pid = nanoid(12);
+      await getDb().query(
+        'INSERT INTO prototypes (id, name, filename, share_token, created_at, owner_id) VALUES ($1,$2,$3,$4,$5,$6)',
+        [pid, 'Legacy', `${pid}.html`, nanoid(12), new Date().toISOString(), u]);
+
+      // Must NOT throw (the bug threw 23505 org_memberships_pkey here).
+      await expect(initDb()).resolves.not.toThrow();
+
+      // The user ends up a member of BOTH orgs: the legacy one (untouched) and EMS.
+      const { rows: ems } = await getDb().query("SELECT id FROM organizations WHERE name = 'EMS'");
+      const { rows: mem } = await getDb().query(
+        'SELECT org_id, role FROM org_memberships WHERE user_id = $1', [u]);
+      const orgIds = mem.map(m => m.org_id);
+      expect(orgIds).toContain(otherOrg);
+      expect(orgIds).toContain(ems[0].id);
+      // EMS membership is admin, and its PK is NOT the colliding 'm_'+userId.
+      const emsMem = mem.find(m => m.org_id === ems[0].id);
+      expect(emsMem.role).toBe('admin');
+    });
   });
 
   describe('roles', () => {

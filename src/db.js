@@ -317,8 +317,76 @@ async function initDb() {
   await _pool.query(`CREATE INDEX IF NOT EXISTS idx_memberships_user ON org_memberships(user_id)`);
   await _pool.query(`CREATE INDEX IF NOT EXISTS idx_memberships_org  ON org_memberships(org_id)`);
 
+  // org_invitations: a pending invite for an email to join an org at a role.
+  //   status lifecycle: 'pending' -> terminal ('accepted' | 'revoked').
+  //   token is nanoid(24), the opaque handle in the invite link (and the lookup
+  //   key for acceptInvite). email is stored lowercased (match signup/login).
+  //   Concurrency: only ONE pending invite may exist per (org_id, email) at a
+  //   time — enforced by the partial unique index uq_invites_pending (which
+  //   ignores terminal rows, so a revoked/accepted invite never blocks a
+  //   re-invite). The terminal-state CHECK pins accepted_at/revoked_at to their
+  //   status so a row can't claim it is 'accepted' with no accepted_at (and vice
+  //   versa), and 'pending' rows carry neither timestamp.
+  await _pool.query(`
+    CREATE TABLE IF NOT EXISTS org_invitations (
+      id          TEXT PRIMARY KEY,
+      org_id      TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      email       TEXT NOT NULL,
+      role        TEXT NOT NULL CONSTRAINT org_invitations_role_check CHECK (role IN ('admin','viewer')),
+      token       TEXT UNIQUE NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending'
+                    CONSTRAINT org_invitations_status_check CHECK (status IN ('pending','accepted','revoked')),
+      invited_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at  TEXT NOT NULL,
+      accepted_at TEXT,
+      revoked_at  TEXT,
+      CONSTRAINT org_invitations_terminal_check CHECK (
+        (status = 'pending'  AND accepted_at IS NULL AND revoked_at IS NULL) OR
+        (status = 'accepted' AND accepted_at IS NOT NULL AND revoked_at IS NULL) OR
+        (status = 'revoked'  AND revoked_at  IS NOT NULL AND accepted_at IS NULL)
+      )
+    )
+  `);
+  // At most one PENDING invite per (org, email); terminal rows are excluded so a
+  // fresh invite can always be issued after a prior one is accepted or revoked.
+  await _pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_invites_pending
+      ON org_invitations(org_id, email) WHERE status = 'pending'
+  `);
+  await _pool.query(`CREATE INDEX IF NOT EXISTS idx_invites_org ON org_invitations(org_id, status)`);
+
+  // storage_cleanup_queue: a durable work queue of object-storage objects that
+  // must be deleted out-of-band (Task 5 drains it). Rows are created as the
+  // owning org/prototype is torn down, and must OUTLIVE those rows — so there is
+  // intentionally NO FK to prototypes/organizations here (a cascade would delete
+  // the very cleanup record we need to keep). Fields:
+  //   kind           : object class (e.g. 'prototype', 'screenshot')
+  //   object_key     : the storage key to delete
+  //   status         : 'pending' -> 'done' | 'failed' (retry bookkeeping)
+  //   attempts       : how many delete attempts have run
+  //   next_attempt_at: earliest ISO time the next attempt may run (backoff)
+  //   last_error     : last failure message, for diagnosis
+  await _pool.query(`
+    CREATE TABLE IF NOT EXISTS storage_cleanup_queue (
+      id              TEXT PRIMARY KEY,
+      kind            TEXT NOT NULL,
+      object_key      TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'pending'
+                        CONSTRAINT storage_cleanup_status_check CHECK (status IN ('pending','done','failed')),
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT NOT NULL,
+      last_error      TEXT,
+      created_at      TEXT NOT NULL
+    )
+  `);
+  await _pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_storage_cleanup_due
+      ON storage_cleanup_queue(status, next_attempt_at)
+  `);
+
   // org_id is the tenant boundary on prototypes. Nullable at first (existing
-  // rows), backfilled by the migration below, enforced in code (mirrors owner_id).
+  // rows), backfilled by the migration below, then enforced NOT NULL (see the
+  // EMS consolidation migration + the ALTER ... SET NOT NULL after it).
   await _pool.query(`ALTER TABLE prototypes ADD COLUMN IF NOT EXISTS org_id TEXT REFERENCES organizations(id)`);
   await _pool.query(`ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS org_id TEXT REFERENCES organizations(id)`);
 
@@ -498,84 +566,68 @@ async function initDb() {
         ['explanations-version-scope-v1', new Date().toISOString()]);
     }
 
-    // --- Org multi-tenancy migration (P1) ---
-    // Marker-guarded so it runs once. Under the same advisory lock as the v1
-    // backfill, so concurrent/multi-instance boots can't double-create the org.
-    // Strategy: fold ALL existing data into ONE shared "Default Organization";
-    // every existing user becomes an admin of it. See the design spec.
-    const { rows: orgMarker } = await lockClient.query(
-      'SELECT 1 FROM schema_migrations WHERE name = $1', ['org-multitenancy-v1']);
+    // --- Org multi-tenancy migration: EMS consolidation (org-ems-consolidation-v1) ---
+    // Decision: all existing data is confirmed TEST data owned by one team, so we
+    // fold it into a SINGLE org named 'EMS' and make EVERY existing user an admin
+    // of it (mass-granting admin is acceptable here). This REPLACES the earlier
+    // 'org-multitenancy-v1' "Default Organization" fold; there is no per-boot
+    // self-heal anymore — the migration is marker-guarded and one-time, and new
+    // users join orgs via explicit invites (Task 1), not an auto-join.
+    //
+    // Under the same advisory lock as the v1 backfill, so concurrent/multi-
+    // instance boots can't double-create the org. Idempotent: if the marker is
+    // missing but an 'EMS' org already exists (e.g. a lost marker) we reuse it,
+    // and all writes are ON CONFLICT / WHERE NULL guarded.
+    const { rows: emsMarker } = await lockClient.query(
+      'SELECT 1 FROM schema_migrations WHERE name = $1', ['org-ems-consolidation-v1']);
     const { rows: unassigned } = await lockClient.query(
       'SELECT 1 FROM prototypes WHERE org_id IS NULL LIMIT 1');
+    const { rows: unassignedTokens } = await lockClient.query(
+      'SELECT 1 FROM api_tokens WHERE org_id IS NULL LIMIT 1');
 
-    if (orgMarker.length === 0 || unassigned.length > 0) {
+    if (emsMarker.length === 0 || unassigned.length > 0 || unassignedTokens.length > 0) {
       const nowIso = new Date().toISOString();
-      // Reuse an existing default org if one is already present (idempotent even
-      // if the marker was lost); otherwise create it.
-      let { rows: defOrg } = await lockClient.query(
-        "SELECT id FROM organizations WHERE name = $1", ['Default Organization']);
-      let defaultOrgId = defOrg[0] && defOrg[0].id;
-      if (!defaultOrgId) {
-        defaultOrgId = nanoid(12);
+      // Reuse an existing EMS org if present (idempotent even if the marker was
+      // lost); otherwise create it with an opaque id.
+      let { rows: emsOrg } = await lockClient.query(
+        'SELECT id FROM organizations WHERE name = $1', ['EMS']);
+      let emsOrgId = emsOrg[0] && emsOrg[0].id;
+      if (!emsOrgId) {
+        emsOrgId = nanoid(12);
         await lockClient.query(
           'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
-          [defaultOrgId, 'Default Organization', nowIso]);
+          [emsOrgId, 'EMS', nowIso]);
       }
-      // Every existing user becomes an admin of the default org.
+      // Every existing user becomes an admin of EMS.
       await lockClient.query(
         `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
-         SELECT $1 || u.id, $2, u.id, 'admin', $3 FROM users u
+         SELECT 'm_' || u.id, $1, u.id, 'admin', $2 FROM users u
          ON CONFLICT (org_id, user_id) DO NOTHING`,
-        ['m_', defaultOrgId, nowIso]);
-      // Assign all unowned prototypes + tokens to the default org.
-      await lockClient.query('UPDATE prototypes SET org_id = $1 WHERE org_id IS NULL', [defaultOrgId]);
-      await lockClient.query('UPDATE api_tokens SET org_id = $1 WHERE org_id IS NULL', [defaultOrgId]);
+        [emsOrgId, nowIso]);
+      // Move ALL existing prototypes + tokens into EMS.
+      await lockClient.query('UPDATE prototypes SET org_id = $1 WHERE org_id IS NULL', [emsOrgId]);
+      await lockClient.query('UPDATE api_tokens SET org_id = $1 WHERE org_id IS NULL', [emsOrgId]);
       await lockClient.query(
         `INSERT INTO schema_migrations (name, applied_at) VALUES ($1, $2)
          ON CONFLICT (name) DO NOTHING`,
-        ['org-multitenancy-v1', nowIso]);
+        ['org-ems-consolidation-v1', nowIso]);
     }
 
-    // --- Self-heal: the "Default Organization" must always exist ---
-    // The migration block above is marker-guarded, so once 'org-multitenancy-v1'
-    // is recorded it never recreates the org. If the org row is later missing —
-    // deleted in prod, or truncated between test files while schema_migrations
-    // (migration bookkeeping) is deliberately preserved — then /admin/signup's
-    // auto-enrol (which only fires WHEN a Default Org exists) silently stops
-    // enrolling new users, locking them out via requireOrg. This runs every boot,
-    // is idempotent, and recreates the org if and only if it's gone.
-    {
-      const { rows: defOrg } = await lockClient.query(
-        "SELECT 1 FROM organizations WHERE name = $1", ['Default Organization']);
-      if (defOrg.length === 0) {
-        await lockClient.query(
-          'INSERT INTO organizations (id, name, created_at) VALUES ($1,$2,$3)',
-          [nanoid(12), 'Default Organization', new Date().toISOString()]);
-      }
-    }
-
-    // --- Self-heal: env admin must always have a Default-Org membership ---
-    // The migration block above only enrols users WHILE it runs, and is skipped
-    // once the marker exists and no prototypes are unassigned. An env admin
-    // seeded AFTER that point (step C, e.g. ADMIN_EMAIL set on a later deploy)
-    // would then have zero memberships and be locked out of every admin route by
-    // requireOrg. This runs on every boot, is idempotent (ON CONFLICT DO
-    // NOTHING), and is scoped to the single configured admin — so it guarantees
-    // the operator can always log in without broadly auto-enrolling other users.
-    if (config.adminEmail) {
-      const adminEmail = config.adminEmail.trim().toLowerCase();
-      const { rows: defOrg } = await lockClient.query(
-        "SELECT id FROM organizations WHERE name = $1", ['Default Organization']);
-      if (defOrg[0]) {
-        await lockClient.query(
-          `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
-           SELECT 'm_' || u.id, $1, u.id, 'admin', $2
-             FROM users u
-            WHERE u.email = $3
-           ON CONFLICT (org_id, user_id) DO NOTHING`,
-          [defOrg[0].id, new Date().toISOString(), adminEmail]);
-      }
-    }
+    // After the backfill, org_id is mandatory on both tenant-scoped tables.
+    // Enforced idempotently: ALTER ... SET NOT NULL is a no-op if already set and
+    // only succeeds once every row has an org_id (guaranteed by the fold above).
+    await lockClient.query(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'prototypes' AND column_name = 'org_id' AND is_nullable = 'YES') THEN
+          ALTER TABLE prototypes ALTER COLUMN org_id SET NOT NULL;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'api_tokens' AND column_name = 'org_id' AND is_nullable = 'YES') THEN
+          ALTER TABLE api_tokens ALTER COLUMN org_id SET NOT NULL;
+        END IF;
+      END $$
+    `);
   } finally {
     // Always release the advisory lock on the same connection that took it.
     await lockClient.query('SELECT pg_advisory_unlock($1)', [BACKFILL_LOCK_KEY]);
@@ -641,7 +693,8 @@ async function cleanDb() {
   await _pool.query(`
     TRUNCATE TABLE comments, prototype_versions, prototypes, allowlist,
                    access_log, nav_events, explanations, api_tokens,
-                   docs_repos, org_memberships, organizations, users
+                   docs_repos, org_invitations, storage_cleanup_queue,
+                   org_memberships, organizations, users
     RESTART IDENTITY CASCADE
   `);
 }

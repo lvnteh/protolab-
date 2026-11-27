@@ -136,24 +136,10 @@ router.post('/signup', async (req, res) => {
     throw e;
   }
 
-  // Org provisioning is admin-driven in this phase (not self-serve — that's a
-  // future plan). A brand-new signup with no membership would be locked out of
-  // every org-scoped page, so we auto-enrol them into the Default Organization
-  // as a VIEWER: they can see and comment but not create/manage prototypes until
-  // an admin promotes them. If no default org exists yet, they simply have no
-  // active org and land on an empty prototype list.
-  const { rows: defOrg } = await getDb().query(
-    "SELECT id FROM organizations WHERE name = $1 ORDER BY created_at ASC LIMIT 1",
-    ['Default Organization']
-  );
-  if (defOrg[0]) {
-    await getDb().query(
-      `INSERT INTO org_memberships (id, org_id, user_id, role, created_at)
-       VALUES ($1,$2,$3,'viewer',$4) ON CONFLICT (org_id, user_id) DO NOTHING`,
-      [nanoid(12), defOrg[0].id, id, new Date().toISOString()]
-    );
-    req.session.activeOrgId = defOrg[0].id;
-  }
+  // Org provisioning is invite-driven (Task 1): a brand-new signup has no org
+  // membership and lands on an empty prototype list until an org admin invites
+  // them. We do NOT auto-enrol into any shared org here — the earlier
+  // Default-Organization auto-join was removed with the EMS consolidation.
   req.session.userId = id;
   res.redirect('/admin/prototypes');
 });
